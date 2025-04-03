@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "peaq-sdk-py"
+version = "0.0.1"
+requires-python = ">=3.8"
+dependencies = [
+]
+
+authors = [
+  { name="Jack Gundrum", email="gundrum@eotlabs.io" }
+]
+maintainers = [
+  { name="Jack Gundrum", email="gundrum@eotlabs.io" }
+]
+description = "Python SDK package for peaq"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICEN[CS]E.*"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://www.peaq.network/"
+Documentation = "todo-update-with-new"
+Source = "https://github.com/peaqnetwork/peaq-sdk-py"
