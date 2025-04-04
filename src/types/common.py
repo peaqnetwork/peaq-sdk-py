@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 # 3rd party imports
 from substrateinterface import SubstrateInterface
+from substrateinterface.keypair import Keypair
+
 
 class ChainType(Enum):
     EVM = "evm"
@@ -16,4 +18,8 @@ class ChainType(Enum):
 class SDKMetadata:
     chain_type: Optional[ChainType]
     base_url: str
-    pair: Optional[str]
+    pair: Optional[Keypair]
+    
+class ExtrinsicExecutionError(Exception):
+    """Raised when an extrinsic fails to execute successfully on the blockchain."""
+    pass

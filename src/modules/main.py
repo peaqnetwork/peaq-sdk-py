@@ -6,6 +6,7 @@ from typing import Optional
 # local imports
 from src.modules.base import Base
 from src.modules.did import Did
+from src.modules.storage import Storage
 from src.types.common import ChainType, SDKMetadata
 from src.types.main import CreateInstanceOptions
 
@@ -28,7 +29,8 @@ class Main(Base):
             pair=None
         )
         self._api = self._create_api()
-        self.did: Did = Did()
+        self.did: Did = Did(self._api, self.__metadata)
+        self.storage: Storage = Storage(self._api, self.__metadata)
     
     def create_instance(
         base_url: str,

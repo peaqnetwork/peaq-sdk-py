@@ -18,8 +18,9 @@ def test_create_instance():
     assert sdk is not None
     assert sdk.did is not None
     # assert sdk.rbac is not None
-    # assert sdk.storage is not None
+    assert sdk.storage is not None
     # Additional tests can check the metadata and API connection, etc.
+
 
 if __name__ == "__main__":
     pytest.main()
