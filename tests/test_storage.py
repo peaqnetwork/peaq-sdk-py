@@ -14,10 +14,16 @@ seed = os.getenv("SUBSTRATE_SEED")
 sdk_substrate = Main.create_instance(chain_type=ChainType.SUBSTRATE, base_url=base_url,seed=seed)
 
 
-def test_add_storage():
-    result = sdk_substrate.storage.add_item(item_type="substrate polkadot-peaq 2", item="sdk trigger")
+# def test_add_storage():
+#     result = sdk_substrate.storage.add_item(item_type="substrate polkadot-peaq 3", item={"test": "1234"})
+#     print(result)
+
+def test_get_storage():
+    result = sdk_substrate.storage.get_item(item_type="substrate polkadot-peaq 3")
     print(result)
-    
+    assert result is not None
+    assert result['substrate polkadot-peaq 3'] == '{"test": "1234"}'
+     
 
 if __name__ == "__main__":
     pytest.main()

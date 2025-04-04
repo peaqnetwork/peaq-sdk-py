@@ -109,8 +109,8 @@ class Main(Base):
             expected_prefix: str = "wss://"
             self._validate_base_url(base_url, expected_prefix, ChainType.SUBSTRATE)
         
-        substrate = SubstrateInterface(url=base_url, ss58_format=42)
-        return substrate
+        api = SubstrateInterface(url=base_url, ss58_format=42)
+        return api
                 
                 
                 
