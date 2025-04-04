@@ -13,3 +13,12 @@ class CreateInstanceOptions:
     chain_type: Optional[ChainType]
     seed: Optional[str]
 
+
+
+# Custom Errors
+class ApiError(Exception):
+    """Raised when there is an issue establishing the API connection."""
+    pass
+class BaseUrlError(Exception):
+    """Raised when an incorrect Base Url is set."""
+    pass

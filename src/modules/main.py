@@ -8,11 +8,13 @@ from src.modules.base import Base
 from src.modules.did import Did
 from src.modules.storage import Storage
 from src.types.common import ChainType, SDKMetadata
-from src.types.main import CreateInstanceOptions
+from src.types.main import CreateInstanceOptions, BaseUrlError
 
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface
 from substrateinterface.keypair import Keypair, KeypairType
+from web3 import Web3
+
 
 """
 Entry point for the Python SDK. Inherits the Base class that contains 
@@ -35,7 +37,7 @@ class Main(Base):
     def create_instance(
         base_url: str,
         chain_type: Optional[ChainType],
-        seed: Optional[str]
+        seed: Optional[str] = None
         ) -> Main:
         """
         Creates a new instance of the SDK and connects to the network.
@@ -77,8 +79,6 @@ class Main(Base):
         ------
         None
         """
-        if self.__metadata.chain_type == ChainType.EVM:
-            pass
         self._validate_options()
         self._set_metadata()
         
@@ -89,7 +89,7 @@ class Main(Base):
         pass
     def _set_metadata(self):
         """Creates a keypair to execute txs based on the substrate seed passed."""
-        key_pair: Keypair = self._get_key_pair(self.__options.seed)
+        key_pair = self._get_key_pair(self.__metadata.chain_type, self.__options.seed)
         self.__metadata.pair = key_pair
     
     
@@ -99,27 +99,18 @@ class Main(Base):
         if self.__metadata.chain_type == ChainType.EVM:
             expected_prefix: str = "https://"
             self._validate_base_url(base_url, expected_prefix, ChainType.EVM)
-            if self.__options.seed:
-                raise ValueError(
-                    "Construction of EVM txs does not require seed/private key. "
-                    "Use the sendEvmTx() to send a transaction on chain with a private key or send manually."
-                )
-            return None
+            api = Web3(Web3.HTTPProvider(base_url))
+            return api
         elif self.__metadata.chain_type in (ChainType.SUBSTRATE, None):
             expected_prefix: str = "wss://"
             self._validate_base_url(base_url, expected_prefix, ChainType.SUBSTRATE)
-        
-        api = SubstrateInterface(url=base_url, ss58_format=42)
-        return api
-                
-                
-                
-                
-                
+            api = SubstrateInterface(url=base_url, ss58_format=42)
+            return api
+
     def _validate_base_url(self, base_url: str, expected_prefix: str, interaction: ChainType) -> None:
         """Makes sure the correct url is being used in the proper environment."""
         if not base_url.startswith(expected_prefix):
-            raise ValueError(
+            raise BaseUrlError(
                 f"Invalid base URL for {interaction}: {base_url}. "
                 f"It must start with '{expected_prefix}' to establish connection."
             )
