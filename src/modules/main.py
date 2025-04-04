@@ -6,24 +6,28 @@ from typing import Optional
 # local imports
 from src.modules.base import Base
 from src.modules.did import Did
-from src.types.common import ChainType
+from src.types.common import ChainType, SDKMetadata
 from src.types.main import CreateInstanceOptions
 
 # 3rd party imports
-
-
+from substrateinterface.base import SubstrateInterface
+from substrateinterface.keypair import Keypair, KeypairType
 
 """
 Entry point for the Python SDK. Inherits the Base class that contains 
-logic for EVM and Substrate specific low level tasks.
+logic for EVM and Substrate specific operations.
 """
 class Main(Base):
-    ChainType = ChainType
-    
-
     def __init__(self, options) -> None:
+        """Initializes main class that the sdk actually is."""
         super().__init__()
-        print(options)
+        self.__options: CreateInstanceOptions = options
+        self.__metadata: SDKMetadata = SDKMetadata(
+            base_url=options.base_url,
+            chain_type=options.chain_type,
+            pair=None
+        )
+        self._api = self._create_api()
         self.did: Did = Did()
     
     def create_instance(
@@ -36,26 +40,84 @@ class Main(Base):
 
         Parameters
         ----------
-        chain_type: Indicates whether to use EVM or Substrate
-        base_url: Connection URL to the blockchain
-        seed: Mnemonic phrase used to execute substrate txs
+        chain_type: Indicates whether to use EVM or Substrate.
+        base_url: Connection URL to the blockchain.
+        seed: Mnemonic phrase used to execute substrate txs.
 
         Returns
         -------
         sdk: Main
-            SDK object that can be used to execute peaq functions
+            SDK object that can be used to execute peaq functions.
 
         Raises
         ------
-        KeyError
-            when a key error
-        OtherError
-            when an other error
+        None
         """
         options = CreateInstanceOptions(base_url, chain_type, seed)
         sdk = Main(options)
-        # sdk.connect()
+        sdk.connect()
         return sdk
+    
+    def connect(self) -> None:
+        """
+        Validates proper seed format and sets the mnemonic phrase to a 
+        key pair used to execute transactions on substrate.
+
+        Parameters
+        ----------
+        self: Current instance of the main class.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        None
+        """
+        if self.__metadata.chain_type == ChainType.EVM:
+            pass
+        self._validate_options()
+        self._set_metadata()
         
-    def create_instance() -> None:
-        return None
+    
+    # Check substrate seed
+    def _validate_options(self):
+        """Checks the seed to make sure it is compatible with substrate."""
+        pass
+    def _set_metadata(self):
+        """Creates a keypair to execute txs based on the substrate seed passed."""
+        key_pair: Keypair = self._get_key_pair(self.__options.seed)
+        self.__metadata.pair = key_pair
+    
+    
+    def _create_api(self):
+        """Creates an api provider to interact with the substrate side of our chain."""
+        base_url: str = self.__metadata.base_url
+        if self.__metadata.chain_type == ChainType.EVM:
+            expected_prefix: str = "https://"
+            self._validate_base_url(base_url, expected_prefix, ChainType.EVM)
+            if self.__options.seed:
+                raise ValueError(
+                    "Construction of EVM txs does not require seed/private key. "
+                    "Use the sendEvmTx() to send a transaction on chain with a private key or send manually."
+                )
+            return None
+        elif self.__metadata.chain_type in (ChainType.SUBSTRATE, None):
+            expected_prefix: str = "wss://"
+            self._validate_base_url(base_url, expected_prefix, ChainType.SUBSTRATE)
+        
+        substrate = SubstrateInterface(url=base_url, ss58_format=42)
+        return substrate
+                
+                
+                
+                
+                
+    def _validate_base_url(self, base_url: str, expected_prefix: str, interaction: ChainType) -> None:
+        """Makes sure the correct url is being used in the proper environment."""
+        if not base_url.startswith(expected_prefix):
+            raise ValueError(
+                f"Invalid base URL for {interaction}: {base_url}. "
+                f"It must start with '{expected_prefix}' to establish connection."
+            )
