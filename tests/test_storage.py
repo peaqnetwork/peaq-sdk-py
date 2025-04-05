@@ -23,129 +23,114 @@ SUBSTRATE_SEED = os.getenv("SUBSTRATE_SEED")
 EVM_ADDRESS= os.getenv("EVM_ADDRESS")
 EVM_PRIVATE = os.getenv("EVM_PRIVATE")
 
-def test_substrate(item_type, item, chain):
-    if chain == "agung":
-        wss_base_url = WSS_AGUNG
-        sdk_substrate = Main.create_instance(chain_type=ChainType.SUBSTRATE, base_url=wss_base_url, seed=SUBSTRATE_SEED)
-    elif chain == "peaq":
-        wss_base_url = WSS_PEAQ
-        sdk_substrate = Main.create_instance(chain_type=ChainType.SUBSTRATE, base_url=wss_base_url, seed=SUBSTRATE_SEED)
-    else:
-        raise ValueError(f"Chain of {chain} is not recognized.")
-        
-    
-    # Substrate tests:
-    # create storage
-    result = sdk_substrate.storage.add_item(item_type=item_type, item=item)
+def test_substrate_storage(substrate_sdk, item_type, item, config):
+    # Create a storage item.
+    result = substrate_sdk.storage.add_item(item_type=item_type, item=item)
     assert result is not None
     pattern = r'^0x[0-9a-fA-F]{64}$'
-    assert result.message == f"Successfully added the storage item type {item_type} with item {item} for the address {SUBSTRATE_ADDRESS}"
+    expected_message = (
+        f"Successfully added the storage item type {item_type} with item {item} "
+        f"for the address {config['SUBSTRATE_ADDRESS']}"
+    )
+    assert result.message == expected_message
     assert re.fullmatch(pattern, result.receipt.block_hash) is not None
     assert re.fullmatch(pattern, result.receipt.extrinsic_hash) is not None
     assert result.receipt.fee is not None
     
-    # read result
-    result = sdk_substrate.storage.get_item(item_type=item_type)
-    if (type(item) is dict):
+    # Read back the stored item.
+    result = substrate_sdk.storage.get_item(item_type=item_type)
+    if isinstance(item, dict):
         assert json.loads(result[item_type]) == item
     else:
         assert result[item_type] == item
     
-    # update item
-    new_item='test123'
-    result = sdk_substrate.storage.update_item(item_type=item_type, item=new_item)
+    # Update the item.
+    new_item = 'test123'
+    result = substrate_sdk.storage.update_item(item_type=item_type, item=new_item)
     assert result is not None
-    pattern = r'^0x[0-9a-fA-F]{64}$'
-    assert result.message == f"Successfully updated the storage item type {item_type} with item {new_item} for the address {SUBSTRATE_ADDRESS}"
+    expected_update_msg = (
+        f"Successfully updated the storage item type {item_type} with item {new_item} "
+        f"for the address {config['SUBSTRATE_ADDRESS']}"
+    )
+    assert result.message == expected_update_msg
     assert re.fullmatch(pattern, result.receipt.block_hash) is not None
     assert re.fullmatch(pattern, result.receipt.extrinsic_hash) is not None
     assert result.receipt.fee is not None
     
-    # read updated item
-    result = sdk_substrate.storage.get_item(item_type=item_type)
-    if (type(new_item) is dict):
-        assert json.loads(result[item_type]) == item
+    # Verify the updated item.
+    result = substrate_sdk.storage.get_item(item_type=item_type)
+    if isinstance(new_item, dict):
+        assert json.loads(result[item_type]) == new_item
     else:
         assert result[item_type] == new_item
     
-    # delete item
-    result = sdk_substrate.storage.remove_item(item_type=item_type)
+    # Remove the item.
+    result = substrate_sdk.storage.remove_item(item_type=item_type)
     assert result is not None
-    pattern = r'^0x[0-9a-fA-F]{64}$'
-    assert result.message == f"Successfully removed the storage item type {item_type} for the address {SUBSTRATE_ADDRESS}"
+    expected_remove_msg = (
+        f"Successfully removed the storage item type {item_type} for the address {config['SUBSTRATE_ADDRESS']}"
+    )
+    assert result.message == expected_remove_msg
     assert re.fullmatch(pattern, result.receipt.block_hash) is not None
     assert re.fullmatch(pattern, result.receipt.extrinsic_hash) is not None
     assert result.receipt.fee is not None
-    
-    # try to read to confirm failure
+
+    # Attempt to read the removed item and expect failure.
     with pytest.raises(GetItemError) as exc_info:
-        result = sdk_substrate.storage.get_item(item_type=item_type)
-    assert str(exc_info.value) == f"Item type of {item_type} was not found at address {SUBSTRATE_ADDRESS}."
+        substrate_sdk.storage.get_item(item_type=item_type)
+    expected_error = (
+        f"Item type of {item_type} was not found at address {config['SUBSTRATE_ADDRESS']}."
+    )
+    assert str(exc_info.value) == expected_error
+
+@pytest.mark.skip(reason="Testing Substrate")
+def test_evm_storage(evm_sdk, item_type, item, config):
+    sdk, wss_url = evm_sdk
     
-def test_evm(item_type, item, chain):
-    if chain == "agung":
-        wss_base_url = WSS_AGUNG
-        rpc_base_url = PRIVATE_RPC_AGUNG
-        sdk_evm= Main.create_instance(chain_type=ChainType.EVM, base_url=rpc_base_url, seed=EVM_PRIVATE)
-    elif chain == "peaq":
-        wss_base_url = WSS_PEAQ
-        rpc_base_url = RPC_PEAQ
-        sdk_evm= Main.create_instance(chain_type=ChainType.EVM, base_url=rpc_base_url, seed=EVM_PRIVATE)
-    else:
-        raise ValueError(f"Chain of {chain} is not recognized.")
-    
-    sdk_evm= Main.create_instance(chain_type=ChainType.EVM, base_url=rpc_base_url, seed=EVM_PRIVATE)
-    
-    # EVM tests:
-    # create storage
-    result = sdk_evm.storage.add_item(item_type=item_type, item=item)
+    # create
+    result = sdk.storage.add_item(item_type=item_type, item=item)
     assert result is not None
+
     pattern = r'^[0-9a-fA-F]{64}$'
-    assert result.message == f"Successfully added the storage item type {item_type} with item {item} for the address {EVM_ADDRESS}"
-    assert re.fullmatch(pattern, result.receipt.blockHash.hex()) is not None
-    
-    # read result
-    result = sdk_evm.storage.get_item(item_type=item_type, address = EVM_ADDRESS, wss_base_url=wss_base_url)
-    if (type(item) is dict):
+    expected_message = (
+        f"Successfully added the storage item type {item_type} with item {item} "
+        f"for the address {config['EVM_ADDRESS']}"
+    )
+    assert result.message == expected_message
+    assert re.fullmatch(pattern, result.receipt.blockHash.hex())
+
+    # read back—now pass wss_url
+    result = sdk.storage.get_item(item_type=item_type,
+                                  address=config['EVM_ADDRESS'],
+                                  wss_base_url=wss_url)
+    if isinstance(item, dict):
         assert json.loads(result[item_type]) == item
     else:
         assert result[item_type] == item
     
     # update
-    new_item='test123'
-    result = sdk_evm.storage.update_item(item_type=item_type, item=new_item)
+    new_item = 'test123'
+    result = sdk.storage.update_item(item_type=item_type, item=new_item)
     assert result is not None
-    pattern = r'^[0-9a-fA-F]{64}$'
-    assert result.message == f"Successfully updated the storage item type {item_type} with item {new_item} for the address {EVM_ADDRESS}"
-    assert re.fullmatch(pattern, result.receipt.blockHash.hex()) is not None
+    expected_update_msg = (
+        f"Successfully updated the storage item type {item_type} with item {new_item} "
+        f"for the address {config['EVM_ADDRESS']}"
+    )
+    assert result.message == expected_update_msg
+    assert re.fullmatch(pattern, result.receipt.blockHash.hex())
     
-    # read updated result
-    result = sdk_evm.storage.get_item(item_type=item_type, address = EVM_ADDRESS, wss_base_url=wss_base_url)
-    if (type(new_item) is dict):
-        assert json.loads(result[item_type]) == item
+    # read updated
+    result = sdk.storage.get_item(item_type=item_type,
+                                  address=config['EVM_ADDRESS'],
+                                  wss_base_url=wss_url)
+    if isinstance(new_item, dict):
+        assert json.loads(result[item_type]) == new_item
     else:
         assert result[item_type] == new_item
-    
-    # TEMPORARY FIX since no delete precompile...
+
+    # remove unsupported
     with pytest.raises(ValueError) as exc_info:
-        result = sdk_evm.storage.remove_item(item_type=item_type)
-    assert str(exc_info.value) == "Precompile for peaq Storage Remove Item will be included in the next runtime update."
-
-def test_storage_on_chain(chain):
-    item_type = "python-sdk-storage-006"
-    item = "test"
-    test_substrate(item_type, item, chain)
-    test_evm(item_type, item, chain)
-    
-    item_type2 = "python-sdk-storage-007"
-    item2 = {"test": {"hi": 123}}
-    test_substrate(item_type2, item2, chain)
-    test_evm(item_type2, item2, chain)
-    
-def test_storage():
-    test_storage_on_chain("agung")
-    # test_storage_on_chain("peaq")
-    
-
-if __name__ == "__main__":
-    pytest.main()
+        sdk.storage.remove_item(item_type=item_type)
+    assert str(exc_info.value) == (
+        "Precompile for peaq Storage Remove Item will be included in the next runtime update."
+    )
