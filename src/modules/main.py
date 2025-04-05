@@ -86,11 +86,16 @@ class Main(Base):
     # Check substrate seed
     def _validate_options(self):
         """Checks the seed to make sure it is compatible with substrate."""
+        # check for seed/private key
+        
+        # if substrate make sure it is a phrase, and if evm make sure it is a private key
         pass
     def _set_metadata(self):
         """Creates a keypair to execute txs based on the substrate seed passed."""
-        key_pair = self._get_key_pair(self.__metadata.chain_type, self.__options.seed)
-        self.__metadata.pair = key_pair
+        seed = self.__options.seed
+        if (seed):
+            key_pair = self._get_key_pair(self.__metadata.chain_type, seed)
+            self.__metadata.pair = key_pair
     
     
     def _create_api(self):

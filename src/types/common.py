@@ -17,13 +17,19 @@ class ChainType(Enum):
     SUBSTRATE = "substrate"
 
 @dataclass
+class TransactionResult:
+    extrinsic_hash: str
+    block_hash: str
+    fee: int
+
+@dataclass
 class SDKMetadata:
     chain_type: Optional[ChainType]
     base_url: str
     pair: Optional[Keypair | Account]
     
 class PrecompileAddresses(str, Enum):
-    STORAGE = "0x0000000000000000000000000000000000000801"    
+    STORAGE = "0x0000000000000000000000000000000000000801"
 
 # Used for Substrate calls
 class CallModule(str, Enum):
@@ -37,4 +43,8 @@ class EvmTransaction():
     
 class ExtrinsicExecutionError(Exception):
     """Raised when an extrinsic fails to execute successfully on the blockchain."""
+    pass
+
+class SeedError(Exception):
+    """Raised when there is no seed set for the write operation."""
     pass

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
 
+from src.types.common import TransactionResult
+
 @dataclass
 class CreateStorageOptions:
     item_type: str
@@ -14,6 +16,32 @@ class GetItemOptions:
     item_type: str
     address: Optional[str]
     
+@dataclass
+class UpdateStorageOptions:
+    item_type: str
+    item: object
+    
+@dataclass
+class AddItemResult:
+    message: str
+    receipt: TransactionResult
+
+@dataclass
+class GetItemResult:
+    item_type: str
+    item: str
+    def to_dict(self):
+        return {self.item_type: self.item}
+    
+@dataclass
+class UpdateItemResult:
+    message: str
+    receipt: TransactionResult
+    
+@dataclass
+class RemoveItemResult:
+    message: str
+    receipt: TransactionResult
 
 # Used for Storage EVM precompiles
 class StorageFunctionSignatures(str, Enum):
