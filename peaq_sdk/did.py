@@ -10,7 +10,11 @@ class Did(Base):
         self._api = api
         self.__metadata: SDKMetadata = metadata
     def create(self, name: str, custom_document_fields: CustomDocumentFields) -> CreateDidResult:
-        
+        if not isinstance(custom_document_fields, CustomDocumentFields):
+            raise TypeError(
+                f"custom_document_fields object must be CustomDocumentFields, "
+                f"got {type(custom_document_fields).__name__!r}"
+            )
         if not self.__metadata.pair:
             raise SeedError(
                 "No seed/private key set for the operation 'create'. "
@@ -78,7 +82,7 @@ class Did(Base):
         if verification.type not in ("Ed25519VerificationKey2020", "Sr25519VerificationKey2020", "EcdsaSecp256k1RecoveryMethod2020"):
             raise ValueError(
                 "Substrate verification.type must be "
-                "'Ed25519VerificationKey2020', 'Sr25519VerificationKey2020', or EcdsaSecp256k1RecoveryMethod2020"
+                "'Ed25519VerificationKey2020', 'Sr25519VerificationKey2020', or 'EcdsaSecp256k1RecoveryMethod2020'"
             )
         verification_method.type = verification.type
         verification_method.controller = f"did:peaq:{address}"

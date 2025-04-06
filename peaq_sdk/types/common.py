@@ -11,7 +11,6 @@ from substrateinterface.keypair import Keypair
 from eth_account import Account
 
 
-
 class ChainType(Enum):
     EVM = "evm"
     SUBSTRATE = "substrate"

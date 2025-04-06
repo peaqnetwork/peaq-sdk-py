@@ -13,6 +13,6 @@ env/
 .DS_STORE
 MANIFEST.in
 
-peaq_sdk_py.egg-info
+peaq_sdk.egg-info
 
 dist

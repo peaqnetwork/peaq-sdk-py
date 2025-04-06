@@ -1,4 +1,3 @@
 from .main import Main as Sdk
-from .types.common import ChainType
 
-__all__ = ["Sdk", "ChainType"]
+__all__ = ["Sdk"]
