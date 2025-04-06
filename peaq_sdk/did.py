@@ -1,6 +1,6 @@
 from peaq_sdk.base import Base
 from peaq_sdk.types.common import ChainType, SDKMetadata, SeedError
-from peaq_sdk.types.did import CustomDocumentFields, CreateDidResult, Verification
+from peaq_sdk.types.did import CustomDocumentFields, CreateDidResult, Verification, Signature, Service
 from peaq_sdk.utils import peaq_proto
 
 
@@ -25,8 +25,8 @@ class Did(Base):
             self._generate_did_document(account.address, custom_document_fields)
         else:
             keypair = self.__metadata.pair
-            self._generate_did_document(keypair.ss58_address, custom_document_fields)
-        
+            value = self._generate_did_document(keypair.ss58_address, custom_document_fields)
+            
         pass
     def read():
         pass
@@ -40,35 +40,37 @@ class Did(Base):
         doc.id = f"did:peaq:{address}"
         doc.controller = f"did:peaq:{address}"
         
-        # vfields = custom_document_fields.verifications or []
         if custom_document_fields.verifications:
-            print(custom_document_fields.verifications)
             for key_counter, verification in enumerate(custom_document_fields.verifications, start=1):
-                vm, vm_id = self._create_verification_method(
-                    key_counter,
+                id = f"did:peaq:{address}#keys-{key_counter}"
+                verification_method = self._create_verification_method(
+                    id,
                     address,
                     verification
                 )
-                doc.verification_methods.append(vm)
-                doc.authentications.append(vm_id)
-            print("Has verifications")
+                doc.verification_methods.append(verification_method)
+                doc.authentications.append(id)
             
-        # if customDocumentFields.signature:
-        #     print("Has signature")
-        # if customDocumentFields.services:
-        #     print("Has services")
+        if custom_document_fields.signature:
+            document_signature = self._add_signature(custom_document_fields.signature)
+            doc.signature.CopyFrom(document_signature)
+
+            
+        if custom_document_fields.services:
+            for service in custom_document_fields.services:
+                document_service = self._add_service(service)
+                doc.service.append(document_service)
         
         serialized_data = doc.SerializeToString()
         serialized_hex = serialized_data.hex()
-        deserialized_did = self._deserialize_did(serialized_data)
-        print(deserialized_did)
+        # deserialized_did = self._deserialize_did(serialized_data)
+        # print(deserialized_did)
+        return serialized_hex
     
-    def _create_verification_method(self, key_counter: int, address: str, verification: Verification):
+    def _create_verification_method(self, id: str, address: str, verification: Verification) -> peaq_proto.VerificationMethod:
         verification_method = peaq_proto.VerificationMethod()
-        id = f"did:peaq:{address}#keys-{key_counter}"
         verification_method.id = id
         
-        print(verification)
         if self.__metadata.chain_type is ChainType.EVM:
             if verification.type != "EcdsaSecp256k1RecoveryMethod2020":
                 raise ValueError(
@@ -77,7 +79,7 @@ class Did(Base):
             verification_method.type = verification.type
             verification_method.controller = f"did:peaq:{address}"
             verification_method.public_key_multibase = address
-            return verification_method, id
+            return verification_method
         
         if verification.type not in ("Ed25519VerificationKey2020", "Sr25519VerificationKey2020", "EcdsaSecp256k1RecoveryMethod2020"):
             raise ValueError(
@@ -92,8 +94,51 @@ class Did(Base):
         else:
             verification_method.public_key_multibase = address
         
-        return verification_method, id
+        return verification_method
     
+    def _add_signature(self, signature: Signature) -> peaq_proto.Signature:
+        allowed = {
+            "EcdsaSecp256k1RecoveryMethod2020",
+            "Ed25519VerificationKey2020",
+            "Sr25519VerificationKey2020",
+        }
+        if signature.type not in allowed:
+            raise ValueError(
+                'Signature.type must be one of '
+                '"EcdsaSecp256k1RecoveryMethod2020", '
+                '"Ed25519VerificationKey2020", or '
+                '"Sr25519VerificationKey2020".'
+            )
+        if not signature.issuer:
+            raise ValueError("Signature.issuer is required")
+        if not signature.hash:
+            raise ValueError("Signature.hash is required")
+
+        proto_signature = peaq_proto.Signature()
+        proto_signature.type = signature.type
+        proto_signature.issuer = signature.issuer
+        proto_signature.hash = signature.hash
+        return proto_signature
+    
+    def _add_service(self, service: Service):
+        if not service.id:
+            raise ValueError("Service.id is required")
+        if not service.type:
+            raise ValueError("Service.type is required")
+        if not (service.service_endpoint or service.data):
+            raise ValueError(
+                "Either serviceEndpoint or data must be provided for Service"
+            )
+        proto_service = peaq_proto.Services()
+        proto_service.id = service.id
+        proto_service.type = service.type
+
+        if service.service_endpoint:
+            proto_service.service_endpoint = service.service_endpoint
+        if service.data:
+            proto_service.data = service.data
+
+        return proto_service
     
     def _deserialize_did(self, data):
         deserialized_doc = peaq_proto.Document()

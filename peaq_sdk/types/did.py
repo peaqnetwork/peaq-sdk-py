@@ -38,7 +38,7 @@ class Service:
     def __post_init__(self):
         if not isinstance(self.id, str) or not isinstance(self.type, str):
             raise TypeError("Service.id and Service.type must be str")
-        if self.serviceEndpoint is not None and not isinstance(self.serviceEndpoint, str):
+        if self.service_endpoint is not None and not isinstance(self.service_endpoint, str):
             raise TypeError("Service.serviceEndpoint must be str or None")
         if self.data is not None and not isinstance(self.data, str):
             raise TypeError("Service.data must be str or None")
