@@ -28,6 +28,7 @@ class SDKMetadata:
     pair: Optional[Keypair | Account]
     
 class PrecompileAddresses(str, Enum):
+    DID = "0x0000000000000000000000000000000000000800"
     STORAGE = "0x0000000000000000000000000000000000000801"
 
 # Used for Substrate calls

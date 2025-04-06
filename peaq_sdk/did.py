@@ -1,5 +1,15 @@
+from typing import Union
+
+
 from peaq_sdk.base import Base
-from peaq_sdk.types.common import ChainType, SDKMetadata, SeedError, CallModule
+from peaq_sdk.types.common import (
+    ChainType,
+    SDKMetadata,
+    SeedError,
+    CallModule,
+    EvmTransaction,
+    PrecompileAddresses
+)
 from peaq_sdk.types.did import (
     CustomDocumentFields, 
     CreateDidResult,
@@ -11,13 +21,14 @@ from peaq_sdk.types.did import (
 )
 from peaq_sdk.utils import peaq_proto
 
+from eth_abi import encode
 
 class Did(Base):
     def __init__(self, api, metadata) -> None:
         super().__init__()
         self._api = api
         self.__metadata: SDKMetadata = metadata
-    def create(self, name: str, custom_document_fields: CustomDocumentFields) -> CreateDidResult:
+    def create(self, name: str, custom_document_fields: CustomDocumentFields) -> Union[CreateDidResult,EvmTransaction]:
         if not isinstance(custom_document_fields, CustomDocumentFields):
             raise TypeError(
                 f"custom_document_fields object must be CustomDocumentFields, "
@@ -30,17 +41,35 @@ class Did(Base):
             )
         if self.__metadata.chain_type is ChainType.EVM:
             account = self.__metadata.pair
-            self._generate_did_document(account.address, custom_document_fields)
+            serialized_did = self._generate_did_document(account.address, custom_document_fields)
+            did_function_selector = self._api.keccak(text=DidFunctionSignatures.ADD_ATTRIBUTE.value)[:4].hex()
+            name_encoded = name.encode("utf-8").hex()
+            did_encoded = serialized_did.encode("utf-8").hex()
+            encoded_params = encode(
+                ['address', 'bytes', 'bytes', 'uint32'],
+                [account.address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
+            ).hex()
+            
+            tx: EvmTransaction = {
+                "to": PrecompileAddresses.DID.value,
+                "data": f"0x{did_function_selector}{encoded_params}"
+            }
+            
+            receipt = self._send_evm_tx(tx, account)
+            return CreateDidResult(
+                message=f"Successfully added the DID under the name {name} for user {account.address}",
+                receipt=receipt
+            )
         else:
             keypair = self.__metadata.pair
-            value = self._generate_did_document(keypair.ss58_address, custom_document_fields)
+            serialized_did = self._generate_did_document(keypair.ss58_address, custom_document_fields)
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_DID.value,
                 call_function=DidCallFunction.ADD_ATTRIBUTE.value,
                 call_params={
                     'did_account': keypair.ss58_address,
                     'name': name,
-                    'value': value,
+                    'value': serialized_did,
                     'valid_for': None
                     }
             )
@@ -49,7 +78,6 @@ class Did(Base):
                 message=f"Successfully added the DID under the name {name} for user {keypair.ss58_address}",
                 receipt=receipt
             )
-        pass
     def read():
         pass
     def update():
