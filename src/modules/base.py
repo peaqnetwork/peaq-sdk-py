@@ -13,9 +13,9 @@ class Base:
     def __init__(self) -> None:
         pass
     
-    def _get_key_pair(self, chain_type: ChainType, seed: str):
+    def _get_key_pair(self, chain_type: ChainType, seed: str) -> Account | Keypair:
         if not seed:
-            ValueError('Seed is required')
+            raise ValueError('Seed is required')
         if chain_type is ChainType.EVM:
             return Account.from_key(seed)
         else:

@@ -21,13 +21,12 @@ Entry point for the Python SDK. Inherits the Base class that contains
 logic for EVM and Substrate specific operations.
 """
 class Main(Base):
-    def __init__(self, options) -> None:
+    def __init__(self, base_url: str, chain_type: Optional[ChainType]) -> None:
         """Initializes main class that the sdk actually is."""
         super().__init__()
-        self.__options: CreateInstanceOptions = options
         self.__metadata: SDKMetadata = SDKMetadata(
-            base_url=options.base_url,
-            chain_type=options.chain_type,
+            base_url=base_url,
+            chain_type=chain_type,
             pair=None
         )
         self._api = self._create_api()
@@ -57,15 +56,14 @@ class Main(Base):
         ------
         None
         """
-        options = CreateInstanceOptions(base_url, chain_type, seed)
-        sdk = Main(options)
-        sdk.connect()
+        sdk = Main(base_url, chain_type)
+        sdk._initialize_wallet(seed)
         return sdk
     
-    def connect(self) -> None:
+    def _initialize_wallet(self, seed: Optional[str] = None) -> None:
         """
-        Validates proper seed format and sets the mnemonic phrase to a 
-        key pair used to execute transactions on substrate.
+        Sets the mnemonic phrase or private key to a key pair or account used 
+        to execute transactions on substrate or evm.
 
         Parameters
         ----------
@@ -79,26 +77,36 @@ class Main(Base):
         ------
         None
         """
-        self._validate_options()
-        self._set_metadata()
-        
+        self._validate_secret(seed)
+        self._set_metadata(seed)
     
-    # Check substrate seed
-    def _validate_options(self):
-        """Checks the seed to make sure it is compatible with substrate."""
-        # check for seed/private key
-        
-        # if substrate make sure it is a phrase, and if evm make sure it is a private key
-        pass
-    def _set_metadata(self):
+    def _validate_secret(self, seed: Optional[str] = None):
+        """Checks the private key or seed to make sure it is compatible with evm or substrate."""
+        if not seed:
+            return
+        if self.__metadata.chain_type == ChainType.EVM:
+            key_str = seed[2:] if seed.startswith("0x") else seed
+            if len(key_str) != 64:
+                raise ValueError("Invalid EVM private key length. Expected 64 hex characters (excluding '0x' prefix).")
+            try:
+                int(key_str, 16)
+            except ValueError:
+                raise ValueError("Invalid EVM private key. It must be a valid hexadecimal string.")
+        else:
+            words = seed.strip().split()
+            if len(words) not in (12, 24):
+                raise ValueError("Invalid substrate mnemonic. Expected 12 or 24 words.")
+        return
+    
+    def _set_metadata(self, seed: Optional[str] = None) -> None:
         """Creates a keypair to execute txs based on the substrate seed passed."""
-        seed = self.__options.seed
-        if (seed):
-            key_pair = self._get_key_pair(self.__metadata.chain_type, seed)
-            self.__metadata.pair = key_pair
+        if not seed:
+            return
+        key_pair = self._get_key_pair(self.__metadata.chain_type, seed)
+        self.__metadata.pair = key_pair
     
     
-    def _create_api(self):
+    def _create_api(self) -> Web3 | SubstrateInterface:
         """Creates an api provider to interact with the substrate side of our chain."""
         base_url: str = self.__metadata.base_url
         if self.__metadata.chain_type == ChainType.EVM:

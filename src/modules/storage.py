@@ -14,8 +14,11 @@ from substrateinterface.base import SubstrateInterface
 from web3 import Web3
 from eth_abi import encode
 
+"""Storage class that performs EVM and Substrate txs to utilize the peaq
+storage capabilities."""
 class Storage(Base):
     def __init__(self, api, metadata) -> None:
+        """Sets previously set api and metadata to be used in the class."""
         super().__init__()
         self._api = api
         self.__metadata: SDKMetadata = metadata
