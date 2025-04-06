@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 # local imports
-from src.types.common import ChainType
+from peaq_sdk.types.common import ChainType
 
 
 @dataclass

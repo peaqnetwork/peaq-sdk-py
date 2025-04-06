@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
 
-from src.types.common import TransactionResult
+from peaq_sdk.types.common import TransactionResult
 @dataclass
 class AddItemResult:
     message: str

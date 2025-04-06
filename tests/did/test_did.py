@@ -1,5 +1,5 @@
 import pytest
-from src.types.did import CustomDocumentFields, CreateDidResult, Verification
+from peaq_sdk.types.did import CustomDocumentFields, CreateDidResult, Verification
 
 @pytest.mark.did
 def test_create_minimal_did(substrate_sdk):

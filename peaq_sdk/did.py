@@ -1,7 +1,7 @@
-from src.modules.base import Base
-from src.types.common import ChainType, SDKMetadata, SeedError
-from src.types.did import CustomDocumentFields, CreateDidResult, Verification
-from src.utils import peaq_proto
+from peaq_sdk.base import Base
+from peaq_sdk.types.common import ChainType, SDKMetadata, SeedError
+from peaq_sdk.types.did import CustomDocumentFields, CreateDidResult, Verification
+from peaq_sdk.utils import peaq_proto
 
 
 class Did(Base):

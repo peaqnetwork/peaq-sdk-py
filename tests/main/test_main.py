@@ -2,8 +2,8 @@ import pytest
 import os
 from dotenv import load_dotenv
 
-from src.modules.main import Main
-from src.types.common import ChainType
+from peaq_sdk.main import Main
+from peaq_sdk.types.common import ChainType
 
 # loads .env from the current working directory and set to vars
 load_dotenv()

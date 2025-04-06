@@ -1,6 +1,6 @@
 import pytest
-from src.modules.main import Main
-from src.types.common import ChainType
+from peaq_sdk.modules.main import Main
+from peaq_sdk.types.common import ChainType
 
 @pytest.fixture(autouse=True)
 def storage_sdk(evm_sdk, substrate_sdk, chain):

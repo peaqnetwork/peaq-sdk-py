@@ -2,7 +2,7 @@ from typing import Optional, Union
 import ast
 import json
 
-from src.types.common import ChainType, ExtrinsicExecutionError, TransactionResult, EvmTransaction
+from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, TransactionResult, EvmTransaction
 
 from web3 import Web3
 from eth_account import Account

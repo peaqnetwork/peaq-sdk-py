@@ -1,3 +1,25 @@
+Metadata-Version: 2.4
+Name: peaq-sdk
+Version: 0.0.1
+Summary: peaq python sdk
+Home-page: https://github.com/peaqnetwork/peaq-sdk-py/
+Author: Jack Gundrum
+Author-email: gundrum@eotlabs.io
+License: Apache-2.0
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: web3>=7.10.0
+Requires-Dist: substrate-interface>=1.7.11
+Requires-Dist: protobuf==5.28.2
+Dynamic: license-file
+
 # peaq-sdk
 
 Python implementation of peaq functions. Offers the following capabilities:

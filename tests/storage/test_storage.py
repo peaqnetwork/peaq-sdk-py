@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 import re
 import json
 
-from src.modules.main import Main
-from src.types.common import ChainType
-from src.types.storage import GetItemError
+from peaq_sdk.main import Main
+from peaq_sdk.types.common import ChainType
+from peaq_sdk.types.storage import GetItemError
 
 
 # loads .env from the current working directory and set to vars

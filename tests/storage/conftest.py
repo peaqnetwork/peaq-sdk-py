@@ -1,7 +1,7 @@
 # tests/storage/conftest.py
 import pytest
-from src.modules.main import Main
-from src.types.common import ChainType
+from peaq_sdk.modules.main import Main
+from peaq_sdk.types.common import ChainType
 
 @pytest.fixture(params=["python-sdk-storage-010"])
 def item_type(request):

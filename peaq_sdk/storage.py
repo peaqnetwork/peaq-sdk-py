@@ -4,8 +4,8 @@ import json
 from enum import Enum
 
 # local imports
-from src.modules.base import Base
-from src.types.common import (
+from peaq_sdk.base import Base
+from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
     PrecompileAddresses,
@@ -14,7 +14,7 @@ from src.types.common import (
     TransactionResult,
     SeedError,
 )
-from src.types.storage import (
+from peaq_sdk.types.storage import (
     GetItemError,
     StorageFunctionSignatures,
     StorageCallFunction,
@@ -23,7 +23,7 @@ from src.types.storage import (
     UpdateItemResult,
     RemoveItemResult,
 )
-from src.utils.utils import evm_to_address
+from peaq_sdk.utils.utils import evm_to_address
 
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface

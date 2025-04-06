@@ -1,14 +1,14 @@
 # python native imports
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 # local imports
-from src.modules.base import Base
-from src.modules.did import Did
-from src.modules.storage import Storage
-from src.types.common import ChainType, SDKMetadata
-from src.types.main import CreateInstanceOptions, BaseUrlError
+from peaq_sdk.base import Base
+from peaq_sdk.did import Did
+from peaq_sdk.storage import Storage
+from peaq_sdk.types.common import ChainType, SDKMetadata
+from peaq_sdk.types.main import CreateInstanceOptions, BaseUrlError
 
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface
@@ -119,7 +119,7 @@ class Main(Base):
         self.__metadata.pair = key_pair
     
     
-    def _create_api(self) -> Web3 | SubstrateInterface:
+    def _create_api(self) -> Union[Web3, SubstrateInterface]:
         """
         Initializes and returns an API provider for blockchain interaction based on the chain type 
         specified in the SDK metadata.

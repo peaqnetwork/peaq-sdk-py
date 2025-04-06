@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from src.types.common import TransactionResult
+from peaq_sdk.types.common import TransactionResult
 
 @dataclass
 class Verification:
