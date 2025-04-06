@@ -1,6 +1,14 @@
 from peaq_sdk.base import Base
-from peaq_sdk.types.common import ChainType, SDKMetadata, SeedError
-from peaq_sdk.types.did import CustomDocumentFields, CreateDidResult, Verification, Signature, Service
+from peaq_sdk.types.common import ChainType, SDKMetadata, SeedError, CallModule
+from peaq_sdk.types.did import (
+    CustomDocumentFields, 
+    CreateDidResult,
+    Verification,
+    Signature,
+    Service,
+    DidFunctionSignatures,
+    DidCallFunction
+)
 from peaq_sdk.utils import peaq_proto
 
 
@@ -26,7 +34,21 @@ class Did(Base):
         else:
             keypair = self.__metadata.pair
             value = self._generate_did_document(keypair.ss58_address, custom_document_fields)
-            
+            call = self._api.compose_call(
+                call_module=CallModule.PEAQ_DID.value,
+                call_function=DidCallFunction.ADD_ATTRIBUTE.value,
+                call_params={
+                    'did_account': keypair.ss58_address,
+                    'name': name,
+                    'value': value,
+                    'valid_for': None
+                    }
+            )
+            receipt = self._send_substrate_tx(call, keypair)
+            return CreateDidResult(
+                message=f"Successfully added the DID under the name {name} for user {keypair.ss58_address}",
+                receipt=receipt
+            )
         pass
     def read():
         pass
@@ -59,7 +81,7 @@ class Did(Base):
         if custom_document_fields.services:
             for service in custom_document_fields.services:
                 document_service = self._add_service(service)
-                doc.service.append(document_service)
+                doc.services.append(document_service)
         
         serialized_data = doc.SerializeToString()
         serialized_hex = serialized_data.hex()

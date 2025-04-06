@@ -32,6 +32,7 @@ class PrecompileAddresses(str, Enum):
 
 # Used for Substrate calls
 class CallModule(str, Enum):
+    PEAQ_DID = 'PeaqDid'
     PEAQ_STORAGE = 'PeaqStorage'
     # Add more modules as needed
 

@@ -4,6 +4,7 @@ from peaq_sdk.types.common import TransactionResult
 
 from dataclasses import dataclass, field
 from typing import List, Optional
+from enum import Enum
 
 @dataclass
 class Verification:
@@ -68,3 +69,16 @@ class CustomDocumentFields:
 class CreateDidResult:
     message: str
     receipt: TransactionResult
+
+# Used for Storage EVM precompiles
+class DidFunctionSignatures(str, Enum):
+    ADD_ATTRIBUTE = "addAttribute(address,bytes,bytes,uint32)"
+    READ_ATTRIBUTE = "readAttribute(address,bytes)"
+    UPDATE_ATTRIBUTE = "updateAttribute(address,bytes,bytes,uint32)"
+    REMOVE_ATTRIBUTE = "removeAttribute(address,bytes)"
+
+class DidCallFunction(str, Enum):
+    ADD_ATTRIBUTE = 'add_attribute'
+    READ_ATTRIBUTE = 'peaqdid_readAttribute'
+    UPDATE_ATTRIBUTE = 'update_attribute'
+    REMOVE_ATTRIBUTE = 'remove_attribute'
