@@ -19,7 +19,7 @@ class Base:
         """Base initializer (no-op)."""
         pass
     
-    def _get_key_pair(self, chain_type: ChainType, seed: str) -> Union[Account, Keypair]:
+    def _create_key_pair(self, chain_type: ChainType, seed: str) -> Union[Account, Keypair]:
         """
         Generates a blockchain key pair from a seed string.
 
@@ -48,7 +48,7 @@ class Base:
                 crypto_type=KeypairType.SR25519
             )
     
-    def send_substrate_tx(self, call: GenericCall, keypair: Keypair) -> TransactionResult:
+    def _send_substrate_tx(self, call: GenericCall, keypair: Keypair) -> TransactionResult:
         """
         Submits and waits for inclusion of a Substrate extrinsic, automatically
         retrying with increasing tip if needed.
@@ -77,7 +77,7 @@ class Base:
         )
     
     
-    def send_evm_tx(self, tx: EvmTransaction, account: Account) -> dict:
+    def _send_evm_tx(self, tx: EvmTransaction, account: Account) -> dict:
         """
         Builds, signs, and broadcasts an EVM transaction via the Web3 provider.
 

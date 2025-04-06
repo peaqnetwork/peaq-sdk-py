@@ -18,10 +18,10 @@ class Did(Base):
             )
         if self.__metadata.chain_type is ChainType.EVM:
             account = self.__metadata.pair
-            self.generate_did_document(account.address, custom_document_fields)
+            self._generate_did_document(account.address, custom_document_fields)
         else:
             keypair = self.__metadata.pair
-            self.generate_did_document(keypair.ss58_address, custom_document_fields)
+            self._generate_did_document(keypair.ss58_address, custom_document_fields)
         
         pass
     def read():
@@ -31,7 +31,7 @@ class Did(Base):
     def remove():
         pass
     
-    def generate_did_document(self, address: str, custom_document_fields: CustomDocumentFields) -> str:
+    def _generate_did_document(self, address: str, custom_document_fields: CustomDocumentFields) -> str:
         doc = peaq_proto.Document()
         doc.id = f"did:peaq:{address}"
         doc.controller = f"did:peaq:{address}"

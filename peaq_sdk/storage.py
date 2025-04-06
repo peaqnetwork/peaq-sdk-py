@@ -90,7 +90,7 @@ class Storage(Base):
                 "data": f"0x{add_item_function_selector}{encoded_params}"
             }
             
-            receipt = self.send_evm_tx(tx, account)
+            receipt = self._send_evm_tx(tx, account)
             return AddItemResult(
                 message=f"Successfully added the storage item type {item_type} with item {item} for the address {account.address}",
                 receipt=receipt
@@ -102,7 +102,7 @@ class Storage(Base):
                 call_function=StorageCallFunction.ADD_ITEM.value,
                 call_params={'item_type': item_type, 'item': item_string}
             )
-            receipt = self.send_substrate_tx(call, keypair)
+            receipt = self._send_substrate_tx(call, keypair)
             return AddItemResult(
                 message=f"Successfully added the storage item type {item_type} with item {item} for the address {keypair.ss58_address}",
                 receipt=receipt
@@ -207,7 +207,7 @@ class Storage(Base):
                 "to": PrecompileAddresses.STORAGE.value,
                 "data": f"0x{update_item_function_selector}{encoded_params}"
             }
-            receipt = self.send_evm_tx(tx, account)
+            receipt = self._send_evm_tx(tx, account)
             return UpdateItemResult(
                 message=f"Successfully updated the storage item type {item_type} with item {item} for the address {account.address}",
                 receipt=receipt
@@ -219,7 +219,7 @@ class Storage(Base):
                 call_function=StorageCallFunction.UPDATE_ITEM.value,
                 call_params={'item_type': item_type, 'item': item_string}
             )
-            receipt = self.send_substrate_tx(call, keypair)
+            receipt = self._send_substrate_tx(call, keypair)
             return UpdateItemResult(
                 message=f"Successfully updated the storage item type {item_type} with item {item} for the address {keypair.ss58_address}",
                 receipt=receipt
@@ -266,7 +266,7 @@ class Storage(Base):
                 "data": payload
             }
             
-            receipt = self.send_evm_tx(tx, account)
+            receipt = self._send_evm_tx(tx, account)
             return RemoveItemResult(
                 message=f"Successfully removed the storage item type {item_type} for the address {account.address}",
                 receipt=receipt
@@ -278,7 +278,7 @@ class Storage(Base):
                 call_function=StorageCallFunction.REMOVE_ITEM.value,
                 call_params={'item_type': item_type}
             )
-            receipt = self.send_substrate_tx(call, keypair)
+            receipt = self._send_substrate_tx(call, keypair)
             return RemoveItemResult(
                 message=f"Successfully removed the storage item type {item_type} for the address {keypair.ss58_address}",
                 receipt=receipt

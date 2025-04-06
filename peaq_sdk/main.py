@@ -42,7 +42,8 @@ class Main(Base):
         self.did: Did = Did(self._api, self.__metadata)
         self.storage: Storage = Storage(self._api, self.__metadata)
     
-    def create_instance(
+    @classmethod
+    def create_instance(cls,
         base_url: str,
         chain_type: Optional[ChainType],
         seed: Optional[str] = None
@@ -115,7 +116,7 @@ class Main(Base):
         """
         if not seed:
             return
-        key_pair = self._get_key_pair(self.__metadata.chain_type, seed)
+        key_pair = self._create_key_pair(self.__metadata.chain_type, seed)
         self.__metadata.pair = key_pair
     
     
