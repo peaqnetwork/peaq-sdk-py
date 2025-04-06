@@ -17,12 +17,20 @@ from web3 import Web3
 
 
 """
-Entry point for the Python SDK. Inherits the Base class that contains 
-logic for EVM and Substrate specific operations.
+Entry point for the Python SDK.
+
+The Main class serves as the primary interface for the SDK, providing methods for 
+initializing the signer, creating the API connection, and handling blockchain-specific operations.
+It inherits from Base, which contains common logic for both EVM and Substrate operations.
 """
 class Main(Base):
     def __init__(self, base_url: str, chain_type: Optional[ChainType]) -> None:
-        """Initializes main class that the sdk actually is."""
+        """Initializes the Main class, representing the primary interface for the SDK.
+
+        Args:
+            base_url (str): The URL for connecting to the blockchain.
+            chain_type (Optional[ChainType]): The type of blockchain (e.g., EVM or Substrate).
+        """
         super().__init__()
         self.__metadata: SDKMetadata = SDKMetadata(
             base_url=base_url,
@@ -38,50 +46,41 @@ class Main(Base):
         chain_type: Optional[ChainType],
         seed: Optional[str] = None
         ) -> Main:
-        """
-        Creates a new instance of the SDK and connects to the network.
+        """Creates and returns a new instance of the SDK, connecting to the specified network.
 
-        Parameters
-        ----------
-        chain_type: Indicates whether to use EVM or Substrate.
-        base_url: Connection URL to the blockchain.
-        seed: Mnemonic phrase used to execute substrate txs.
+        Args:
+            base_url (str): The connection URL for the blockchain.
+            chain_type (Optional[ChainType]): Indicates whether the blockchain is EVM or Substrate.
+            seed (Optional[str]): The secret (mnemonic phrase or private key) used to generate the signer for executing transactions.
 
-        Returns
-        -------
-        sdk: Main
-            SDK object that can be used to execute peaq functions.
-
-        Raises
-        ------
-        None
+        Returns:
+            Main: An initialized SDK object ready for executing blockchain operations.
         """
         sdk = Main(base_url, chain_type)
-        sdk._initialize_wallet(seed)
+        sdk._initialize_signer(seed)
         return sdk
     
-    def _initialize_wallet(self, seed: Optional[str] = None) -> None:
-        """
-        Sets the mnemonic phrase or private key to a key pair or account used 
-        to execute transactions on substrate or evm.
+    def _initialize_signer(self, seed: Optional[str] = None) -> None:
+        """Initializes the signer by validating and setting the secret used for generating the key pair/account.
 
-        Parameters
-        ----------
-        self: Current instance of the main class.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        None
+        Args:
+            seed (Optional[str]): The mnemonic phrase or private key used to generate the key pair.
         """
         self._validate_secret(seed)
         self._set_metadata(seed)
     
     def _validate_secret(self, seed: Optional[str] = None):
-        """Checks the private key or seed to make sure it is compatible with evm or substrate."""
+        """Validates that the provided seed is compatible with EVM or Substrate.
+
+        Args:
+            seed (Optional[str]): The private key (for EVM) or mnemonic phrase (for Substrate)
+                to validate.
+
+        Raises:
+            ValueError: If the EVM private key is not 64 hex characters (excluding '0x' prefix)
+                or is not a valid hexadecimal string.
+            ValueError: If the substrate mnemonic does not consist of 12 or 24 words.
+        """
         if not seed:
             return
         if self.__metadata.chain_type == ChainType.EVM:
@@ -99,7 +98,16 @@ class Main(Base):
         return
     
     def _set_metadata(self, seed: Optional[str] = None) -> None:
-        """Creates a keypair to execute txs based on the substrate seed passed."""
+        """Generates a cryptographic key pair from the provided seed and stores it in the SDK metadata.
+
+        This method invokes _get_key_pair, which applies blockchain-specific logic:
+          - For EVM, it generates a key pair from a valid hexadecimal private key.
+          - For Substrate, it creates a key pair from a mnemonic phrase (typically 12 or 24 words).
+        The resulting key pair is stored in the metadata for use in signing transactions.
+
+        Args:
+            seed (Optional[str]): The mnemonic phrase (for Substrate) or private key (for EVM) used to generate the key pair.
+        """
         if not seed:
             return
         key_pair = self._get_key_pair(self.__metadata.chain_type, seed)
@@ -107,7 +115,15 @@ class Main(Base):
     
     
     def _create_api(self) -> Web3 | SubstrateInterface:
-        """Creates an api provider to interact with the substrate side of our chain."""
+        """Initializes and returns an API provider for blockchain interaction based on the chain type 
+        specified in the SDK metadata.
+
+        Returns:
+            Web3 | SubstrateInterface: An API provider instance used to interact with the blockchain.
+
+        Raises:
+            BaseUrlError: If the base URL does not start with the expected protocol prefix.
+        """
         base_url: str = self.__metadata.base_url
         if self.__metadata.chain_type == ChainType.EVM:
             expected_prefix: str = "https://"
@@ -121,7 +137,16 @@ class Main(Base):
             return api
 
     def _validate_base_url(self, base_url: str, expected_prefix: str, interaction: ChainType) -> None:
-        """Makes sure the correct url is being used in the proper environment."""
+        """Validates that the base URL matches the expected protocol for the blockchain.
+
+        Args:
+            base_url (str): The URL used to connect to the blockchain.
+            expected_prefix (str): The protocol prefix expected in the URL (e.g., "https://" or "wss://").
+            interaction (ChainType): The type of blockchain interaction (e.g., ChainType.EVM or ChainType.SUBSTRATE).
+
+        Raises:
+            BaseUrlError: If the base URL does not start with the expected prefix.
+        """
         if not base_url.startswith(expected_prefix):
             raise BaseUrlError(
                 f"Invalid base URL for {interaction}: {base_url}. "

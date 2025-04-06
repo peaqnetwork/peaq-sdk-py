@@ -14,6 +14,18 @@ class Base:
         pass
     
     def _get_key_pair(self, chain_type: ChainType, seed: str) -> Account | Keypair:
+        """Generates a key pair from the provided seed based on the blockchain type.
+
+        Args:
+            chain_type (ChainType): The blockchain type (EVM or Substrate) used to determine the key pair generation method.
+            seed (str): The mnemonic phrase (for Substrate) or private key (for EVM).
+
+        Returns:
+            Account | Keypair: A key pair object appropriate for the given blockchain type.
+
+        Raises:
+            ValueError: If the seed is not provided.
+        """
         if not seed:
             raise ValueError('Seed is required')
         if chain_type is ChainType.EVM:
