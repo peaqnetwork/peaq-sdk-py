@@ -5,22 +5,6 @@ from typing import Optional
 from enum import Enum
 
 from src.types.common import TransactionResult
-
-@dataclass
-class CreateStorageOptions:
-    item_type: str
-    item: object
-
-@dataclass
-class GetItemOptions:
-    item_type: str
-    address: Optional[str]
-    
-@dataclass
-class UpdateStorageOptions:
-    item_type: str
-    item: object
-    
 @dataclass
 class AddItemResult:
     message: str

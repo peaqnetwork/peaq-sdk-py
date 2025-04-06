@@ -5,8 +5,24 @@ from enum import Enum
 
 # local imports
 from src.modules.base import Base
-from src.types.common import ChainType, SDKMetadata, PrecompileAddresses, CallModule, EvmTransaction, TransactionResult, SeedError
-from src.types.storage import CreateStorageOptions, GetItemOptions, GetItemError, StorageFunctionSignatures, StorageCallFunction, UpdateStorageOptions, AddItemResult, GetItemResult, UpdateItemResult, RemoveItemResult
+from src.types.common import (
+    ChainType,
+    SDKMetadata,
+    PrecompileAddresses,
+    CallModule,
+    EvmTransaction,
+    TransactionResult,
+    SeedError,
+)
+from src.types.storage import (
+    GetItemError,
+    StorageFunctionSignatures,
+    StorageCallFunction,
+    AddItemResult,
+    GetItemResult,
+    UpdateItemResult,
+    RemoveItemResult,
+)
 from src.utils.utils import evm_to_address
 
 # 3rd party imports
@@ -14,43 +30,64 @@ from substrateinterface.base import SubstrateInterface
 from web3 import Web3
 from eth_abi import encode
 
-"""Storage class that performs EVM and Substrate txs to utilize the peaq
-storage capabilities."""
+"""
+Provides methods to interact with the peaq on‑chain storage precompile (EVM)
+or pallet (Substrate). Supports add, get, update, and remove operations
+for arbitrary typed items.
+"""
 class Storage(Base):
-    def __init__(self, api, metadata) -> None:
-        """Sets previously set api and metadata to be used in the class."""
+    def __init__(self, api: Web3 | SubstrateInterface, metadata: SDKMetadata) -> None:
+        """
+        Initializes Storage with a connected API instance and shared SDK metadata.
+
+        Args:
+            api (Web3 | SubstrateInterface): The blockchain API connection.
+            metadata (SDKMetadata): Shared SDK metadata including signer info.
+        """
         super().__init__()
         self._api = api
         self.__metadata: SDKMetadata = metadata
 
-    def add_item(
-        self, 
-        item_type: str, 
-        item: object
-        ) -> AddItemResult:
+    def add_item(self, item_type: str, item: object) -> AddItemResult:
+        """
+        Adds a new item under the given type to on-chain storage.
+
+        For EVM chains, this invokes the storage precompile via a transaction
+        to the fixed precompile address. For Substrate chains, it calls the
+        peaqStorage pallet's `add_item` extrinsic directly.
+
+        Args:
+            item_type (str): A string key categorizing the item.
+            item (object): The value to store (will be JSON-stringified if not a str).
+
+        Returns:
+            AddItemResult: Contains a success message and the transaction receipt.
+
+        Raises:
+            SeedError: If no signer (seed) has been initialized.
+        """
         if not self.__metadata.pair:
-            raise SeedError(f"No seed/private key set for the operation 'add_item'. Unable to perform the write transaction.")
-        
-        # convert in case user wants to set a dict value
+            raise SeedError(
+                "No seed/private key set for the operation 'add_item'. "
+                "Unable to perform the write transaction."
+            )
+            
+        # Prepare payload
         item_string = item if isinstance(item, str) else json.dumps(item)
-                
-        # check if EVM or Substrate
+
         if self.__metadata.chain_type is ChainType.EVM:
             account = self.__metadata.pair
             add_item_function_selector = self._api.keccak(text=StorageFunctionSignatures.ADD_ITEM.value)[:4].hex()
             item_type_encoded = item_type.encode("utf-8").hex()
             final_item = item_string.encode("utf-8").hex()
-            
-            # Create the encoded parameters to create calldata
             encoded_params = encode(
                 ['bytes', 'bytes'],
                 [bytes.fromhex(item_type_encoded), bytes.fromhex(final_item)]
             ).hex()
             
-            payload = "0x" + add_item_function_selector + encoded_params
             tx: EvmTransaction = {
                 "to": PrecompileAddresses.STORAGE.value,
-                "data": payload
+                "data": f"0x{add_item_function_selector}{encoded_params}"
             }
             
             receipt = self.send_evm_tx(tx, account)
@@ -59,16 +96,11 @@ class Storage(Base):
                 receipt=receipt
             )
         else:
-            # Will be substrate if EVM is not set
-            # Check if api is connected
             keypair = self.__metadata.pair
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_STORAGE.value,
                 call_function=StorageCallFunction.ADD_ITEM.value,
-                call_params={
-                'item_type': item_type,
-                'item': item_string,
-                }
+                call_params={'item_type': item_type, 'item': item_string}
             )
             receipt = self.send_substrate_tx(call, keypair)
             return AddItemResult(
@@ -77,62 +109,88 @@ class Storage(Base):
             )
         
     def get_item(
-        self, 
-        item_type: str, 
-        address: Optional[str] = None, 
-        wss_base_url: Optional[str] = None
-        ) -> GetItemResult:
-        
-        # check if EVM or Substrate
+        self, item_type: str, address: Optional[str] = None, wss_base_url: Optional[str] = None
+    ) -> GetItemResult:
+        """
+        Retrieves a stored item by type for a given address.
+
+        For EVM chains, it converts the EVM address to SS58, opens a temporary
+        Substrate WS connection, and queries the storage pallet RPC. For
+        Substrate chains, it uses the existing connection.
+
+        Args:
+            item_type (str): The key under which the item was stored.
+            address (Optional[str]): The EVM or SS58 address to query. If not
+                provided, uses the initialized signer's address.
+            wss_base_url (Optional[str]): Required for EVM queries: a substrate
+                WS URL for RPC reads.
+
+        Returns:
+            GetItemResult: Contains the item type and the decoded string value.
+
+        Raises:
+            TypeError: If no address can be determined.
+            GetItemError: If no item exists under that type for the address.
+        """
         if self.__metadata.chain_type is ChainType.EVM:
-            evm_address = getattr(self.__metadata.pair, 'address', address) if self.__metadata.pair else address
+            evm_address = (
+                getattr(self.__metadata.pair, 'address', address)
+                if self.__metadata.pair
+                else address
+            )
             if not evm_address:
                 raise TypeError(f"Address is set to {evm_address}. Please either set seed at instance creation or pass an address.")
-            # convert address to substrate if evm
             owner_address = evm_to_address(evm_address)
-            
-            # force api change for easy read - which is why wss is required
             api = SubstrateInterface(url=wss_base_url, ss58_format=42)
         else:
-            owner_address = getattr(self.__metadata.pair, 'ss58_address', address) if self.__metadata.pair else address
+            owner_address = (
+                getattr(self.__metadata.pair, 'ss58_address', address)
+                if self.__metadata.pair
+                else address
+            )
             if not owner_address:
                 raise TypeError(f"Address is set to {owner_address}. Please either set seed at instance creation or pass an address.")
             api = self._api
         
-        # same read logic
+        # Query storage
         item_type_hex = "0x" + item_type.encode("utf-8").hex()
         block_hash = api.get_block_hash(None)
-        data = api.rpc_request(
-            StorageCallFunction.GET_ITEM.value,
-            [
-                owner_address, 
-                item_type_hex, 
-                block_hash
-            ]
+        
+        resp = api.rpc_request(
+            StorageCallFunction.GET_ITEM.value, [owner_address, item_type_hex, block_hash]
         )
         
         # Check result
-        if data['result'] is None:
+        if resp['result'] is None:
             raise GetItemError(f"Item type of {item_type} was not found at address {owner_address}.") 
         
-        get_item = data['result']['item']
-        human_readable_item = bytes.fromhex(get_item[2:]).decode("utf-8")
-        return GetItemResult(
-            item_type=item_type,
-            item=human_readable_item).to_dict()
+        raw = resp['result']['item']
+        decoded = bytes.fromhex(raw[2:]).decode("utf-8")
+        return GetItemResult(item_type=item_type, item=decoded).to_dict()
         
-    def update_item(
-        self, 
-        item_type: str, 
-        item: object
-    ) -> UpdateItemResult:
+    def update_item(self, item_type: str, item: object) -> UpdateItemResult:
+        """
+        Updates an existing item under the given type in on-chain storage. Mirrors `add_item` 
+        but calls the `update_item` precompile or pallet extrinsic.
+
+        Args:
+            item_type (str): The key categorizing the item.
+            item (object): The new value (JSON-stringified if not a str).
+
+        Returns:
+            UpdateItemResult: Contains a success message and the transaction receipt.
+
+        Raises:
+            SeedError: If no signer (seed) has been initialized.
+        """
         if not self.__metadata.pair:
-            raise SeedError(f"No seed/private key set for the operation 'update_item'. Unable to perform the write transaction.")
+            raise SeedError(
+                "No seed/private key set for the operation 'update_item'. "
+                "Unable to perform the write transaction."
+            )
         
-        # convert in case user wants to set a dict value
         item_string = item if isinstance(item, str) else json.dumps(item)
         
-        # check if EVM or Substrate
         if self.__metadata.chain_type is ChainType.EVM:
             account = self.__metadata.pair
             update_item_function_selector = self._api.keccak(text=StorageFunctionSignatures.UPDATE_ITEM.value)[:4].hex()
@@ -144,29 +202,22 @@ class Storage(Base):
                 ['bytes', 'bytes'],
                 [bytes.fromhex(item_type_encoded), bytes.fromhex(final_item)]
             ).hex()
-            
-            payload = "0x" + update_item_function_selector + encoded_params
+        
             tx: EvmTransaction = {
                 "to": PrecompileAddresses.STORAGE.value,
-                "data": payload
+                "data": f"0x{update_item_function_selector}{encoded_params}"
             }
-            
             receipt = self.send_evm_tx(tx, account)
             return UpdateItemResult(
                 message=f"Successfully updated the storage item type {item_type} with item {item} for the address {account.address}",
                 receipt=receipt
             )
         else:
-            # Will be substrate if EVM is not set
-            # Check if api is connected
             keypair = self.__metadata.pair
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_STORAGE.value,
                 call_function=StorageCallFunction.UPDATE_ITEM.value,
-                call_params={
-                'item_type': item_type,
-                'item': item_string,
-                }
+                call_params={'item_type': item_type, 'item': item_string}
             )
             receipt = self.send_substrate_tx(call, keypair)
             return UpdateItemResult(
@@ -174,13 +225,28 @@ class Storage(Base):
                 receipt=receipt
             )
             
-    def remove_item(
-        self,
-        item_type: str,
-    ) -> RemoveItemResult:
+    def remove_item(self, item_type: str) -> RemoveItemResult:
+        """
+        Removes an item under the given type from on-chain storage.
+
+        On EVM this will currently raise an error until the precompile is upgraded.
+        On Substrate it invokes the peaqStorage pallet's `remove_item` extrinsic directly.
+
+        Args:
+            item_type (str): The key categorizing the item to remove.
+
+        Returns:
+            RemoveItemResult: Contains a success message and the transaction receipt.
+
+        Raises:
+            SeedError: If no signer (seed) has been initialized.
+            ValueError: If called on EVM (not yet supported).
+        """
         if not self.__metadata.pair:
-            raise SeedError(f"No seed/private key set for the operation 'add_item'. Unable to perform the write transaction.")
-        
+            raise SeedError(
+                "No seed/private key set for the operation 'remove_item'. "
+                "Unable to perform the write transaction."
+            )
         # check if EVM or Substrate
         if self.__metadata.chain_type is ChainType.EVM:
             raise ValueError("Precompile for peaq Storage Remove Item will be included in the next runtime update.")
@@ -206,15 +272,11 @@ class Storage(Base):
                 receipt=receipt
             )
         else:
-            # Will be substrate if EVM is not set
-            # Check if api is connected
             keypair = self.__metadata.pair
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_STORAGE.value,
                 call_function=StorageCallFunction.REMOVE_ITEM.value,
-                call_params={
-                'item_type': item_type
-                }
+                call_params={'item_type': item_type}
             )
             receipt = self.send_substrate_tx(call, keypair)
             return RemoveItemResult(
