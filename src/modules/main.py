@@ -25,7 +25,8 @@ It inherits from Base, which contains common logic for both EVM and Substrate op
 """
 class Main(Base):
     def __init__(self, base_url: str, chain_type: Optional[ChainType]) -> None:
-        """Initializes the Main class, representing the primary interface for the SDK.
+        """
+        Initializes the Main class, representing the primary interface for the SDK.
 
         Args:
             base_url (str): The URL for connecting to the blockchain.
@@ -46,7 +47,8 @@ class Main(Base):
         chain_type: Optional[ChainType],
         seed: Optional[str] = None
         ) -> Main:
-        """Creates and returns a new instance of the SDK, connecting to the specified network.
+        """
+        Creates and returns a new instance of the SDK, connecting to the specified network.
 
         Args:
             base_url (str): The connection URL for the blockchain.
@@ -61,7 +63,8 @@ class Main(Base):
         return sdk
     
     def _initialize_signer(self, seed: Optional[str] = None) -> None:
-        """Initializes the signer by validating and setting the secret used for generating the key pair/account.
+        """
+        Initializes the signer by validating and setting the secret used for generating the key pair/account.
 
         Args:
             seed (Optional[str]): The mnemonic phrase or private key used to generate the key pair.
@@ -70,7 +73,8 @@ class Main(Base):
         self._set_metadata(seed)
     
     def _validate_secret(self, seed: Optional[str] = None):
-        """Validates that the provided seed is compatible with EVM or Substrate.
+        """
+        Validates that the provided seed is compatible with EVM or Substrate.
 
         Args:
             seed (Optional[str]): The private key (for EVM) or mnemonic phrase (for Substrate)
@@ -98,7 +102,8 @@ class Main(Base):
         return
     
     def _set_metadata(self, seed: Optional[str] = None) -> None:
-        """Generates a cryptographic key pair from the provided seed and stores it in the SDK metadata.
+        """
+        Generates a cryptographic key pair from the provided seed and stores it in the SDK metadata.
 
         This method invokes _get_key_pair, which applies blockchain-specific logic:
           - For EVM, it generates a key pair from a valid hexadecimal private key.
@@ -115,7 +120,8 @@ class Main(Base):
     
     
     def _create_api(self) -> Web3 | SubstrateInterface:
-        """Initializes and returns an API provider for blockchain interaction based on the chain type 
+        """
+        Initializes and returns an API provider for blockchain interaction based on the chain type 
         specified in the SDK metadata.
 
         Returns:
@@ -137,7 +143,8 @@ class Main(Base):
             return api
 
     def _validate_base_url(self, base_url: str, expected_prefix: str, interaction: ChainType) -> None:
-        """Validates that the base URL matches the expected protocol for the blockchain.
+        """
+        Validates that the base URL matches the expected protocol for the blockchain.
 
         Args:
             base_url (str): The URL used to connect to the blockchain.

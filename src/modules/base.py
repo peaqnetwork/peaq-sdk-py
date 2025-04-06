@@ -1,30 +1,41 @@
-# have substrate txs, evm initialization, etc
-from src.types.common import ExtrinsicExecutionError, TransactionResult, ChainType
+from typing import Optional, Union
+import ast
+import json
+
+from src.types.common import ChainType, ExtrinsicExecutionError, TransactionResult, EvmTransaction
 
 from web3 import Web3
+from eth_account import Account
+from substrateinterface.base import GenericCall
 from substrateinterface.keypair import Keypair, KeypairType
 from substrateinterface.exceptions import SubstrateRequestException
-from eth_account import Account
 
-from typing import Optional
-import json
-import ast
+"""
+Provides shared functionality for both EVM and Substrate SDK operations,
+including keypair generation and transaction submission logic.
+"""
 class Base:
     def __init__(self) -> None:
+        """Base initializer (no-op)."""
         pass
     
-    def _get_key_pair(self, chain_type: ChainType, seed: str) -> Account | Keypair:
-        """Generates a key pair from the provided seed based on the blockchain type.
+    def _get_key_pair(self, chain_type: ChainType, seed: str) -> Union[Account, Keypair]:
+        """
+        Generates a blockchain key pair from a seed string.
+
+        For EVM chains, interprets `seed` as a hex private key and returns an
+        `eth_account.Account`. For Substrate chains, treats `seed` as a BIP39
+        mnemonic (12 or 24 words) and returns a `substrateinterface.Keypair`.
 
         Args:
-            chain_type (ChainType): The blockchain type (EVM or Substrate) used to determine the key pair generation method.
-            seed (str): The mnemonic phrase (for Substrate) or private key (for EVM).
+            chain_type (ChainType): The target chain type (EVM or SUBSTRATE).
+            seed (str): Hex private key (EVM) or mnemonic phrase (Substrate).
 
         Returns:
-            Account | Keypair: A key pair object appropriate for the given blockchain type.
+            Account | Keypair: A signing key pair for transactions.
 
         Raises:
-            ValueError: If the seed is not provided.
+            ValueError: If `seed` is empty or None.
         """
         if not seed:
             raise ValueError('Seed is required')
@@ -37,11 +48,23 @@ class Base:
                 crypto_type=KeypairType.SR25519
             )
     
-    def send_substrate_tx(self, call, keypair) -> TransactionResult:
-        # send with tip to handle priority issues
+    def send_substrate_tx(self, call: GenericCall, keypair: Keypair) -> TransactionResult:
+        """
+        Submits and waits for inclusion of a Substrate extrinsic, automatically
+        retrying with increasing tip if needed.
+
+        Args:
+            call (GenericCall): A `substrateinterface` call object created via `compose_call`.
+            keypair (Keypair): Used to sign the extrinsic.
+
+        Returns:
+            TransactionResult: Contains `block_hash`, `extrinsic_hash`, and fee paid.
+
+        Raises:
+            ExtrinsicExecutionError: If the extrinsic fails or is rejected by the chain.
+        """
         receipt = self._send_with_tip(call, keypair)
 
-        # Analyze the receipt
         if receipt.error_message is not None:
             error_type = receipt.error_message['type']
             error_name = receipt.error_message['name']
@@ -54,11 +77,25 @@ class Base:
         )
     
     
-    def send_evm_tx(self, tx, account):
+    def send_evm_tx(self, tx: EvmTransaction, account: Account) -> dict:
+        """
+        Builds, signs, and broadcasts an EVM transaction via the Web3 provider.
+
+        It estimates gas, fetches gas price, nonce, and chain ID, then signs
+        with the provided `Account` and waits for the receipt.
+
+        Args:
+            tx (dict): A transaction dict containing at minimum `to` and `data`.
+            account (Account): An `eth_account.Account` with a private key.
+
+        Returns:
+            dict: The transaction receipt returned by Web3.
+
+        Raises:
+            ExtrinsicExecutionError: If Web3 returns an error string.
+        """
         try:
             checksum_address = Web3.to_checksum_address(account.address)
-            
-            # build tx
             tx['from'] = checksum_address
             estimated_gas = self._api.eth.estimate_gas(tx)
             tx['gas'] = estimated_gas
@@ -66,18 +103,36 @@ class Base:
             tx['nonce'] = self._api.eth.get_transaction_count(checksum_address)
             tx['chainId'] = self._api.eth.chain_id
 
-            # sign tx on behalf of the user
             signed_tx = account.sign_transaction(tx)
             tx_receipt = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
             tx_hash = self._api.to_hex(tx_receipt)
             receipt = self._api.eth.wait_for_transaction_receipt(tx_hash)
-            
             return receipt
-        except Exception as error:
-            error_dict = ast.literal_eval(error.message)
-            raise ExtrinsicExecutionError(f"{error_dict['message']}")
         
-    def _send_with_tip(self, call, keypair):
+        except Exception as error:
+            try:
+                err_dict = ast.literal_eval(error.message)
+                message = err_dict.get("message", str(error))
+            except Exception:
+                message = str(error)
+            raise ExtrinsicExecutionError(message)
+        
+    def _send_with_tip(self, call: GenericCall, keypair: Keypair) -> dict:
+        """
+        Attempts to submit a Substrate extrinsic, retrying up to 5 times
+        with an increasing tip if the node rejects due to low priority.
+
+        Args:
+            call (GenericCall): A `substrateinterface` call object.
+            keypair (Keypair): The `Keypair` for signing.
+
+        Returns:
+            The extrinsic receipt object upon successful inclusion.
+
+        Raises:
+            ExtrinsicExecutionError: If all retry attempts fail due to low priority.
+            Exception: For other submission errors.
+        """
         tip_value = 0
         max_attempts = 5
         attempt = 0
