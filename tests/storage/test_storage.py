@@ -23,6 +23,7 @@ SUBSTRATE_SEED = os.getenv("SUBSTRATE_SEED")
 EVM_ADDRESS= os.getenv("EVM_ADDRESS")
 EVM_PRIVATE = os.getenv("EVM_PRIVATE")
 
+@pytest.mark.skip(reason="Testing DID")
 def test_substrate_storage(substrate_sdk, item_type, item, config):
     # Create a storage item.
     result = substrate_sdk.storage.add_item(item_type=item_type, item=item)

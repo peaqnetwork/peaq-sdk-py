@@ -16,7 +16,14 @@ Unix/macOS
 python3 -m venv peaq-sdk-py
 source peaq-sdk-py/bin/activate
 ```
+leave with cmd: `deactivate`
 
+## Build package
+To build the package you can execute the cmd:
+```
+python -m build
+```
+This will create a .zip local instance of the package in the `dist/` directory
 
 # Using the sdk
 Link the reference to documentation

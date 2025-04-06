@@ -2,6 +2,17 @@ __pycache__
 
 .pytest_cache
 
-peaq-sdk-py
+working_env
 
 .env
+
+venv/
+.venv/
+env/
+
+.DS_STORE
+MANIFEST.in
+
+peaq_sdk_py.egg-info
+
+dist

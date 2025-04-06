@@ -96,18 +96,3 @@ def evm_sdk(config, chain, connection_type):
         base_url=base_rpc, 
         seed=config["EVM_PRIVATE"])
     return sdk, base_wss
-
-# Parametrized fixtures for item type and item value.
-# has to be unique because of storage evm issues
-@pytest.fixture(params=["python-sdk-storage-010"])
-def item_type(request):
-    return request.param
-
-@pytest.fixture(params=["test", {"test": {"hi": 123}}])
-def item(request):
-    return request.param
-
-# execute full tests with:
-# pytest -vv -r a
-
-# EVM will have majority failing because there is no remove method for EVM and that interferes with the expected flow

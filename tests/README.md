@@ -26,3 +26,8 @@ log results
 ```
 pytest -vv -r a > pytest.log
 ```
+
+Only run DID tests:
+```
+pytest -m did -vv
+```

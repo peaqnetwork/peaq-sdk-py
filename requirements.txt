@@ -1,4 +1,7 @@
-wheel=0.45.1
-web3=7.10.0
-substrate-interface=1.7.11
-python-dotenv=1.1.0
+setuptools==78.1.0
+wheel==0.46.0
+web3==7.10.0
+substrate-interface==1.7.11
+protobuf==6.30.2
+python-dotenv==1.1.0
+build==1.2.2.post1
