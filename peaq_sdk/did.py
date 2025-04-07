@@ -33,6 +33,8 @@ class Did(Base):
         self._api = api
         self.__metadata: SDKMetadata = metadata
     def create(self, name: str, custom_document_fields: CustomDocumentFields) -> CommonResult:
+        """Creates a new DID for the previously initialized wallet / keyring"""
+        
         if not isinstance(custom_document_fields, CustomDocumentFields):
             raise TypeError(
                 f"custom_document_fields object must be CustomDocumentFields, "
@@ -84,6 +86,8 @@ class Did(Base):
             )
             
     def read(self, name: str, address: Optional[str] = None, wss_base_url: Optional[str] = None) -> ReadDidResult:
+        """Reads DID at the given name for the keypair/wallet attached, or without using passing seed at create instance, and address can be used to read."""
+        
         if self.__metadata.chain_type is ChainType.EVM:
             evm_address = (
                 getattr(self.__metadata.pair, 'address', address)
@@ -130,10 +134,60 @@ class Did(Base):
             document=document
         )
 
-    def update():
-        pass
+    def update(self, name: str, custom_document_fields: CustomDocumentFields) -> CommonResult:
+        """Overwrites the existing data in full"""
+        if not isinstance(custom_document_fields, CustomDocumentFields):
+            raise TypeError(
+                f"custom_document_fields object must be CustomDocumentFields, "
+                f"got {type(custom_document_fields).__name__!r}"
+            )
+        if not self.__metadata.pair:
+            raise SeedError(
+                "No seed/private key set for the operation 'update'. "
+                "Unable to perform the write transaction."
+            )
+        if self.__metadata.chain_type is ChainType.EVM:
+            account = self.__metadata.pair
+            serialized_did = self._generate_did_document(account.address, custom_document_fields)
+            did_function_selector = self._api.keccak(text=DidFunctionSignatures.UPDATE_ATTRIBUTE.value)[:4].hex()
+            name_encoded = name.encode("utf-8").hex()
+            did_encoded = serialized_did.encode("utf-8").hex()
+            encoded_params = encode(
+                ['address', 'bytes', 'bytes', 'uint32'],
+                [account.address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
+            ).hex()
+            
+            tx: EvmTransaction = {
+                "to": PrecompileAddresses.DID.value,
+                "data": f"0x{did_function_selector}{encoded_params}"
+            }
+            
+            receipt = self._send_evm_tx(tx, account)
+            return CommonResult(
+                message=f"Successfully updated the DID under the name {name} for user {account.address}",
+                receipt=receipt
+            )
+        else:
+            keypair = self.__metadata.pair
+            serialized_did = self._generate_did_document(keypair.ss58_address, custom_document_fields)
+            call = self._api.compose_call(
+                call_module=CallModule.PEAQ_DID.value,
+                call_function=DidCallFunction.UPDATE_ATTRIBUTE.value,
+                call_params={
+                    'did_account': keypair.ss58_address,
+                    'name': name,
+                    'value': serialized_did,
+                    'valid_for': None
+                    }
+            )
+            receipt = self._send_substrate_tx(call, keypair)
+            return CommonResult(
+                message=f"Successfully updated the DID under the name {name} for user {keypair.ss58_address}",
+                receipt=receipt
+            )
     
     def remove(self, name: str) -> CommonResult:
+        """Removes DID at the given name for the keypair/wallet attached"""
         if not self.__metadata.pair:
             raise SeedError(
                 "No seed/private key set for the operation 'remove'. "
