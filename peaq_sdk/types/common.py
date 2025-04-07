@@ -53,3 +53,7 @@ class ExtrinsicExecutionError(Exception):
 class SeedError(Exception):
     """Raised when there is no seed set for the write operation."""
     pass
+
+class BaseUrlError(Exception):
+    """Raised when an incorrect Base Url is set."""
+    pass

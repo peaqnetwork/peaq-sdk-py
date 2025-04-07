@@ -76,3 +76,15 @@ class DidCallFunction(str, Enum):
     READ_ATTRIBUTE = 'peaqdid_readAttribute'
     UPDATE_ATTRIBUTE = 'update_attribute'
     REMOVE_ATTRIBUTE = 'remove_attribute'
+    
+@dataclass
+class ReadDidResult:
+    name: str
+    value: str
+    validity: str
+    created: str
+    document: dict
+    
+class GetDidError(Exception):
+    """Raised when there is a failure to the function get item."""
+    pass

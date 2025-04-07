@@ -7,8 +7,8 @@ from typing import Optional, Union
 from peaq_sdk.base import Base
 from peaq_sdk.did import Did
 from peaq_sdk.storage import Storage
-from peaq_sdk.types.common import ChainType, SDKMetadata
-from peaq_sdk.types.main import CreateInstanceOptions, BaseUrlError
+from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
+from peaq_sdk.types.main import CreateInstanceOptions
 
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface

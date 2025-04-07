@@ -1,5 +1,4 @@
-from typing import Union
-
+from typing import Optional
 
 from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
@@ -9,7 +8,8 @@ from peaq_sdk.types.common import (
     CallModule,
     EvmTransaction,
     PrecompileAddresses,
-    CommonResult
+    CommonResult,
+    BaseUrlError
 )
 from peaq_sdk.types.did import (
     CustomDocumentFields, 
@@ -17,10 +17,14 @@ from peaq_sdk.types.did import (
     Signature,
     Service,
     DidFunctionSignatures,
-    DidCallFunction
+    DidCallFunction,
+    ReadDidResult,
+    GetDidError
 )
 from peaq_sdk.utils import peaq_proto
+from peaq_sdk.utils.utils import evm_to_address
 
+from substrateinterface.base import SubstrateInterface
 from eth_abi import encode
 
 class Did(Base):
@@ -78,8 +82,54 @@ class Did(Base):
                 message=f"Successfully added the DID under the name {name} for user {keypair.ss58_address}",
                 receipt=receipt
             )
-    def read():
-        pass
+            
+    def read(self, name: str, address: Optional[str] = None, wss_base_url: Optional[str] = None) -> ReadDidResult:
+        if self.__metadata.chain_type is ChainType.EVM:
+            evm_address = (
+                getattr(self.__metadata.pair, 'address', address)
+                if self.__metadata.pair
+                else address
+            )
+            if not evm_address:
+                raise TypeError(f"Address is set to {evm_address}. Please either set seed at instance creation or pass an address.")
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(evm_address)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            owner_address = (
+                getattr(self.__metadata.pair, 'ss58_address', address)
+                if self.__metadata.pair
+                else address
+            )
+            if not owner_address:
+                raise TypeError(f"Address is set to {owner_address}. Please either set seed at instance creation or pass an address.")
+            api = self._api
+        
+        # Query storage
+        name_encoded = "0x" + name.encode("utf-8").hex()
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            DidCallFunction.READ_ATTRIBUTE.value, [owner_address, name_encoded, block_hash]
+        )
+        # Check result
+        if resp['result'] is None:
+            raise GetDidError(f"DID of name {name} was not found at address {owner_address}.")
+
+        read_name = bytes.fromhex(resp['result']['name'][2:]).decode('utf-8')
+        value = bytes.fromhex(resp['result']['value'][2:]).decode('utf-8')
+        to_deserialize = bytes.fromhex(value)
+        document = self._deserialize_did(to_deserialize)
+        
+        return ReadDidResult(
+            name=read_name,
+            value=value,
+            validity=str(resp['result']['validity']),
+            created=str(resp['result']['created']),
+            document=document
+        )
+
     def update():
         pass
     
@@ -153,8 +203,6 @@ class Did(Base):
         
         serialized_data = doc.SerializeToString()
         serialized_hex = serialized_data.hex()
-        # deserialized_did = self._deserialize_did(serialized_data)
-        # print(deserialized_did)
         return serialized_hex
     
     def _create_verification_method(self, id: str, address: str, verification: Verification) -> peaq_proto.VerificationMethod:
