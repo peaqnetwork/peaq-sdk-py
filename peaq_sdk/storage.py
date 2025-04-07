@@ -30,12 +30,12 @@ from substrateinterface.base import SubstrateInterface
 from web3 import Web3
 from eth_abi import encode
 
-"""
-Provides methods to interact with the peaq on‑chain storage precompile (EVM)
-or pallet (Substrate). Supports add, get, update, and remove operations
-for arbitrary typed items.
-"""
 class Storage(Base):
+    """
+    Provides methods to interact with the peaq on‑chain storage precompile (EVM)
+    or pallet (Substrate). Supports add, get, update, and remove operations
+    for arbitrary typed items.
+    """
     def __init__(self, api: Web3 | SubstrateInterface, metadata: SDKMetadata) -> None:
         """
         Initializes Storage with a connected API instance and shared SDK metadata.

@@ -16,14 +16,14 @@ from substrateinterface.keypair import Keypair, KeypairType
 from web3 import Web3
 
 
-"""
-Entry point for the Python SDK.
-
-The Main class serves as the primary interface for the SDK, providing methods for 
-initializing the signer, creating the API connection, and handling blockchain-specific operations.
-It inherits from Base, which contains common logic for both EVM and Substrate operations.
-"""
 class Main(Base):
+    """
+    Entry point for the Python SDK.
+
+    The Main class serves as the primary interface for the SDK, providing methods for 
+    initializing the signer, creating the API connection, and handling blockchain-specific operations.
+    It inherits from Base, which contains common logic for both EVM and Substrate operations.
+    """
     def __init__(self, base_url: str, chain_type: Optional[ChainType]) -> None:
         """
         Initializes the Main class, representing the primary interface for the SDK.

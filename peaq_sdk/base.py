@@ -10,11 +10,11 @@ from substrateinterface.base import GenericCall
 from substrateinterface.keypair import Keypair, KeypairType
 from substrateinterface.exceptions import SubstrateRequestException
 
-"""
-Provides shared functionality for both EVM and Substrate SDK operations,
-including keypair generation and transaction submission logic.
-"""
 class Base:
+    """
+    Provides shared functionality for both EVM and Substrate SDK operations,
+    including keypair generation and transaction submission logic.
+    """
     def __init__(self) -> None:
         """Base initializer (no-op)."""
         pass

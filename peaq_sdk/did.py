@@ -82,8 +82,51 @@ class Did(Base):
         pass
     def update():
         pass
-    def remove():
-        pass
+    def remove(self, name: str):
+        if not self.__metadata.pair:
+            raise SeedError(
+                "No seed/private key set for the operation 'remove'. "
+                "Unable to perform the write transaction."
+            )
+        if self.__metadata.chain_type is ChainType.EVM:
+            account = self.__metadata.pair
+            did_function_selector = self._api.keccak(text=DidFunctionSignatures.REMOVE_ATTRIBUTE.value)[:4].hex()
+            name_encoded = name.encode("utf-8").hex()
+            did_encoded = serialized_did.encode("utf-8").hex()
+            encoded_params = encode(
+                ['address', 'bytes', 'bytes', 'uint32'],
+                [account.address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
+            ).hex()
+            
+            tx: EvmTransaction = {
+                "to": PrecompileAddresses.DID.value,
+                "data": f"0x{did_function_selector}{encoded_params}"
+            }
+            
+            receipt = self._send_evm_tx(tx, account)
+            return CreateDidResult(
+                message=f"Successfully added the DID under the name {name} for user {account.address}",
+                receipt=receipt
+            )
+        else:
+            keypair = self.__metadata.pair
+            serialized_did = self._generate_did_document(keypair.ss58_address, custom_document_fields)
+            call = self._api.compose_call(
+                call_module=CallModule.PEAQ_DID.value,
+                call_function=DidCallFunction.ADD_ATTRIBUTE.value,
+                call_params={
+                    'did_account': keypair.ss58_address,
+                    'name': name,
+                    'value': serialized_did,
+                    'valid_for': None
+                    }
+            )
+            receipt = self._send_substrate_tx(call, keypair)
+            return CreateDidResult(
+                message=f"Successfully added the DID under the name {name} for user {keypair.ss58_address}",
+                receipt=receipt
+            )
+    
     
     def _generate_did_document(self, address: str, custom_document_fields: CustomDocumentFields) -> str:
         doc = peaq_proto.Document()
