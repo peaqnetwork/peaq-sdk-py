@@ -13,7 +13,7 @@ from substrateinterface.exceptions import SubstrateRequestException
 class Base:
     """
     Provides shared functionality for both EVM and Substrate SDK operations,
-    including keypair generation and transaction submission logic.
+    including signer generation and transaction submission logic.
     """
     def __init__(self) -> None:
         """Base initializer (no-op)."""
@@ -50,15 +50,29 @@ class Base:
             
     def _resolve_address(self, chain_type: ChainType, pair: Union[Keypair, Account], address: Optional[str] = None) -> str:
             """
-            Resolves the effective user address and keypair to use for DID creation/update.
-            
-            1. If a local keypair is present (self.__metadata.pair), we use it to 
-            derive the address.
-            2. If no local keypair, we fall back to the `address` parameter.
-            3. Raises an error if neither is available.
-            
+            Resolves the user address for DID-related operations based on the chain type
+            (EVM or Substrate) and whether a local keypair is available.
+
+            - EVM: If a local pair is provided, the address is derived from the
+            `Account` object (`account.address`). Otherwise, `address` is used, and a
+            `SeedError` is raised if no `address` is specified.
+
+            - Substrate: If a local pair is provided, uses its `ss58_address`. Otherwise falls
+            back to the optional `address`, and raises `SeedError` if neither
+            is available.
+
+            Args:
+                chain_type (ChainType): The blockchain type (EVM or Substrate).
+                pair (Union[Keypair, Account]): A local keypair or EVM account, if any.
+                address (Optional[str]): An optional fallback address. For EVM, this
+                    should be an H160 address; for Substrate, an SS58 address.
+
             Returns:
-            (user_address, keypair_or_none)
+                str: The resolved user address to be used for DID creation, update,
+                    or removal.
+
+            Raises:
+                SeedError: If neither a local keypair nor a fallback `address` is provided.
             """
             # Check chain type
             if chain_type is ChainType.EVM:

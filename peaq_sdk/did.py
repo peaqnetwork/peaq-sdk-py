@@ -27,18 +27,54 @@ from peaq_sdk.utils import peaq_proto
 from peaq_sdk.utils.utils import evm_to_address
 
 from substrateinterface.base import SubstrateInterface
+from web3 import Web3
 from eth_abi import encode
 
 class Did(Base):
-    def __init__(self, api, metadata) -> None:
+    """
+    Provides methods to interact with the peaq on-chain DID precompile (EVM)
+    or pallet (Substrate). Supports add, get, update, and remove operations.
+    """
+    def __init__(self, api: Web3 | SubstrateInterface, metadata: SDKMetadata) -> None:
+        """
+        Initializes DID with a connected API instance and shared SDK metadata.
+
+        Args:
+            api (Web3 | SubstrateInterface): The blockchain API connection.
+                which may be a Web3 (EVM) or SubstrateInterface (Substrate).
+            metadata (SDKMetadata): Shared metadata, including chain type,
+                and optional signer.
+        """
         super().__init__()
         self._api = api
         self.__metadata: SDKMetadata = metadata
         
-        
-        
     def create(self, name: str, custom_document_fields: CustomDocumentFields, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
-        """Creates a new DID for the previously initialized wallet / keyring"""
+        """
+        Creates a new Decentralized Identifier (DID) on-chain with the specified `name`
+        and `custom_document_fields`.
+
+        - EVM: Constructs a transaction to the `addAttribute` DID precompile contract.
+        - Substrate: Composes an `add_attribute` extrinsic to the peaqDid
+            pallet.
+
+        Args:
+            name (str): The name or alias of the DID.
+            custom_document_fields (CustomDocumentFields): Additional fields/claims to embed
+                in the DID document.
+            address (Optional[str]): An optional address if no local keypair is present.
+                On EVM, this should be an H160 address. On Substrate, a SS58 address.
+
+        Returns:
+            Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+                - WrittenTransactionResult: The transaction or extrinsic was signed and broadcasted.
+                    Returned with a message and receipt.
+                - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
+                    but not signed (no local signer). Returned with message and tx/call.
+
+        Raises:
+            TypeError: If `custom_document_fields` is not an instance of `CustomDocumentFields`.
+        """
         if not isinstance(custom_document_fields, CustomDocumentFields):
             raise TypeError(
                 f"custom_document_fields object must be CustomDocumentFields, "
@@ -102,7 +138,39 @@ class Did(Base):
             
             
     def read(self, name: str, address: Optional[str] = None, wss_base_url: Optional[str] = None) -> ReadDidResult:
-        """Reads DID at the given name for the keypair/wallet attached, or without using passing seed at create instance, and address can be used to read."""
+        """
+        Reads (fetches) an on-chain DID identified by `name`. This method locates
+        the DID document stored at `name` for the given user address.
+
+        - EVM: Uses the EVM address (either from a local signer if present, or the
+            passed `address` parameter). Because DID data is actually stored in the
+            Substrate-based registry, a valid `wss_base_url` must be provided to
+            temporarily connect and query the Substrate chain.
+        - Substrate: Queries the DID registry directly via the existing Substrate connection
+            (`self._api`). The address defaults to the local keypair's SS58 address
+            if none is explicitly provided.
+
+        Args:
+            name (str): The DID name or label under which the document is stored.
+            address (Optional[str]): The address owning the DID. On EVM, this should
+                be a H160 address; on Substrate, an SS58 address. If not provided,
+                falls back to the local signer's address (if any).
+            wss_base_url (Optional[str]): A Substrate WebSocket URL required only
+                when reading DIDs on an EVM chain.
+
+        Returns:
+            ReadDidResult:
+                An object containing the DID name, on-chain value, validity, creation
+                timestamp, and the deserialized DID document.
+
+        Raises:
+            TypeError:
+                If no valid address can be determined (no local signer and no `address`).
+            BaseUrlError:
+                If reading from an EVM chain but no `wss_base_url` is provided.
+            GetDidError:
+                If the DID specified by `name` does not exist on-chain for `address`.
+        """
         
         if self.__metadata.chain_type is ChainType.EVM:
             evm_address = (
@@ -151,9 +219,33 @@ class Did(Base):
         )
 
 
-
     def update(self, name: str, custom_document_fields: CustomDocumentFields, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
-        """Overwrites the existing data in full"""
+        """
+        Updates an existing DID identified by `name`, overwriting the entire DID
+        document with new `custom_document_fields`. Use caution, as all existing
+        data is replaced with the newly provided fields.
+        
+        - EVM: Constructs a transaction to the `updateAttribute` DID precompile contract.
+        - Substrate: Composes an `update_attribute` extrinsic to the peaqDid
+            pallet.
+        
+        Args:
+            name (str): The unique DID name or label to update.
+            custom_document_fields (CustomDocumentFields): The new fields to
+                embed in the DID document. These fully replace the prior document.
+            address (Optional[str]): An optional address if no local keypair is present.
+                On EVM, this should be an H160 address. On Substrate, a SS58 address.
+
+        Returns:
+            Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+                - WrittenTransactionResult: The transaction or extrinsic was signed and broadcasted.
+                    Returned with a message and receipt.
+                - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
+                    but not signed (no local signer). Returned with message and tx/call.
+
+        Raises:
+            TypeError: If `custom_document_fields` is not an instance of `CustomDocumentFields`.
+        """
         if not isinstance(custom_document_fields, CustomDocumentFields):
             raise TypeError(
                 f"custom_document_fields object must be CustomDocumentFields, "
@@ -219,7 +311,26 @@ class Did(Base):
 
     
     def remove(self, name: str, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
-        """Removes DID at the given name for the keypair/wallet attached"""
+        """
+        Removes an existing on-chain DID identified by `name`. Once removed,
+        the DID data is no longer accessible via subsequent reads.
+        
+        - EVM: Constructs a transaction to the `removeAttribute` DID precompile contract.
+        - Substrate: Composes an `remove_attribute` extrinsic to the peaqDid
+            pallet.
+        
+        Args:
+            name (str): The DID name or alias to remove from the chain.
+            address (Optional[str]): An optional address if no local keypair is present.
+                On EVM, this should be an H160 address. On Substrate, a SS58 address.
+
+        Returns:
+            Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+                - WrittenTransactionResult: The transaction or extrinsic was signed and broadcasted.
+                    Returned with a message and receipt.
+                - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
+                    but not signed (no local signer). Returned with message and tx/call.
+        """
         
         user_address = self._resolve_address(chain_type=self.__metadata.chain_type, pair=self.__metadata.pair, address=address)
         
@@ -272,6 +383,30 @@ class Did(Base):
     
     
     def _generate_did_document(self, address: str, custom_document_fields: CustomDocumentFields) -> str:
+        """
+        Constructs and serializes a DID document in Protobuf format based on the
+        provided `address` and `custom_document_fields`. The result is returned as
+        a hex-encoded string.
+
+        This document includes:
+        - `id` and `controller` fields both set to `"did:peaq:{address}"`.
+        - Verification methods (and authentications) if present in `custom_document_fields.verifications`.
+        - A signature if `custom_document_fields.signature` is set.
+        - One or more services if `custom_document_fields.services` is provided.
+
+        Args:
+            address (str): The on-chain address (EVM hex or Substrate SS58) representing
+                the DID subject.
+            custom_document_fields (CustomDocumentFields): Additional fields or claims
+                (verification methods, signature, services) to embed into the DID document.
+
+        Returns:
+            str: A hex-encoded Protobuf serialization of the DID document.
+
+        Raises:
+            ValueError: If a verification type or signature type is invalid for the
+                current chain type (checked inside helper methods).
+        """
         doc = peaq_proto.Document()
         doc.id = f"did:peaq:{address}"
         doc.controller = f"did:peaq:{address}"
@@ -302,6 +437,32 @@ class Did(Base):
         return serialized_hex
     
     def _create_verification_method(self, id: str, address: str, verification: Verification) -> peaq_proto.VerificationMethod:
+        """
+        Builds a Protobuf `VerificationMethod` from the given `verification`
+        object. Enforces certain constraints depending on whether the chain type
+        is EVM or Substrate.
+
+        For EVM chains:
+        - Only "EcdsaSecp256k1RecoveryMethod2020" is supported.
+
+        For Substrate chains:
+        - The `verification.type` must be one of "Ed25519VerificationKey2020",
+            "Sr25519VerificationKey2020", or "EcdsaSecp256k1RecoveryMethod2020".
+
+        Args:
+            id (str): A string identifier for the verification method,
+                typically `"did:peaq:{address}#keys-{N}"`.
+            address (str): The address used as controller and public key fallback
+                if no `public_key_multibase` is specified in `verification`.
+            verification (Verification): Contains details such as the type, potential
+                `public_key_multibase`, etc.
+
+        Returns:
+            peaq_proto.VerificationMethod: A populated Protobuf verification method.
+
+        Raises:
+            ValueError: If the `verification.type` is unsupported for the current chain.
+        """
         verification_method = peaq_proto.VerificationMethod()
         verification_method.id = id
         
@@ -331,6 +492,25 @@ class Did(Base):
         return verification_method
     
     def _add_signature(self, signature: Signature) -> peaq_proto.Signature:
+        """
+        Constructs a Protobuf `Signature` object from a given `Signature` dataclass,
+        enforcing the supported signature types and mandatory fields.
+
+        Supported types:
+        - "EcdsaSecp256k1RecoveryMethod2020"
+        - "Ed25519VerificationKey2020"
+        - "Sr25519VerificationKey2020"
+
+        Args:
+            signature (Signature): Contains `type`, `issuer`, and `hash`.
+
+        Returns:
+            peaq_proto.Signature: The Protobuf representation of the signature.
+
+        Raises:
+            ValueError: If `signature.type` is not one of the allowed types, or if
+                `issuer` or `hash` are missing.
+        """
         allowed = {
             "EcdsaSecp256k1RecoveryMethod2020",
             "Ed25519VerificationKey2020",
@@ -355,6 +535,22 @@ class Did(Base):
         return proto_signature
     
     def _add_service(self, service: Service):
+        """
+        Builds a Protobuf `Services` message representing one service entry in the
+        DID document. Validates required fields and stores either a service endpoint
+        or some `data` (if provided).
+
+        Args:
+            service (Service): Must include an `id`, `type`, and at least one of
+                `service_endpoint` or `data`.
+
+        Returns:
+            peaq_proto.Services: A populated Protobuf service record.
+
+        Raises:
+            ValueError: If `service.id` or `service.type` is missing, or if neither
+                `service_endpoint` nor `data` is provided.
+        """
         if not service.id:
             raise ValueError("Service.id is required")
         if not service.type:
@@ -375,6 +571,15 @@ class Did(Base):
         return proto_service
     
     def _deserialize_did(self, data):
+        """
+        Parses a Protobuf-serialized DID document from the given raw `data` bytes.
+
+        Args:
+            data (bytes): The raw Protobuf-encoded DID document.
+
+        Returns:
+            peaq_proto.Document: The deserialized DID document.
+        """
         deserialized_doc = peaq_proto.Document()
-        deserialized_doc.ParseFromString(data)  # ParseFromString modifies deserialized_doc in place
+        deserialized_doc.ParseFromString(data)
         return deserialized_doc

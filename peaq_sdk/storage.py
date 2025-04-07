@@ -33,9 +33,8 @@ from eth_abi import encode
 
 class Storage(Base):
     """
-    Provides methods to interact with the peaq on‑chain storage precompile (EVM)
-    or pallet (Substrate). Supports add, get, update, and remove operations
-    for arbitrary typed items.
+    Provides methods to interact with the peaq on-chain storage precompile (EVM)
+    or pallet (Substrate). Supports add, get, update, and remove operations.
     """
     def __init__(self, api: Web3 | SubstrateInterface, metadata: SDKMetadata) -> None:
         """
@@ -43,7 +42,9 @@ class Storage(Base):
 
         Args:
             api (Web3 | SubstrateInterface): The blockchain API connection.
-            metadata (SDKMetadata): Shared SDK metadata including signer info.
+                which may be a Web3 (EVM) or SubstrateInterface (Substrate).
+            metadata (SDKMetadata): Shared metadata, including chain type,
+                and optional signer.
         """
         super().__init__()
         self._api = api
@@ -51,21 +52,24 @@ class Storage(Base):
 
     def add_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
-        Adds a new item under the given type to on-chain storage.
-
-        For EVM chains, this invokes the storage precompile via a transaction
-        to the fixed precompile address. For Substrate chains, it calls the
-        peaqStorage pallet's `add_item` extrinsic directly.
+        Adds a new item of `item_type` to the on-chain storage, storing `item`
+        as its value.
+        
+        - EVM: Constructs a transaction to the `addItem` storage precompile contract.
+        - Substrate: Composes an `add_item` extrinsic to the peaqStorage
+            pallet.
 
         Args:
-            item_type (str): A string key categorizing the item.
-            item (object): The value to store (will be JSON-stringified if not a str).
+            item_type (str): A string key used to categorize or identify the item.
+            item (object): The value to store. If not already a string, it is
+                serialized to JSON before being sent on-chain.
 
         Returns:
-            AddItemResult: Contains a success message and the transaction receipt.
-
-        Raises:
-            SeedError: If no signer (seed) has been initialized.
+            Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+                - WrittenTransactionResult: The transaction or extrinsic was signed and broadcasted.
+                    Returned with a message and receipt.
+                - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
+                    but not signed (no local signer). Returned with message and tx/call.
         """
  
         # Prepare payload
@@ -121,25 +125,29 @@ class Storage(Base):
         self, item_type: str, address: Optional[str] = None, wss_base_url: Optional[str] = None
     ) -> GetItemResult:
         """
-        Retrieves a stored item by type for a given address.
-
-        For EVM chains, it converts the EVM address to SS58, opens a temporary
-        Substrate WS connection, and queries the storage pallet RPC. For
-        Substrate chains, it uses the existing connection.
+        Retrieves a stored item by its `item_type` for the specified address.
+        
+        - EVM: Method converts the EVM address (either from the local keypair or 
+            the passed `address` argument) to its Substrate format, then temporarily
+            connects to a Substrate node via `wss_base_url` to fetch the on-chain storage.
+        - Substrate: If called on a Substrate chain, it uses the existing Substrate API
+            connection directly.
 
         Args:
             item_type (str): The key under which the item was stored.
-            address (Optional[str]): The EVM or SS58 address to query. If not
-                provided, uses the initialized signer's address.
-            wss_base_url (Optional[str]): Required for EVM queries: a substrate
-                WS URL for RPC reads.
+            address (Optional[str]): The address whose data is being queried. If not provided,
+                the address from the local signer (if any) is used.
+            wss_base_url (Optional[str]): The Substrate WebSocket endpoint. Required only
+                if you are querying on an EVM chain to read via Substrate.
 
         Returns:
-            GetItemResult: Contains the item type and the decoded string value.
+            GetItemResult:
+                - `item_type`: The key requested.
+                - `item`: The decoded value (as a string).
 
         Raises:
-            TypeError: If no address can be determined.
-            GetItemError: If no item exists under that type for the address.
+            TypeError: If no address can be determined (no local signer and no `address`).
+            GetItemError: If the item does not exist on-chain under that key.
         """
         if self.__metadata.chain_type is ChainType.EVM:
             evm_address = (
@@ -179,18 +187,23 @@ class Storage(Base):
         
     def update_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
-        Updates an existing item under the given type in on-chain storage. Mirrors `add_item` 
-        but calls the `update_item` precompile or pallet extrinsic.
+        Updates an existing item under `item_type` in on-chain storage by
+        replacing its value with `item`.
+        
+        - EVM: Constructs a transaction to the `updateItem` storage precompile contract.
+        - Substrate: Composes an `update_item` extrinsic to the peaqStorage
+            pallet.
 
         Args:
-            item_type (str): The key categorizing the item.
-            item (object): The new value (JSON-stringified if not a str).
+            item_type (str): The key used for the on-chain item.
+            item (object): The new value for that key (JSON-stringified if not a str).
 
         Returns:
-            UpdateItemResult: Contains a success message and the transaction receipt.
-
-        Raises:
-            SeedError: If no signer (seed) has been initialized.
+            Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+                - WrittenTransactionResult: The transaction or extrinsic was signed and broadcasted.
+                    Returned with a message and receipt.
+                - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
+                    but not signed (no local signer). Returned with message and tx/call.
         """        
         item_string = item if isinstance(item, str) else json.dumps(item)
         
@@ -243,22 +256,27 @@ class Storage(Base):
             
     def remove_item(self, item_type: str) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
-        Removes an item under the given type from on-chain storage.
-
-        On EVM this will currently raise an error until the precompile is upgraded.
-        On Substrate it invokes the peaqStorage pallet's `remove_item` extrinsic directly.
+        Removes an on-chain item under `item_type`.
+        
+        - EVM: Currently not supported until the storage precompile is
+          upgraded. Calling this on EVM raises a ValueError. (An implementation
+          outline is provided in the code for future use.)
+        - Substrate: Composes a `remove_item` extrinsic to the peaqStorage
+            pallet.
 
         Args:
-            item_type (str): The key categorizing the item to remove.
+            item_type (str): The key for the item to remove.
 
         Returns:
-            RemoveItemResult: Contains a success message and the transaction receipt.
+            Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+                - WrittenTransactionResult: The transaction or extrinsic was signed and broadcasted.
+                    Returned with a message and receipt.
+                - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
+                    but not signed (no local signer). Returned with message and tx/call.
 
         Raises:
-            SeedError: If no signer (seed) has been initialized.
             ValueError: If called on EVM (not yet supported).
         """
-        # check if EVM or Substrate
         if self.__metadata.chain_type is ChainType.EVM:
             raise ValueError("Precompile for peaq Storage Remove Item will be included in the next runtime update.")
             # uncomment below when upgrade deployed
