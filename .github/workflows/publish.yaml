@@ -17,6 +17,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: add/2021325_publish-to-pypi
 
       - uses: actions/setup-python@v4
         with:
