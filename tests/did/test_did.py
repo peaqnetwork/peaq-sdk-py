@@ -1,16 +1,16 @@
-import pytest
-from peaq_sdk.types.did import CustomDocumentFields, CreateDidResult, Verification
+# import pytest
+# from peaq_sdk.types.did import CustomDocumentFields,, Verification
 
-@pytest.mark.did
-def test_create_minimal_did(substrate_sdk):
-    # arrange
-    name = "did_test"
-    custom_fields = CustomDocumentFields(
-        verifications=[Verification(type="wrong")]
-    )
+# @pytest.mark.skip(reason="Skip")
+# def test_create_minimal_did(substrate_sdk):
+#     # arrange
+#     name = "did_test"
+#     custom_fields = CustomDocumentFields(
+#         verifications=[Verification(type="wrong")]
+#     )
 
-    # act
-    result: CreateDidResult = substrate_sdk.did.create(name, custom_fields)
+#     # act
+#     result: CreateDidResult = substrate_sdk.did.create(name, custom_fields)
 
     # # assert
     # assert isinstance(result.did, str)

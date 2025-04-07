@@ -1,29 +1,10 @@
 import pytest
-import os
-from dotenv import load_dotenv
 import re
 import json
 
-from peaq_sdk.main import Main
-from peaq_sdk.types.common import ChainType
 from peaq_sdk.types.storage import GetItemError
 
-
-# loads .env from the current working directory and set to vars
-load_dotenv()
-WSS_AGUNG = os.getenv("WSS_AGUNG")
-PRIVATE_RPC_AGUNG = os.getenv("PRIVATE_RPC_AGUNG")
-
-WSS_PEAQ = os.getenv("WSS_PEAQ")
-RPC_PEAQ = os.getenv("RPC_PEAQ")
-
-SUBSTRATE_ADDRESS = os.getenv("SUBSTRATE_ADDRESS")
-SUBSTRATE_SEED = os.getenv("SUBSTRATE_SEED")
-
-EVM_ADDRESS= os.getenv("EVM_ADDRESS")
-EVM_PRIVATE = os.getenv("EVM_PRIVATE")
-
-@pytest.mark.skip(reason="Testing DID")
+# @pytest.mark.skip(reason="Testing EVM")
 def test_substrate_storage(substrate_sdk, item_type, item, config):
     # Create a storage item.
     result = substrate_sdk.storage.add_item(item_type=item_type, item=item)
@@ -31,7 +12,7 @@ def test_substrate_storage(substrate_sdk, item_type, item, config):
     pattern = r'^0x[0-9a-fA-F]{64}$'
     expected_message = (
         f"Successfully added the storage item type {item_type} with item {item} "
-        f"for the address {config['SUBSTRATE_ADDRESS']}"
+        f"for the address {config['SUBSTRATE_ADDRESS']}."
     )
     assert result.message == expected_message
     assert re.fullmatch(pattern, result.receipt.block_hash) is not None
@@ -51,7 +32,7 @@ def test_substrate_storage(substrate_sdk, item_type, item, config):
     assert result is not None
     expected_update_msg = (
         f"Successfully updated the storage item type {item_type} with item {new_item} "
-        f"for the address {config['SUBSTRATE_ADDRESS']}"
+        f"for the address {config['SUBSTRATE_ADDRESS']}."
     )
     assert result.message == expected_update_msg
     assert re.fullmatch(pattern, result.receipt.block_hash) is not None
@@ -69,7 +50,7 @@ def test_substrate_storage(substrate_sdk, item_type, item, config):
     result = substrate_sdk.storage.remove_item(item_type=item_type)
     assert result is not None
     expected_remove_msg = (
-        f"Successfully removed the storage item type {item_type} for the address {config['SUBSTRATE_ADDRESS']}"
+        f"Successfully removed the storage item type {item_type} for the address {config['SUBSTRATE_ADDRESS']}."
     )
     assert result.message == expected_remove_msg
     assert re.fullmatch(pattern, result.receipt.block_hash) is not None
@@ -95,7 +76,7 @@ def test_evm_storage(evm_sdk, item_type, item, config):
     pattern = r'^[0-9a-fA-F]{64}$'
     expected_message = (
         f"Successfully added the storage item type {item_type} with item {item} "
-        f"for the address {config['EVM_ADDRESS']}"
+        f"for the address {config['EVM_ADDRESS']}."
     )
     assert result.message == expected_message
     assert re.fullmatch(pattern, result.receipt.blockHash.hex())
@@ -115,7 +96,7 @@ def test_evm_storage(evm_sdk, item_type, item, config):
     assert result is not None
     expected_update_msg = (
         f"Successfully updated the storage item type {item_type} with item {new_item} "
-        f"for the address {config['EVM_ADDRESS']}"
+        f"for the address {config['EVM_ADDRESS']}."
     )
     assert result.message == expected_update_msg
     assert re.fullmatch(pattern, result.receipt.blockHash.hex())

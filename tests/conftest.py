@@ -8,7 +8,7 @@ if project_root not in sys.path:
     
 from dotenv import load_dotenv
 import pytest
-from peaq_sdk.modules.main import Main
+from peaq_sdk.main import Main
 from peaq_sdk.types.common import ChainType
 
 # Load environment variables from .env in the working directory

@@ -20,9 +20,7 @@ from peaq_sdk.types.storage import (
     GetItemError,
     StorageFunctionSignatures,
     StorageCallFunction,
-    GetItemResult,
-    UpdateItemResult,
-    RemoveItemResult,
+    GetItemResult
 )
 from peaq_sdk.utils.utils import evm_to_address
 

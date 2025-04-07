@@ -1,5 +1,5 @@
 import pytest
-from peaq_sdk.modules.main import Main
+from peaq_sdk.main import Main
 from peaq_sdk.types.common import ChainType
 
 @pytest.fixture(autouse=True)
