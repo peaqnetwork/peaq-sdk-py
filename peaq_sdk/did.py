@@ -8,11 +8,11 @@ from peaq_sdk.types.common import (
     SeedError,
     CallModule,
     EvmTransaction,
-    PrecompileAddresses
+    PrecompileAddresses,
+    CommonResult
 )
 from peaq_sdk.types.did import (
     CustomDocumentFields, 
-    CreateDidResult,
     Verification,
     Signature,
     Service,
@@ -28,7 +28,7 @@ class Did(Base):
         super().__init__()
         self._api = api
         self.__metadata: SDKMetadata = metadata
-    def create(self, name: str, custom_document_fields: CustomDocumentFields) -> Union[CreateDidResult,EvmTransaction]:
+    def create(self, name: str, custom_document_fields: CustomDocumentFields) -> CommonResult:
         if not isinstance(custom_document_fields, CustomDocumentFields):
             raise TypeError(
                 f"custom_document_fields object must be CustomDocumentFields, "
@@ -56,7 +56,7 @@ class Did(Base):
             }
             
             receipt = self._send_evm_tx(tx, account)
-            return CreateDidResult(
+            return CommonResult(
                 message=f"Successfully added the DID under the name {name} for user {account.address}",
                 receipt=receipt
             )
@@ -74,7 +74,7 @@ class Did(Base):
                     }
             )
             receipt = self._send_substrate_tx(call, keypair)
-            return CreateDidResult(
+            return CommonResult(
                 message=f"Successfully added the DID under the name {name} for user {keypair.ss58_address}",
                 receipt=receipt
             )
@@ -82,7 +82,8 @@ class Did(Base):
         pass
     def update():
         pass
-    def remove(self, name: str):
+    
+    def remove(self, name: str) -> CommonResult:
         if not self.__metadata.pair:
             raise SeedError(
                 "No seed/private key set for the operation 'remove'. "
@@ -92,10 +93,9 @@ class Did(Base):
             account = self.__metadata.pair
             did_function_selector = self._api.keccak(text=DidFunctionSignatures.REMOVE_ATTRIBUTE.value)[:4].hex()
             name_encoded = name.encode("utf-8").hex()
-            did_encoded = serialized_did.encode("utf-8").hex()
             encoded_params = encode(
-                ['address', 'bytes', 'bytes', 'uint32'],
-                [account.address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
+                ['address', 'bytes'],
+                [account.address, bytes.fromhex(name_encoded)]
             ).hex()
             
             tx: EvmTransaction = {
@@ -104,26 +104,23 @@ class Did(Base):
             }
             
             receipt = self._send_evm_tx(tx, account)
-            return CreateDidResult(
-                message=f"Successfully added the DID under the name {name} for user {account.address}",
+            return CommonResult(
+                message=f"Successfully removed the DID under the name {name} for user {account.address}",
                 receipt=receipt
             )
         else:
             keypair = self.__metadata.pair
-            serialized_did = self._generate_did_document(keypair.ss58_address, custom_document_fields)
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_DID.value,
-                call_function=DidCallFunction.ADD_ATTRIBUTE.value,
+                call_function=DidCallFunction.REMOVE_ATTRIBUTE.value,
                 call_params={
                     'did_account': keypair.ss58_address,
-                    'name': name,
-                    'value': serialized_did,
-                    'valid_for': None
+                    'name': name
                     }
             )
             receipt = self._send_substrate_tx(call, keypair)
-            return CreateDidResult(
-                message=f"Successfully added the DID under the name {name} for user {keypair.ss58_address}",
+            return CommonResult(
+                message=f"Successfully removed the DID under the name {name} for user {keypair.ss58_address}",
                 receipt=receipt
             )
     

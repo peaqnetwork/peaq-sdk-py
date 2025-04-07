@@ -41,6 +41,10 @@ class EvmTransaction():
     to: str
     data: str
 
+@dataclass
+class CommonResult():
+    message: str
+    receipt: TransactionResult
     
 class ExtrinsicExecutionError(Exception):
     """Raised when an extrinsic fails to execute successfully on the blockchain."""

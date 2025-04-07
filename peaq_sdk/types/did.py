@@ -64,12 +64,6 @@ class CustomDocumentFields:
             if not isinstance(s, Service):
                 raise TypeError(f"Expected Service, got {type(s).__name__}")
 
-    
-@dataclass
-class CreateDidResult:
-    message: str
-    receipt: TransactionResult
-
 # Used for Storage EVM precompiles
 class DidFunctionSignatures(str, Enum):
     ADD_ATTRIBUTE = "addAttribute(address,bytes,bytes,uint32)"
