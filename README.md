@@ -40,3 +40,7 @@ Be Sure to Explain:
 - All signing happens locally.
 - Never share the key with anyone.
 - Projects need to guarantee their local environments of the sdk are safe-guarded
+
+
+## NOTES
+- user needs to make sure the address who constructed the tx is the same one that sends it

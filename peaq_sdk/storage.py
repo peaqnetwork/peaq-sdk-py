@@ -1,5 +1,5 @@
 # python native imports
-from typing import Optional
+from typing import Optional, Union
 import json
 from enum import Enum
 
@@ -11,14 +11,15 @@ from peaq_sdk.types.common import (
     PrecompileAddresses,
     CallModule,
     EvmTransaction,
-    TransactionResult,
     SeedError,
+    WrittenTransactionResult,
+    BuiltEvmTransactionResult,
+    BuiltCallTransactionResult,
 )
 from peaq_sdk.types.storage import (
     GetItemError,
     StorageFunctionSignatures,
     StorageCallFunction,
-    AddItemResult,
     GetItemResult,
     UpdateItemResult,
     RemoveItemResult,
@@ -48,7 +49,7 @@ class Storage(Base):
         self._api = api
         self.__metadata: SDKMetadata = metadata
 
-    def add_item(self, item_type: str, item: object) -> AddItemResult:
+    def add_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Adds a new item under the given type to on-chain storage.
 
@@ -66,17 +67,11 @@ class Storage(Base):
         Raises:
             SeedError: If no signer (seed) has been initialized.
         """
-        if not self.__metadata.pair:
-            raise SeedError(
-                "No seed/private key set for the operation 'add_item'. "
-                "Unable to perform the write transaction."
-            )
-            
+ 
         # Prepare payload
         item_string = item if isinstance(item, str) else json.dumps(item)
 
         if self.__metadata.chain_type is ChainType.EVM:
-            account = self.__metadata.pair
             add_item_function_selector = self._api.keccak(text=StorageFunctionSignatures.ADD_ITEM.value)[:4].hex()
             item_type_encoded = item_type.encode("utf-8").hex()
             final_item = item_string.encode("utf-8").hex()
@@ -90,23 +85,37 @@ class Storage(Base):
                 "data": f"0x{add_item_function_selector}{encoded_params}"
             }
             
-            receipt = self._send_evm_tx(tx, account)
-            return AddItemResult(
-                message=f"Successfully added the storage item type {item_type} with item {item} for the address {account.address}",
-                receipt=receipt
-            )
+            if self.__metadata.pair:
+                account = self.__metadata.pair
+                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully added the storage item type {item_type} with item {item} for the address {account.address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltEvmTransactionResult(
+                    message=f"Constructed add_item tx object for peaq storage with item type {item_type} and item {item}. You must sign and send it externally.",
+                    tx=tx
+                )
         else:
-            keypair = self.__metadata.pair
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_STORAGE.value,
                 call_function=StorageCallFunction.ADD_ITEM.value,
                 call_params={'item_type': item_type, 'item': item_string}
             )
-            receipt = self._send_substrate_tx(call, keypair)
-            return AddItemResult(
-                message=f"Successfully added the storage item type {item_type} with item {item} for the address {keypair.ss58_address}",
-                receipt=receipt
-            )
+            
+            if self.__metadata.pair:
+                keypair = self.__metadata.pair
+                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully added the storage item type {item_type} with item {item} for the address {keypair.ss58_address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltCallTransactionResult(
+                    message=f"Constructed add_item call object for peaq storage with item type {item_type} and item {item}. You must sign and send it externally.",
+                    call=call
+                )
         
     def get_item(
         self, item_type: str, address: Optional[str] = None, wss_base_url: Optional[str] = None
@@ -168,7 +177,7 @@ class Storage(Base):
         decoded = bytes.fromhex(raw[2:]).decode("utf-8")
         return GetItemResult(item_type=item_type, item=decoded).to_dict()
         
-    def update_item(self, item_type: str, item: object) -> UpdateItemResult:
+    def update_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Updates an existing item under the given type in on-chain storage. Mirrors `add_item` 
         but calls the `update_item` precompile or pallet extrinsic.
@@ -182,22 +191,14 @@ class Storage(Base):
 
         Raises:
             SeedError: If no signer (seed) has been initialized.
-        """
-        if not self.__metadata.pair:
-            raise SeedError(
-                "No seed/private key set for the operation 'update_item'. "
-                "Unable to perform the write transaction."
-            )
-        
+        """        
         item_string = item if isinstance(item, str) else json.dumps(item)
         
         if self.__metadata.chain_type is ChainType.EVM:
-            account = self.__metadata.pair
             update_item_function_selector = self._api.keccak(text=StorageFunctionSignatures.UPDATE_ITEM.value)[:4].hex()
             item_type_encoded = item_type.encode("utf-8").hex()
             final_item = item_string.encode("utf-8").hex()
             
-            # Create the encoded parameters to create calldata
             encoded_params = encode(
                 ['bytes', 'bytes'],
                 [bytes.fromhex(item_type_encoded), bytes.fromhex(final_item)]
@@ -207,25 +208,40 @@ class Storage(Base):
                 "to": PrecompileAddresses.STORAGE.value,
                 "data": f"0x{update_item_function_selector}{encoded_params}"
             }
-            receipt = self._send_evm_tx(tx, account)
-            return UpdateItemResult(
-                message=f"Successfully updated the storage item type {item_type} with item {item} for the address {account.address}",
-                receipt=receipt
-            )
+            
+            if self.__metadata.pair:
+                account = self.__metadata.pair
+                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully updated the storage item type {item_type} with item {item} for the address {account.address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltEvmTransactionResult(
+                    message=f"Constructed update_item tx object for peaq storage with item type {item_type} and item {item}. You must sign and send it externally.",
+                    tx=tx
+                )
         else:
-            keypair = self.__metadata.pair
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_STORAGE.value,
                 call_function=StorageCallFunction.UPDATE_ITEM.value,
                 call_params={'item_type': item_type, 'item': item_string}
             )
-            receipt = self._send_substrate_tx(call, keypair)
-            return UpdateItemResult(
-                message=f"Successfully updated the storage item type {item_type} with item {item} for the address {keypair.ss58_address}",
-                receipt=receipt
-            )
             
-    def remove_item(self, item_type: str) -> RemoveItemResult:
+            if self.__metadata.pair:
+                keypair = self.__metadata.pair
+                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully updated the storage item type {item_type} with item {item} for the address {keypair.ss58_address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltCallTransactionResult(
+                    message=f"Constructed update_item call object for peaq storage with item type {item_type} and item {item}. You must sign and send it externally.",
+                    call=call
+                )
+            
+    def remove_item(self, item_type: str) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Removes an item under the given type from on-chain storage.
 
@@ -242,15 +258,10 @@ class Storage(Base):
             SeedError: If no signer (seed) has been initialized.
             ValueError: If called on EVM (not yet supported).
         """
-        if not self.__metadata.pair:
-            raise SeedError(
-                "No seed/private key set for the operation 'remove_item'. "
-                "Unable to perform the write transaction."
-            )
         # check if EVM or Substrate
         if self.__metadata.chain_type is ChainType.EVM:
             raise ValueError("Precompile for peaq Storage Remove Item will be included in the next runtime update.")
-            account = self.__metadata.pair
+            # uncomment below when upgrade deployed
             remove_item_function_selector = self._api.keccak(text=StorageFunctionSignatures.REMOVE_ITEM.value)[:4].hex()
             item_type_encoded = item_type.encode("utf-8").hex()
             
@@ -266,20 +277,34 @@ class Storage(Base):
                 "data": payload
             }
             
-            receipt = self._send_evm_tx(tx, account)
-            return RemoveItemResult(
-                message=f"Successfully removed the storage item type {item_type} for the address {account.address}",
-                receipt=receipt
-            )
+            if self.__metadata.pair:
+                account = self.__metadata.pair
+                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully removed the storage item type {item_type} for the address {account.address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltEvmTransactionResult(
+                    message=f"Constructed remove_item tx object for peaq storage with item type {item_type}. You must sign and send it externally.",
+                    tx=tx
+                )
         else:
-            keypair = self.__metadata.pair
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_STORAGE.value,
                 call_function=StorageCallFunction.REMOVE_ITEM.value,
                 call_params={'item_type': item_type}
             )
-            receipt = self._send_substrate_tx(call, keypair)
-            return RemoveItemResult(
-                message=f"Successfully removed the storage item type {item_type} for the address {keypair.ss58_address}",
-                receipt=receipt
-            )
+            
+            if self.__metadata.pair:
+                keypair = self.__metadata.pair
+                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully removed the storage item type {item_type} for the address {keypair.ss58_address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltCallTransactionResult(
+                    message=f"Constructed remove_item call object for peaq storage with item type {item_type}. You must sign and send it externally.",
+                    call=call
+                )

@@ -28,8 +28,8 @@ def config():
         "WSS_PEAQ_PUBLIC_BASE_URL": os.getenv("WSS_PEAQ_PUBLIC_BASE_URL"),
         "RPC_PEAQ_ONFIN_PRIVATE_BASE_URL": os.getenv("RPC_PEAQ_ONFIN_PRIVATE_BASE_URL"),
         "WSS_PEAQ_ONFIN_PUBLIC_BASE_URL": os.getenv("WSS_PEAQ_ONFIN_PUBLIC_BASE_URL"),
-        "RPC_PEAQ_QN_PRIVATE_BASE_URL": os.getenv("RPC_PEAQ_QN_PRIVATE_BASE_URL"),
-        "WSS_PEAQ_QN_PRIVATE_BASE_URL": os.getenv("WSS_PEAQ_QN_PRIVATE_BASE_URL"),
+        "RPC_PEAQ_QN_PUBLIC_BASE_URL": os.getenv("RPC_PEAQ_QN_PUBLIC_BASE_URL"),
+        "WSS_PEAQ_QN_PUBLIC_BASE_URL": os.getenv("WSS_PEAQ_QN_PUBLIC_BASE_URL"),
         # Address and key information
         "SUBSTRATE_ADDRESS": os.getenv("SUBSTRATE_ADDRESS"),
         "SUBSTRATE_SEED": os.getenv("SUBSTRATE_SEED"),
@@ -64,7 +64,7 @@ def substrate_sdk(config, chain, connection_type):
         elif connection_type == "private":
             base_url = config["WSS_PEAQ_ONFIN_PUBLIC_BASE_URL"]
         elif connection_type == "quicknode":
-            base_url = config["WSS_PEAQ_QN_PRIVATE_BASE_URL"]
+            base_url = config["WSS_PEAQ_QN_PUBLIC_BASE_URL"]
     else:
         raise ValueError(f"Chain {chain} is not recognized.")
 
@@ -87,8 +87,8 @@ def evm_sdk(config, chain, connection_type):
             base_rpc = config["RPC_PEAQ_ONFIN_PRIVATE_BASE_URL"]
             base_wss = config["WSS_PEAQ_ONFIN_PUBLIC_BASE_URL"]
         else:
-            base_rpc = config["RPC_PEAQ_QN_PRIVATE_BASE_URL"]
-            base_wss = config["WSS_PEAQ_QN_PRIVATE_BASE_URL"]
+            base_rpc = config["RPC_PEAQ_QN_PUBLIC_BASE_URL"]
+            base_wss = config["WSS_PEAQ_QN_PUBLIC_BASE_URL"]
     # return both rpc and wss so tests can use them
     sdk = Main.create_instance(
         chain_type=ChainType.EVM, 

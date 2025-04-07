@@ -5,10 +5,6 @@ from typing import Optional
 from enum import Enum
 
 from peaq_sdk.types.common import TransactionResult
-@dataclass
-class AddItemResult:
-    message: str
-    receipt: TransactionResult
 
 @dataclass
 class GetItemResult:

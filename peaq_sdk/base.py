@@ -2,7 +2,7 @@ from typing import Optional, Union
 import ast
 import json
 
-from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, TransactionResult, EvmTransaction
+from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, TransactionResult, EvmTransaction, SeedError
 
 from web3 import Web3
 from eth_account import Account
@@ -47,6 +47,47 @@ class Base:
                 ss58_format=42,
                 crypto_type=KeypairType.SR25519
             )
+            
+    def _resolve_address(self, chain_type: ChainType, pair: Union[Keypair, Account], address: Optional[str] = None) -> str:
+            """
+            Resolves the effective user address and keypair to use for DID creation/update.
+            
+            1. If a local keypair is present (self.__metadata.pair), we use it to 
+            derive the address.
+            2. If no local keypair, we fall back to the `address` parameter.
+            3. Raises an error if neither is available.
+            
+            Returns:
+            (user_address, keypair_or_none)
+            """
+            # Check chain type
+            if chain_type is ChainType.EVM:
+                if pair:
+                    # We have a local EVM account
+                    account = pair
+                    return account.address
+                else:
+                    # No local account: must rely on 'address' parameter
+                    if not address:
+                        raise SeedError(
+                            "No seed/private key set, and no address was provided. "
+                            "Unable to sign or construct the transaction properly."
+                        )
+                    return address
+            else:
+                # Substrate path
+                if pair:
+                    # We have a local Substrate keypair
+                    keypair = pair
+                    return keypair.ss58_address
+                else:
+                    # No local keypair: must rely on 'address' parameter
+                    if not address:
+                        raise SeedError(
+                            "No seed/private key set, and no address was provided. "
+                            "Unable to sign or construct the transaction properly."
+                        )
+                    return address
     
     def _send_substrate_tx(self, call: GenericCall, keypair: Keypair) -> TransactionResult:
         """

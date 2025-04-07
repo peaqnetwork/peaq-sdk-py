@@ -8,6 +8,7 @@ from dataclasses import dataclass
 # 3rd party imports
 from substrateinterface import SubstrateInterface
 from substrateinterface.keypair import Keypair
+from substrateinterface.base import GenericCall
 from eth_account import Account
 
 
@@ -42,9 +43,19 @@ class EvmTransaction():
     data: str
 
 @dataclass
-class CommonResult():
+class WrittenTransactionResult():
     message: str
     receipt: TransactionResult
+
+@dataclass
+class BuiltEvmTransactionResult():
+    message: str
+    tx: EvmTransaction
+
+@dataclass
+class BuiltCallTransactionResult():
+    message: str
+    call: GenericCall
     
 class ExtrinsicExecutionError(Exception):
     """Raised when an extrinsic fails to execute successfully on the blockchain."""

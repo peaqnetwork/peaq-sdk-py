@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
@@ -8,7 +8,9 @@ from peaq_sdk.types.common import (
     CallModule,
     EvmTransaction,
     PrecompileAddresses,
-    CommonResult,
+    WrittenTransactionResult,
+    BuiltEvmTransactionResult,
+    BuiltCallTransactionResult,
     BaseUrlError
 )
 from peaq_sdk.types.did import (
@@ -32,28 +34,28 @@ class Did(Base):
         super().__init__()
         self._api = api
         self.__metadata: SDKMetadata = metadata
-    def create(self, name: str, custom_document_fields: CustomDocumentFields) -> CommonResult:
-        """Creates a new DID for the previously initialized wallet / keyring"""
         
+        
+        
+    def create(self, name: str, custom_document_fields: CustomDocumentFields, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+        """Creates a new DID for the previously initialized wallet / keyring"""
         if not isinstance(custom_document_fields, CustomDocumentFields):
             raise TypeError(
                 f"custom_document_fields object must be CustomDocumentFields, "
                 f"got {type(custom_document_fields).__name__!r}"
             )
-        if not self.__metadata.pair:
-            raise SeedError(
-                "No seed/private key set for the operation 'create'. "
-                "Unable to perform the write transaction."
-            )
-        if self.__metadata.chain_type is ChainType.EVM:
-            account = self.__metadata.pair
-            serialized_did = self._generate_did_document(account.address, custom_document_fields)
+
+        user_address = self._resolve_address(chain_type=self.__metadata.chain_type, pair=self.__metadata.pair, address=address)
+        
+        serialized_did = self._generate_did_document(user_address, custom_document_fields)
+        
+        if self.__metadata.chain_type is ChainType.EVM:                
             did_function_selector = self._api.keccak(text=DidFunctionSignatures.ADD_ATTRIBUTE.value)[:4].hex()
             name_encoded = name.encode("utf-8").hex()
             did_encoded = serialized_did.encode("utf-8").hex()
             encoded_params = encode(
                 ['address', 'bytes', 'bytes', 'uint32'],
-                [account.address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
+                [user_address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
             ).hex()
             
             tx: EvmTransaction = {
@@ -61,29 +63,43 @@ class Did(Base):
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            receipt = self._send_evm_tx(tx, account)
-            return CommonResult(
-                message=f"Successfully added the DID under the name {name} for user {account.address}",
-                receipt=receipt
-            )
+            if self.__metadata.pair:
+                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully added the DID under the name {name} for user {user_address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltEvmTransactionResult(
+                    message=f"Constructed DID create transaction for {user_address} of the name {name}. You must sign and send it externally.",
+                    tx=tx
+                )
+                
         else:
-            keypair = self.__metadata.pair
-            serialized_did = self._generate_did_document(keypair.ss58_address, custom_document_fields)
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_DID.value,
                 call_function=DidCallFunction.ADD_ATTRIBUTE.value,
                 call_params={
-                    'did_account': keypair.ss58_address,
+                    'did_account': user_address,
                     'name': name,
                     'value': serialized_did,
                     'valid_for': None
                     }
             )
-            receipt = self._send_substrate_tx(call, keypair)
-            return CommonResult(
-                message=f"Successfully added the DID under the name {name} for user {keypair.ss58_address}",
-                receipt=receipt
-            )
+            
+            if self.__metadata.pair:
+                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully added the DID under the name {name} for user {user_address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltCallTransactionResult(
+                    message=f"Constructed DID create call for {user_address} of the name {name}. You must sign and send externally.",
+                    call=call
+                )
+            
+            
             
     def read(self, name: str, address: Optional[str] = None, wss_base_url: Optional[str] = None) -> ReadDidResult:
         """Reads DID at the given name for the keypair/wallet attached, or without using passing seed at create instance, and address can be used to read."""
@@ -134,27 +150,29 @@ class Did(Base):
             document=document
         )
 
-    def update(self, name: str, custom_document_fields: CustomDocumentFields) -> CommonResult:
+
+
+    def update(self, name: str, custom_document_fields: CustomDocumentFields, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """Overwrites the existing data in full"""
         if not isinstance(custom_document_fields, CustomDocumentFields):
             raise TypeError(
                 f"custom_document_fields object must be CustomDocumentFields, "
                 f"got {type(custom_document_fields).__name__!r}"
             )
-        if not self.__metadata.pair:
-            raise SeedError(
-                "No seed/private key set for the operation 'update'. "
-                "Unable to perform the write transaction."
-            )
+            
+        user_address = self._resolve_address(chain_type=self.__metadata.chain_type, pair=self.__metadata.pair, address=address)
+        
+        serialized_did = self._generate_did_document(user_address, custom_document_fields)
+        
         if self.__metadata.chain_type is ChainType.EVM:
-            account = self.__metadata.pair
-            serialized_did = self._generate_did_document(account.address, custom_document_fields)
+            serialized_did = self._generate_did_document(user_address, custom_document_fields)
             did_function_selector = self._api.keccak(text=DidFunctionSignatures.UPDATE_ATTRIBUTE.value)[:4].hex()
             name_encoded = name.encode("utf-8").hex()
             did_encoded = serialized_did.encode("utf-8").hex()
+            
             encoded_params = encode(
                 ['address', 'bytes', 'bytes', 'uint32'],
-                [account.address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
+                [user_address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
             ).hex()
             
             tx: EvmTransaction = {
@@ -162,44 +180,55 @@ class Did(Base):
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            receipt = self._send_evm_tx(tx, account)
-            return CommonResult(
-                message=f"Successfully updated the DID under the name {name} for user {account.address}",
-                receipt=receipt
-            )
+            if self.__metadata.pair:
+                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully updated the DID under the name {name} for user {user_address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltEvmTransactionResult(
+                    message=f"Constructed DID update transaction for {user_address} of the name {name}. You must sign and send it externally.",
+                    tx=tx
+                )
+                
         else:
-            keypair = self.__metadata.pair
-            serialized_did = self._generate_did_document(keypair.ss58_address, custom_document_fields)
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_DID.value,
                 call_function=DidCallFunction.UPDATE_ATTRIBUTE.value,
                 call_params={
-                    'did_account': keypair.ss58_address,
+                    'did_account': user_address,
                     'name': name,
                     'value': serialized_did,
                     'valid_for': None
                     }
             )
-            receipt = self._send_substrate_tx(call, keypair)
-            return CommonResult(
-                message=f"Successfully updated the DID under the name {name} for user {keypair.ss58_address}",
-                receipt=receipt
-            )
+            
+            if self.__metadata.pair:
+                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully updated the DID under the name {name} for user {user_address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltCallTransactionResult(
+                    message=f"Constructed DID update call for {user_address} of the name {name}. You must sign and send externally.",
+                    call=call
+                )
+
+
     
-    def remove(self, name: str) -> CommonResult:
+    def remove(self, name: str, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """Removes DID at the given name for the keypair/wallet attached"""
-        if not self.__metadata.pair:
-            raise SeedError(
-                "No seed/private key set for the operation 'remove'. "
-                "Unable to perform the write transaction."
-            )
+        
+        user_address = self._resolve_address(chain_type=self.__metadata.chain_type, pair=self.__metadata.pair, address=address)
+        
         if self.__metadata.chain_type is ChainType.EVM:
-            account = self.__metadata.pair
             did_function_selector = self._api.keccak(text=DidFunctionSignatures.REMOVE_ATTRIBUTE.value)[:4].hex()
             name_encoded = name.encode("utf-8").hex()
             encoded_params = encode(
                 ['address', 'bytes'],
-                [account.address, bytes.fromhex(name_encoded)]
+                [user_address, bytes.fromhex(name_encoded)]
             ).hex()
             
             tx: EvmTransaction = {
@@ -207,26 +236,39 @@ class Did(Base):
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            receipt = self._send_evm_tx(tx, account)
-            return CommonResult(
-                message=f"Successfully removed the DID under the name {name} for user {account.address}",
-                receipt=receipt
-            )
+            if self.__metadata.pair:
+                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully removed the DID under the name {name} for user {user_address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltEvmTransactionResult(
+                    message=f"Constructed DID remove transaction for {user_address} of the name {name}. You must sign and send it externally.",
+                    tx=tx
+                )
+                
         else:
-            keypair = self.__metadata.pair
             call = self._api.compose_call(
                 call_module=CallModule.PEAQ_DID.value,
                 call_function=DidCallFunction.REMOVE_ATTRIBUTE.value,
                 call_params={
-                    'did_account': keypair.ss58_address,
+                    'did_account': user_address,
                     'name': name
                     }
             )
-            receipt = self._send_substrate_tx(call, keypair)
-            return CommonResult(
-                message=f"Successfully removed the DID under the name {name} for user {keypair.ss58_address}",
-                receipt=receipt
-            )
+            
+            if self.__metadata.pair:
+                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+                return WrittenTransactionResult(
+                    message=f"Successfully removed the DID under the name {name} for user {user_address}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltCallTransactionResult(
+                    message=f"Constructed DID remove call for {user_address} of the name {name}. You must sign and send externally.",
+                    call=call
+                )
     
     
     def _generate_did_document(self, address: str, custom_document_fields: CustomDocumentFields) -> str:
