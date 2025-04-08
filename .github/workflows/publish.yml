@@ -103,7 +103,7 @@ jobs:
 
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/peaq-sdk-test
+      url: https://test.pypi.org/p/peaq-sdk
 
     permissions:
       id-token: write
