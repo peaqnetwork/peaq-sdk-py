@@ -26,6 +26,35 @@ jobs:
         pip install
         build
         --user
+    - name: Check if tag is for PyPI
+        id: check_tag
+        run: |
+          TAG=$(git describe --tags --exact-match || echo "")
+          if [[ "$TAG" == "" ]]; then
+            echo "No PyPI tag detected, we will bump the version"
+            echo "bump=true" >> $GITHUB_ENV
+          else
+            echo "PyPI tag detected, skipping version bump."
+            echo "bump=false" >> $GITHUB_ENV
+          fi    
+    - name: Bump version
+      id: bump_version
+      if: env.bump == 'true'
+      run: |
+        # Read the current version from setup.py or wherever your version is defined
+        VERSION=$(python setup.py --version)
+        echo "Current version: $VERSION"
+
+        # Increment the dev version number (e.g., from 1.0.0.dev1 to 1.0.0.dev2)
+        BASE_VERSION=$(echo $VERSION | sed 's/\(.*\)\.dev[0-9]\+/\1/') # Strip current .devX part
+        DEV_VERSION=$(echo $VERSION | sed 's/.*\.dev\([0-9]\+\)/\1/') # Extract current dev number
+        NEW_DEV_VERSION=$((DEV_VERSION + 1)) # Increment dev number
+        NEW_VERSION="$BASE_VERSION.dev$NEW_DEV_VERSION"
+        echo "Bumping version to $NEW_VERSION"
+        # Update the version in setup.py or wherever the version is stored
+        sed -i "s/$VERSION/$NEW_VERSION/" setup.py
+        # Output the new version for further steps
+        echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
     - name: Build a binary wheel and a source tarball
       run: python3 -m build
     - name: Store the distribution packages
