@@ -69,6 +69,8 @@ jobs:
       if: env.bump == 'true'
       run: |
         # Commit and push the updated version in setup.cfg
+        git config --global user.name "github-actions"
+        git config --global user.email "github-actions@github.com"
         git add setup.cfg
         git commit -m "Bump version to $NEW_VERSION"
         git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
