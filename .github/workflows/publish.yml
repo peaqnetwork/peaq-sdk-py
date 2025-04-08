@@ -16,6 +16,23 @@ jobs:
     - uses: actions/checkout@v4
       with:
         persist-credentials: false
+    - name: Check if the version update was made by the user defined in SKIP_USER secret
+      id: check_user
+      run: |
+        AUTHOR=$(git log -1 --pretty=%an)  # Get the commit author's name
+        echo "Commit author: $AUTHOR"
+        if [[ "$AUTHOR" == "${{ secrets.SKIP_USER }}" ]]; then
+          echo "Version update by user '${{ secrets.SKIP_USER }}' detected. Skipping entire workflow."
+          echo "SKIP_WORKFLOW=true" >> $GITHUB_ENV
+        else
+          echo "Version update not by user '${{ secrets.SKIP_USER }}'. Proceeding with workflow."
+          echo "SKIP_WORKFLOW=false" >> $GITHUB_ENV
+
+    - name: Exit if workflow should be skipped
+      if: env.SKIP_WORKFLOW == 'true'
+      run: |
+        echo "Exiting workflow because commit was made by user '${{ secrets.SKIP_USER }}'."
+        exit 0
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
