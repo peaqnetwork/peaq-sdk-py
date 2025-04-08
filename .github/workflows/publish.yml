@@ -61,7 +61,7 @@ jobs:
         echo "Bumping version to $NEW_VERSION"
 
         # Update the version in setup.cfg
-        sed -i "s/version-dev = $VERSION/version-dev = $NEW_VERSION/" setup.cfg
+        sed -i "s/version = $VERSION/version = $NEW_VERSION/" setup.cfg
 
         # Output the new version for further steps
         echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
