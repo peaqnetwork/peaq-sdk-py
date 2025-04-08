@@ -24,7 +24,7 @@ jobs:
 
   build:
     name: Build distribution
-    if: ${{ github.actor != 'github-actions' }}
+    if: ${{ github.actor != 'peaqbot' }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
