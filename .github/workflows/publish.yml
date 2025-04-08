@@ -59,7 +59,7 @@ jobs:
       if: env.bump == 'true'
       run: |
         # Read the current version from setup.cfg
-        VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version-dev'])")
+        VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
         echo "Current version: $VERSION"
 
         # If the version doesn't already have a .dev suffix, append '.dev1'
