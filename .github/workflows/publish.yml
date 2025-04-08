@@ -27,16 +27,16 @@ jobs:
         build
         --user
     - name: Check if tag is for PyPI
-        id: check_tag
-        run: |
-          TAG=$(git describe --tags --exact-match || echo "")
-          if [[ "$TAG" == "" ]]; then
-            echo "No PyPI tag detected, we will bump the version"
-            echo "bump=true" >> $GITHUB_ENV
-          else
-            echo "PyPI tag detected, skipping version bump."
-            echo "bump=false" >> $GITHUB_ENV
-          fi    
+      id: check_tag
+      run: |
+        TAG=$(git describe --tags --exact-match || echo "")
+        if [[ "$TAG" == "" ]]; then
+          echo "No PyPI tag detected, we will bump the version"
+          echo "bump=true" >> $GITHUB_ENV
+        else
+          echo "PyPI tag detected, skipping version bump."
+          echo "bump=false" >> $GITHUB_ENV
+        fi    
     - name: Bump version
       id: bump_version
       if: env.bump == 'true'
