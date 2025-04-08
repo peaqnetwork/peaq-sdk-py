@@ -22,7 +22,10 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: '3.x'
-
+      - name: Set Git user for manual trigger
+        run: |
+           git config --global user.name "github-actions"
+           git config --global user.email "github-actions@github.com"
       - name: Install bump2version
         if: ${{ github.event_name == 'workflow_dispatch' }}  # Only run this job when manually triggered
         run: pip install bump2version
@@ -59,8 +62,6 @@ jobs:
           fi
       - name: Push version bump changes
         run: |
-           git config --global user.name "github-actions"
-           git config --global user.email "github-actions@github.com"
            git add setup.cfg
            git commit -m "Bump version to $NEW_VERSION"
            git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
