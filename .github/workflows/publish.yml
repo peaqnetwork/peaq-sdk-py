@@ -64,6 +64,7 @@ jobs:
            git add setup.cfg
            git commit -m "Bump version to $NEW_VERSION"
            git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
+           sleep 3 
   build:
     name: Build distribution
     needs: bump_version
