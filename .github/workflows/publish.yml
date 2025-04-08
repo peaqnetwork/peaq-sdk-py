@@ -10,16 +10,11 @@ on:
 jobs:
   check-author:
     runs-on: ubuntu-latest
-    outputs:
-      skip: ${{ steps.set-skip.outputs.skip }}
     steps:
     - name: Checkout repo
       uses: actions/checkout@v4
-
     - name: Get commit author
-      id: set-skip
-      #id: get-author
-      if: ${{ github.actor == secrets.SKIP_USER }}
+      if: ${{ github.actor }} == github-actions
       run: |
         echo "Triggered by: ${{ github.actor }}. Canceling workflow..."
         curl -X POST \
@@ -29,8 +24,6 @@ jobs:
 
   build:
     name: Build distribution
-    needs: check-author
-    if: needs.check-author.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
