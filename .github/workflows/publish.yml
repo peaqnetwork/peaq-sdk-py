@@ -30,7 +30,7 @@ jobs:
         run: |
           # Get the version bump type (major, minor, patch) from the input
           if ${{ github.event_name == 'workflow_dispatch' }} ; then
-           bump2version ${{ github.event.inputs.version }} --no-tag
+           bump2version ${{ github.event.inputs.version }} --no-tag --config-file bumpversion.cfg 
            #reset dev version to current release version
            VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
            sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $VERSION/}" setup.cfg
