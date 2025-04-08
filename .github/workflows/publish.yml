@@ -63,7 +63,7 @@ jobs:
       - name: Push version bump changes
         run: |
            git add setup.cfg
-           git commit -m "Bump version to $NEW_VERSION"
+           git commit -m "Bump version to ${{ env.NEW_VERSION }}"
            git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
            sleep 3 
   build:
@@ -163,6 +163,7 @@ jobs:
 
   publish-to-testpypi:
     name: Publish Python distribution to TestPyPI
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     needs:
     - build
     runs-on: ubuntu-latest
