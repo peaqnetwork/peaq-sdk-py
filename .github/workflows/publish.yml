@@ -41,18 +41,28 @@ jobs:
       id: bump_version
       if: env.bump == 'true'
       run: |
-        # Read the current version from setup.py or wherever your version is defined
-        VERSION=$(python setup.py --version)
+        # Read the current version from setup.cfg
+        VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
         echo "Current version: $VERSION"
 
-        # Increment the dev version number (e.g., from 1.0.0.dev1 to 1.0.0.dev2)
-        BASE_VERSION=$(echo $VERSION | sed 's/\(.*\)\.dev[0-9]\+/\1/') # Strip current .devX part
-        DEV_VERSION=$(echo $VERSION | sed 's/.*\.dev\([0-9]\+\)/\1/') # Extract current dev number
-        NEW_DEV_VERSION=$((DEV_VERSION + 1)) # Increment dev number
-        NEW_VERSION="$BASE_VERSION.dev$NEW_DEV_VERSION"
+        # If the version doesn't already have a .dev suffix, append '.dev1'
+        if [[ "$VERSION" != *".dev"* ]]; then
+          BASE_VERSION=$VERSION
+          DEV_VERSION=1
+        else
+          # If the version already has a .devX suffix, increment the X part
+          BASE_VERSION=$(echo $VERSION | sed 's/\(.*\)\.dev[0-9]\+/\1/')  # Strip current .devX part
+          DEV_VERSION=$(echo $VERSION | sed 's/.*\.dev\([0-9]\+\)/\1/')  # Extract current dev number
+          DEV_VERSION=$((DEV_VERSION + 1))  # Increment dev number
+        fi
+
+        # Construct the new version (e.g., 0.0.1 -> 0.0.1.dev1, 0.0.1.dev1 -> 0.0.1.dev2)
+        NEW_VERSION="$BASE_VERSION.dev$DEV_VERSION"
         echo "Bumping version to $NEW_VERSION"
-        # Update the version in setup.py or wherever the version is stored
-        sed -i "s/$VERSION/$NEW_VERSION/" setup.py
+
+        # Update the version in setup.cfg
+        sed -i "s/version = $VERSION/version = $NEW_VERSION/" setup.cfg
+
         # Output the new version for further steps
         echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
     - name: Build a binary wheel and a source tarball
