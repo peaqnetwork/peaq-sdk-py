@@ -42,7 +42,7 @@ jobs:
       if: env.bump == 'true'
       run: |
         # Read the current version from setup.cfg
-        VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
+        VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version-dev'])")
         echo "Current version: $VERSION"
 
         # If the version doesn't already have a .dev suffix, append '.dev1'
@@ -61,10 +61,20 @@ jobs:
         echo "Bumping version to $NEW_VERSION"
 
         # Update the version in setup.cfg
-        sed -i "s/version = $VERSION/version = $NEW_VERSION/" setup.cfg
+        sed -i "s/version-dev = $VERSION/version-dev = $NEW_VERSION/" setup.cfg
 
         # Output the new version for further steps
         echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+    - name: Commit and push updated setup.cfg
+      if: env.bump == 'true'
+      run: |
+        # Commit and push the updated version in setup.cfg
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add setup.cfg
+        git commit -m "Bump version to $NEW_VERSION"
+        git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)
+    
     - name: Build a binary wheel and a source tarball
       run: python3 -m build
     - name: Store the distribution packages
