@@ -19,6 +19,8 @@ on:
 jobs:
   bump_version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.current_version.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -165,7 +167,7 @@ jobs:
         GITHUB_TOKEN: ${{ github.token }}
       run: >-
         gh release upload
-        "v${{ needs.bump_version.outputs.version }}"" dist/**
+        "v${{ needs.bump_version.outputs.version }}" dist/**
         --repo "$GITHUB_REPOSITORY"
 
   publish-to-testpypi:
