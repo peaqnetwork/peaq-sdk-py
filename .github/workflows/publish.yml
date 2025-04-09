@@ -42,7 +42,7 @@ jobs:
            #reset dev version to current release version
            VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
            sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $VERSION/}" setup.cfg
-
+           echo "VERSION=$VERSION" >> $GITHUB_ENV
           else
            VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['development']['version'])")
            echo "Current version: $VERSION"
@@ -63,14 +63,14 @@ jobs:
            sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $NEW_VERSION/}" setup.cfg
 
           # Output the new version for further steps
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
           fi
       - name: Push version bump changes
         run: |
-           git add setup.cfg
-           git commit -m "Bump version to ${{ env.NEW_VERSION }}"
+           git add setup.cfg bumpversion.cfg 
+           git commit -m "Bump version to ${{ env.VERSION }}"
            git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
-           sleep 3 
+           sleep 5 
   build:
     name: Build distribution
     needs: bump_version
@@ -150,12 +150,16 @@ jobs:
         inputs: >-
           ./dist/*.tar.gz
           ./dist/*.whl
+    - name: Get version from setup.cfg
+      run: |
+          VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
+          echo "VERSION=v$VERSION" >> $GITHUB_ENV
     - name: Create GitHub Release
       env:
         GITHUB_TOKEN: ${{ github.token }}
       run: >-
         gh release create
-        "$GITHUB_REF_NAME"
+        "v${{ env.VERSION }}"
         --repo "$GITHUB_REPOSITORY"
         --notes ""
     - name: Upload artifact signatures to GitHub Release
@@ -163,7 +167,7 @@ jobs:
         GITHUB_TOKEN: ${{ github.token }}
       run: >-
         gh release upload
-        "$GITHUB_REF_NAME" dist/**
+        "v${{ env.VERSION }}" dist/**
         --repo "$GITHUB_REPOSITORY"
 
   publish-to-testpypi:
