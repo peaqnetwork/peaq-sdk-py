@@ -3,7 +3,7 @@ import ast
 import json
 import time
 
-from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, TransactionResult, EvmTransaction, SeedError, SDKMetadata
+from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, EvmTransaction, SeedError, SDKMetadata
 
 from web3 import Web3
 from eth_account import Account
@@ -123,7 +123,7 @@ class Base:
                         )
                     return address
     
-    def _send_substrate_tx(self, call: GenericCall) -> TransactionResult:
+    def _send_substrate_tx(self, call: GenericCall) -> dict:
         """
         Submits and waits for inclusion of a Substrate extrinsic, automatically
         retrying with increasing tip if needed.
@@ -133,7 +133,7 @@ class Base:
             keypair (Keypair): Used to sign the extrinsic.
 
         Returns:
-            TransactionResult: Contains `block_hash`, `extrinsic_hash`, and fee paid.
+            dict: Full substrate receipt object.
 
         Raises:
             ExtrinsicExecutionError: If the extrinsic fails or is rejected by the chain.
@@ -145,11 +145,7 @@ class Base:
             error_name = receipt.error_message['name']
             raise ExtrinsicExecutionError(f"The extrinsic of {call.call_module['name']} threw a {error_type} Error with name {error_name}.")
 
-        return TransactionResult(
-            block_hash=receipt.block_hash,
-            extrinsic_hash=receipt.extrinsic_hash,
-            fee=receipt._ExtrinsicReceipt__total_fee_amount
-        )
+        return receipt.__dict__
     
     def _send_with_tip(self, call: GenericCall) -> dict:
         """
@@ -203,7 +199,7 @@ class Base:
                 error_message = str(e)
                 if "Priority is too low" in error_message:
                     print(f"Attempt {attempt + 1}: Priority too low with tip {tip_value}, incrementing tip based on expected...")
-                    tip_value += tip_increment
+                    tip_value += int(tip_increment * 1.25)
                     attempt += 1
                     time.sleep(0.5)
                 else:

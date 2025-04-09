@@ -1,6 +1,5 @@
 """objects used in the main sdk initializer"""
 # python native imports
-from peaq_sdk.types.common import TransactionResult
 
 from dataclasses import dataclass, field
 from typing import List, Optional

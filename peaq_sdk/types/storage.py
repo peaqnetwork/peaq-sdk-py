@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
 
-from peaq_sdk.types.common import TransactionResult
-
 @dataclass
 class GetItemResult:
     item_type: str
@@ -14,14 +12,9 @@ class GetItemResult:
         return {self.item_type: self.item}
     
 @dataclass
-class UpdateItemResult:
-    message: str
-    receipt: TransactionResult
-    
-@dataclass
 class RemoveItemResult:
     message: str
-    receipt: TransactionResult
+    receipt: dict
 
 # Used for Storage EVM precompiles
 class StorageFunctionSignatures(str, Enum):

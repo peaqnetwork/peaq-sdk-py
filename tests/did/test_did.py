@@ -9,10 +9,11 @@ def test_substrate_did(substrate_sdk, name, custom_document_fields, connection_t
     # create a DID
     create_result = substrate_sdk.did.create(name=name, custom_document_fields=custom_document_fields)
     assert create_result.message.startswith("Successfully added the DID under the name")
-    assert hasattr(create_result.receipt, "extrinsic_hash")
-    assert hasattr(create_result.receipt, "block_hash")
-    assert isinstance(create_result.receipt.fee, int)
-
+    is_success = create_result.receipt['_ExtrinsicReceipt__is_success']
+    assert is_success, "Transaction did not succeed."
+    assert 'extrinsic_hash' in create_result.receipt
+    assert 'block_hash' in create_result.receipt
+    
     # read DID
     read_result = substrate_sdk.did.read(name=name)
     assert read_result.name == name
@@ -40,7 +41,10 @@ def test_substrate_did(substrate_sdk, name, custom_document_fields, connection_t
     )
     update_result = substrate_sdk.did.update(name=name, custom_document_fields=updated_fields)
     assert update_result.message.startswith("Successfully updated the DID under the name")
-    assert hasattr(update_result.receipt, "extrinsic_hash")
+    is_success = update_result.receipt['_ExtrinsicReceipt__is_success']
+    assert is_success, "Transaction did not succeed."
+    assert 'extrinsic_hash' in update_result.receipt
+    assert 'block_hash' in update_result.receipt
     
     # read DID
     read_after_update = substrate_sdk.did.read(name=name)
@@ -55,6 +59,10 @@ def test_substrate_did(substrate_sdk, name, custom_document_fields, connection_t
     # remove did
     remove_result = substrate_sdk.did.remove(name=name)
     assert remove_result.message.startswith("Successfully removed the DID under the name")
+    is_success = remove_result.receipt['_ExtrinsicReceipt__is_success']
+    assert is_success, "Transaction did not succeed."
+    assert 'extrinsic_hash' in remove_result.receipt
+    assert 'block_hash' in remove_result.receipt
     
     # confirm deletion
     with pytest.raises(GetDidError, match=f"DID of name {name} was not found at address {config['SUBSTRATE_ADDRESS']}."):
