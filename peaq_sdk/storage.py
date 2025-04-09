@@ -44,9 +44,7 @@ class Storage(Base):
             metadata (SDKMetadata): Shared metadata, including chain type,
                 and optional signer.
         """
-        super().__init__()
-        self._api = api
-        self.__metadata: SDKMetadata = metadata
+        super().__init__(api, metadata)
 
     def add_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
@@ -73,8 +71,8 @@ class Storage(Base):
         # Prepare payload
         item_string = item if isinstance(item, str) else json.dumps(item)
 
-        if self.__metadata.chain_type is ChainType.EVM:
-            add_item_function_selector = self._api.keccak(text=StorageFunctionSignatures.ADD_ITEM.value)[:4].hex()
+        if self.metadata.chain_type is ChainType.EVM:
+            add_item_function_selector = self.api.keccak(text=StorageFunctionSignatures.ADD_ITEM.value)[:4].hex()
             item_type_encoded = item_type.encode("utf-8").hex()
             final_item = item_string.encode("utf-8").hex()
             encoded_params = encode(
@@ -87,9 +85,9 @@ class Storage(Base):
                 "data": f"0x{add_item_function_selector}{encoded_params}"
             }
             
-            if self.__metadata.pair:
-                account = self.__metadata.pair
-                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+            if self.metadata.pair:
+                account = self.metadata.pair
+                receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully added the storage item type {item_type} with item {item} for the address {account.address}.",
                     receipt=receipt
@@ -100,15 +98,15 @@ class Storage(Base):
                     tx=tx
                 )
         else:
-            call = self._api.compose_call(
+            call = self.api.compose_call(
                 call_module=CallModule.PEAQ_STORAGE.value,
                 call_function=StorageCallFunction.ADD_ITEM.value,
                 call_params={'item_type': item_type, 'item': item_string}
             )
             
-            if self.__metadata.pair:
-                keypair = self.__metadata.pair
-                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+            if self.metadata.pair:
+                keypair = self.metadata.pair
+                receipt = self._send_substrate_tx(call)
                 return WrittenTransactionResult(
                     message=f"Successfully added the storage item type {item_type} with item {item} for the address {keypair.ss58_address}.",
                     receipt=receipt
@@ -147,25 +145,28 @@ class Storage(Base):
             TypeError: If no address can be determined (no local signer and no `address`).
             GetItemError: If the item does not exist on-chain under that key.
         """
-        if self.__metadata.chain_type is ChainType.EVM:
+        if self.metadata.chain_type is ChainType.EVM:
             evm_address = (
-                getattr(self.__metadata.pair, 'address', address)
-                if self.__metadata.pair
+                getattr(self.metadata.pair, 'address', address)
+                if self.metadata.pair
                 else address
             )
             if not evm_address:
                 raise TypeError(f"Address is set to {evm_address}. Please either set seed at instance creation or pass an address.")
             owner_address = evm_to_address(evm_address)
             api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            display_address = evm_address
+            
         else:
             owner_address = (
-                getattr(self.__metadata.pair, 'ss58_address', address)
-                if self.__metadata.pair
+                getattr(self.metadata.pair, 'ss58_address', address)
+                if self.metadata.pair
                 else address
             )
             if not owner_address:
                 raise TypeError(f"Address is set to {owner_address}. Please either set seed at instance creation or pass an address.")
-            api = self._api
+            api = self.api
+            display_address = owner_address
         
         # Query storage
         item_type_hex = "0x" + item_type.encode("utf-8").hex()
@@ -177,7 +178,7 @@ class Storage(Base):
         
         # Check result
         if resp['result'] is None:
-            raise GetItemError(f"Item type of {item_type} was not found at address {owner_address}.") 
+            raise GetItemError(f"Item type of {item_type} was not found at address {display_address}.") 
         
         raw = resp['result']['item']
         decoded = bytes.fromhex(raw[2:]).decode("utf-8")
@@ -205,8 +206,8 @@ class Storage(Base):
         """        
         item_string = item if isinstance(item, str) else json.dumps(item)
         
-        if self.__metadata.chain_type is ChainType.EVM:
-            update_item_function_selector = self._api.keccak(text=StorageFunctionSignatures.UPDATE_ITEM.value)[:4].hex()
+        if self.metadata.chain_type is ChainType.EVM:
+            update_item_function_selector = self.api.keccak(text=StorageFunctionSignatures.UPDATE_ITEM.value)[:4].hex()
             item_type_encoded = item_type.encode("utf-8").hex()
             final_item = item_string.encode("utf-8").hex()
             
@@ -220,9 +221,9 @@ class Storage(Base):
                 "data": f"0x{update_item_function_selector}{encoded_params}"
             }
             
-            if self.__metadata.pair:
-                account = self.__metadata.pair
-                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+            if self.metadata.pair:
+                account = self.metadata.pair
+                receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully updated the storage item type {item_type} with item {item} for the address {account.address}.",
                     receipt=receipt
@@ -233,15 +234,15 @@ class Storage(Base):
                     tx=tx
                 )
         else:
-            call = self._api.compose_call(
+            call = self.api.compose_call(
                 call_module=CallModule.PEAQ_STORAGE.value,
                 call_function=StorageCallFunction.UPDATE_ITEM.value,
                 call_params={'item_type': item_type, 'item': item_string}
             )
             
-            if self.__metadata.pair:
-                keypair = self.__metadata.pair
-                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+            if self.metadata.pair:
+                keypair = self.metadata.pair
+                receipt = self._send_substrate_tx(call)
                 return WrittenTransactionResult(
                     message=f"Successfully updated the storage item type {item_type} with item {item} for the address {keypair.ss58_address}.",
                     receipt=receipt
@@ -275,10 +276,10 @@ class Storage(Base):
         Raises:
             ValueError: If called on EVM (not yet supported).
         """
-        if self.__metadata.chain_type is ChainType.EVM:
+        if self.metadata.chain_type is ChainType.EVM:
             raise ValueError("Precompile for peaq Storage Remove Item will be included in the next runtime update.")
-            # uncomment below when upgrade deployed
-            remove_item_function_selector = self._api.keccak(text=StorageFunctionSignatures.REMOVE_ITEM.value)[:4].hex()
+            # remove error when upgrade deployed
+            remove_item_function_selector = self.api.keccak(text=StorageFunctionSignatures.REMOVE_ITEM.value)[:4].hex()
             item_type_encoded = item_type.encode("utf-8").hex()
             
             # Create the encoded parameters to create calldata
@@ -293,9 +294,9 @@ class Storage(Base):
                 "data": payload
             }
             
-            if self.__metadata.pair:
-                account = self.__metadata.pair
-                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+            if self.metadata.pair:
+                account = self.metadata.pair
+                receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully removed the storage item type {item_type} for the address {account.address}.",
                     receipt=receipt
@@ -306,15 +307,15 @@ class Storage(Base):
                     tx=tx
                 )
         else:
-            call = self._api.compose_call(
+            call = self.api.compose_call(
                 call_module=CallModule.PEAQ_STORAGE.value,
                 call_function=StorageCallFunction.REMOVE_ITEM.value,
                 call_params={'item_type': item_type}
             )
             
-            if self.__metadata.pair:
-                keypair = self.__metadata.pair
-                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+            if self.metadata.pair:
+                keypair = self.metadata.pair
+                receipt = self._send_substrate_tx(call)
                 return WrittenTransactionResult(
                     message=f"Successfully removed the storage item type {item_type} for the address {keypair.ss58_address}.",
                     receipt=receipt

@@ -53,61 +53,96 @@ sdk = Sdk.create_instance(
 )
 ```
 
-## Decentralized Identifiers (DID)
-### Create a DID
+## SDK Operations
+All return objects are either:
+
+**Unsent Transaction/Call (seed not in create_instance)**
+- Message indicating what tx or call was built.
+- Transaction/Call to send:
+    - For EVM instance it will return an EVM Transactions the user can send themselves.
+    - The Substrate instance returns a Call object that must be sent using the `substrate-interface` [package](https://pypi.org/project/substrate-interface/).
+    - You can see how these calls are sent in the sdk under the `_send_evm_tx()` and `_send_substrate_tx()` functions in the `peaq_sdk/base.py` file.
+
+**Sent Transaction (seed in create_instance)**
+- Message indicating the operation performed.
+- Receipt of the EVM/Substrate transaction.
+
+Read operations are able to perform without a seed/private key being set.
+They query the item and return it to the user.
+
+Below are quick examples how to use the sdk assuming the seed is set. For a more detailed
+tutorial please checkout our Python SDK Reference.
+
+### Decentralized Identifiers (DID)
+#### Create a DID
 ```python
-from peaq_sdk.types import CustomDocumentFields, Verification
+# example that uses all of the custom fields
+from peaq_sdk.types import CustomDocumentFields, Verification, Service, Signature
 
 custom_fields = CustomDocumentFields(
-    verifications=[Verification(type='EcdsaSecp256k1RecoveryMethod2020')]
-)
+    verifications=[
+        Verification(type='EcdsaSecp256k1RecoveryMethod2020')
+        ]
+    signature=Signature(type='EcdsaSecp256k1RecoveryMethod2020', issuer='0x9Eeab1aCcb1A701aEfAB00F3b8a275a39646641E', hash='0xGENERATED_HASH'),
+    services=[
+        Service(id='#cid', type='peaqStorage', data='CID_VALUE')
+        ]
+    )
 
-result = sdk.did.create(name="myDid", custom_document_fields=custom_fields)
+receipt = sdk.did.create(name="myDid", custom_document_fields=custom_fields)
 ```
-### Read a DID
+#### Read a DID
 ```python
+# EVM
+result = sdk.did.read(name="myDid", wss_base_url="wss://peaq.api.onfinality.io/public-ws")
+
+# Substrate
 result = sdk.did.read(name="myDid")
 ```
-### Update a DID
+#### Update a DID
 ```python
-from peaq_sdk.types import CustomDocumentFields, Verification
+from peaq_sdk.types import CustomDocumentFields, Verification, Service, Signature
 
 custom_fields = CustomDocumentFields(
-    verifications=[Verification(type='EcdsaSecp256k1RecoveryMethod2020')]
-)
+    verifications=[
+        Verification(type='EcdsaSecp256k1RecoveryMethod2020')
+        ]
+    signature=Signature(type='EcdsaSecp256k1RecoveryMethod2020', issuer='0x9Eeab1aCcb1A701aEfAB00F3b8a275a39646641C', hash='0xGENERATED_HASH'),
+    services=[
+        Service(id='#cid', type='peaqStorage', data='CID_VALUE')
+        ]
+    )
+
 result = sdk.did.update(name="myDid", custom_document_fields=custom_fields)
 ```
-### Delete a DID
+#### Delete a DID
 ```python
 result = sdk.did.delete(name="myDid")
 ```
 
-## On-chain Storage
-### Add Item
+### On-chain Storage
+#### Add Item
 ```python
 result = sdk.storage.add_item(item_type='key', item='value')
 ```
-### Read Item
+#### Read Item
 ```python
 result = sdk.storage.get_item(item_type='key')
 ```
-### Update Item
+#### Update Item
 ```python
 sdk.storage.update_item(item_type='key', item='new_value')
 ```
-### Remove Item
+#### Remove Item
 ```python
 sdk.storage.remove_item(item_type='key')
 ```
 
-For a more detailed explanation of the functionality please checkout our Python Sdk Reference.
-
 ## Security and Private Keys
 - Private keys are never **stored**, **sent**, or **logged** by the SDK.
+    - Used solely to generate an Account or Keypair.
 - Signing occurs locally only.
-- Private keys are used solely to generate an Account or Keypair, after which they are discarded from memory.
 - Ensure your local environment securely manages and protects private keys. **Never share your private keys.**
-
 
 ## Development
 ### Virtual Environment

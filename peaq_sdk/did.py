@@ -45,9 +45,7 @@ class Did(Base):
             metadata (SDKMetadata): Shared metadata, including chain type,
                 and optional signer.
         """
-        super().__init__()
-        self._api = api
-        self.__metadata: SDKMetadata = metadata
+        super().__init__(api, metadata)
         
     def create(self, name: str, custom_document_fields: CustomDocumentFields, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
@@ -81,12 +79,12 @@ class Did(Base):
                 f"got {type(custom_document_fields).__name__!r}"
             )
 
-        user_address = self._resolve_address(chain_type=self.__metadata.chain_type, pair=self.__metadata.pair, address=address)
+        user_address = self._resolve_address(address=address)
         
         serialized_did = self._generate_did_document(user_address, custom_document_fields)
         
-        if self.__metadata.chain_type is ChainType.EVM:                
-            did_function_selector = self._api.keccak(text=DidFunctionSignatures.ADD_ATTRIBUTE.value)[:4].hex()
+        if self.metadata.chain_type is ChainType.EVM:                
+            did_function_selector = self.api.keccak(text=DidFunctionSignatures.ADD_ATTRIBUTE.value)[:4].hex()
             name_encoded = name.encode("utf-8").hex()
             did_encoded = serialized_did.encode("utf-8").hex()
             encoded_params = encode(
@@ -99,8 +97,8 @@ class Did(Base):
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            if self.__metadata.pair:
-                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+            if self.metadata.pair:
+                receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully added the DID under the name {name} for user {user_address}.",
                     receipt=receipt
@@ -112,7 +110,7 @@ class Did(Base):
                 )
                 
         else:
-            call = self._api.compose_call(
+            call = self.api.compose_call(
                 call_module=CallModule.PEAQ_DID.value,
                 call_function=DidCallFunction.ADD_ATTRIBUTE.value,
                 call_params={
@@ -123,8 +121,8 @@ class Did(Base):
                     }
             )
             
-            if self.__metadata.pair:
-                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+            if self.metadata.pair:
+                receipt = self._send_substrate_tx(call)
                 return WrittenTransactionResult(
                     message=f"Successfully added the DID under the name {name} for user {user_address}.",
                     receipt=receipt
@@ -147,7 +145,7 @@ class Did(Base):
             Substrate-based registry, a valid `wss_base_url` must be provided to
             temporarily connect and query the Substrate chain.
         - Substrate: Queries the DID registry directly via the existing Substrate connection
-            (`self._api`). The address defaults to the local keypair's SS58 address
+            (`self.api`). The address defaults to the local keypair's SS58 address
             if none is explicitly provided.
 
         Args:
@@ -172,10 +170,10 @@ class Did(Base):
                 If the DID specified by `name` does not exist on-chain for `address`.
         """
         
-        if self.__metadata.chain_type is ChainType.EVM:
+        if self.metadata.chain_type is ChainType.EVM:
             evm_address = (
-                getattr(self.__metadata.pair, 'address', address)
-                if self.__metadata.pair
+                getattr(self.metadata.pair, 'address', address)
+                if self.metadata.pair
                 else address
             )
             if not evm_address:
@@ -184,15 +182,17 @@ class Did(Base):
                 raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(evm_address)
             api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            display_address = evm_address
         else:
             owner_address = (
-                getattr(self.__metadata.pair, 'ss58_address', address)
-                if self.__metadata.pair
+                getattr(self.metadata.pair, 'ss58_address', address)
+                if self.metadata.pair
                 else address
             )
             if not owner_address:
                 raise TypeError(f"Address is set to {owner_address}. Please either set seed at instance creation or pass an address.")
-            api = self._api
+            api = self.api
+            display_address = owner_address
         
         # Query storage
         name_encoded = "0x" + name.encode("utf-8").hex()
@@ -203,7 +203,7 @@ class Did(Base):
         )
         # Check result
         if resp['result'] is None:
-            raise GetDidError(f"DID of name {name} was not found at address {owner_address}.")
+            raise GetDidError(f"DID of name {name} was not found at address {display_address}.")
 
         read_name = bytes.fromhex(resp['result']['name'][2:]).decode('utf-8')
         value = bytes.fromhex(resp['result']['value'][2:]).decode('utf-8')
@@ -252,13 +252,13 @@ class Did(Base):
                 f"got {type(custom_document_fields).__name__!r}"
             )
             
-        user_address = self._resolve_address(chain_type=self.__metadata.chain_type, pair=self.__metadata.pair, address=address)
+        user_address = self._resolve_address(address=address)
         
         serialized_did = self._generate_did_document(user_address, custom_document_fields)
         
-        if self.__metadata.chain_type is ChainType.EVM:
+        if self.metadata.chain_type is ChainType.EVM:
             serialized_did = self._generate_did_document(user_address, custom_document_fields)
-            did_function_selector = self._api.keccak(text=DidFunctionSignatures.UPDATE_ATTRIBUTE.value)[:4].hex()
+            did_function_selector = self.api.keccak(text=DidFunctionSignatures.UPDATE_ATTRIBUTE.value)[:4].hex()
             name_encoded = name.encode("utf-8").hex()
             did_encoded = serialized_did.encode("utf-8").hex()
             
@@ -272,8 +272,8 @@ class Did(Base):
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            if self.__metadata.pair:
-                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+            if self.metadata.pair:
+                receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully updated the DID under the name {name} for user {user_address}.",
                     receipt=receipt
@@ -285,7 +285,7 @@ class Did(Base):
                 )
                 
         else:
-            call = self._api.compose_call(
+            call = self.api.compose_call(
                 call_module=CallModule.PEAQ_DID.value,
                 call_function=DidCallFunction.UPDATE_ATTRIBUTE.value,
                 call_params={
@@ -296,8 +296,8 @@ class Did(Base):
                     }
             )
             
-            if self.__metadata.pair:
-                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+            if self.metadata.pair:
+                receipt = self._send_substrate_tx(call)
                 return WrittenTransactionResult(
                     message=f"Successfully updated the DID under the name {name} for user {user_address}.",
                     receipt=receipt
@@ -332,10 +332,10 @@ class Did(Base):
                     but not signed (no local signer). Returned with message and tx/call.
         """
         
-        user_address = self._resolve_address(chain_type=self.__metadata.chain_type, pair=self.__metadata.pair, address=address)
+        user_address = self._resolve_address(address=address)
         
-        if self.__metadata.chain_type is ChainType.EVM:
-            did_function_selector = self._api.keccak(text=DidFunctionSignatures.REMOVE_ATTRIBUTE.value)[:4].hex()
+        if self.metadata.chain_type is ChainType.EVM:
+            did_function_selector = self.api.keccak(text=DidFunctionSignatures.REMOVE_ATTRIBUTE.value)[:4].hex()
             name_encoded = name.encode("utf-8").hex()
             encoded_params = encode(
                 ['address', 'bytes'],
@@ -347,8 +347,8 @@ class Did(Base):
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            if self.__metadata.pair:
-                receipt = self._send_evm_tx(tx, self.__metadata.pair)
+            if self.metadata.pair:
+                receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully removed the DID under the name {name} for user {user_address}.",
                     receipt=receipt
@@ -360,7 +360,7 @@ class Did(Base):
                 )
                 
         else:
-            call = self._api.compose_call(
+            call = self.api.compose_call(
                 call_module=CallModule.PEAQ_DID.value,
                 call_function=DidCallFunction.REMOVE_ATTRIBUTE.value,
                 call_params={
@@ -369,8 +369,8 @@ class Did(Base):
                     }
             )
             
-            if self.__metadata.pair:
-                receipt = self._send_substrate_tx(call, self.__metadata.pair)
+            if self.metadata.pair:
+                receipt = self._send_substrate_tx(call)
                 return WrittenTransactionResult(
                     message=f"Successfully removed the DID under the name {name} for user {user_address}.",
                     receipt=receipt
@@ -466,7 +466,7 @@ class Did(Base):
         verification_method = peaq_proto.VerificationMethod()
         verification_method.id = id
         
-        if self.__metadata.chain_type is ChainType.EVM:
+        if self.metadata.chain_type is ChainType.EVM:
             if verification.type != "EcdsaSecp256k1RecoveryMethod2020":
                 raise ValueError(
                     f"EVM only supports EcdsaSecp256k1RecoveryMethod2020, got {verification.type}"
