@@ -59,7 +59,7 @@ All return objects are either:
 **Unsent Transaction/Call (seed not in create_instance)**
 - Message indicating what tx or call was built.
 - Transaction/Call to send:
-    - For EVM instance it will return an EVM Transactions the user can send themselves.
+    - For EVM instance it will return an EVM Transaction the user can send themselves.
     - The Substrate instance returns a Call object that must be sent using the `substrate-interface` [package](https://pypi.org/project/substrate-interface/).
     - You can see how these calls are sent in the sdk under the `_send_evm_tx()` and `_send_substrate_tx()` functions in the `peaq_sdk/base.py` file.
 
@@ -82,7 +82,7 @@ from peaq_sdk.types import CustomDocumentFields, Verification, Service, Signatur
 custom_fields = CustomDocumentFields(
     verifications=[
         Verification(type='EcdsaSecp256k1RecoveryMethod2020')
-        ]
+        ],
     signature=Signature(type='EcdsaSecp256k1RecoveryMethod2020', issuer='0x9Eeab1aCcb1A701aEfAB00F3b8a275a39646641E', hash='0xGENERATED_HASH'),
     services=[
         Service(id='#cid', type='peaqStorage', data='CID_VALUE')
@@ -106,7 +106,7 @@ from peaq_sdk.types import CustomDocumentFields, Verification, Service, Signatur
 custom_fields = CustomDocumentFields(
     verifications=[
         Verification(type='EcdsaSecp256k1RecoveryMethod2020')
-        ]
+        ],
     signature=Signature(type='EcdsaSecp256k1RecoveryMethod2020', issuer='0x9Eeab1aCcb1A701aEfAB00F3b8a275a39646641C', hash='0xGENERATED_HASH'),
     services=[
         Service(id='#cid', type='peaqStorage', data='CID_VALUE')

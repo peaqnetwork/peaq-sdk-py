@@ -15,6 +15,7 @@ from peaq_sdk.types.common import (
     WrittenTransactionResult,
     BuiltEvmTransactionResult,
     BuiltCallTransactionResult,
+    BaseUrlError
 )
 from peaq_sdk.types.storage import (
     GetItemError,
@@ -153,6 +154,8 @@ class Storage(Base):
             )
             if not evm_address:
                 raise TypeError(f"Address is set to {evm_address}. Please either set seed at instance creation or pass an address.")
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(evm_address)
             api = SubstrateInterface(url=wss_base_url, ss58_format=42)
             display_address = evm_address

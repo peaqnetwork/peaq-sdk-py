@@ -15,9 +15,10 @@ def test_substrate_storage(substrate_sdk, item_type, item, config):
         f"for the address {config['SUBSTRATE_ADDRESS']}."
     )
     assert result.message == expected_message
-    assert re.fullmatch(pattern, result.receipt.block_hash) is not None
-    assert re.fullmatch(pattern, result.receipt.extrinsic_hash) is not None
-    assert result.receipt.fee is not None
+    is_success = result.receipt['_ExtrinsicReceipt__is_success']
+    assert is_success, "Transaction did not succeed."
+    assert 'extrinsic_hash' in result.receipt
+    assert 'block_hash' in result.receipt
     
     # Read back the stored item.
     result = substrate_sdk.storage.get_item(item_type=item_type)
@@ -35,9 +36,10 @@ def test_substrate_storage(substrate_sdk, item_type, item, config):
         f"for the address {config['SUBSTRATE_ADDRESS']}."
     )
     assert result.message == expected_update_msg
-    assert re.fullmatch(pattern, result.receipt.block_hash) is not None
-    assert re.fullmatch(pattern, result.receipt.extrinsic_hash) is not None
-    assert result.receipt.fee is not None
+    is_success = result.receipt['_ExtrinsicReceipt__is_success']
+    assert is_success, "Transaction did not succeed."
+    assert 'extrinsic_hash' in result.receipt
+    assert 'block_hash' in result.receipt
     
     # Verify the updated item.
     result = substrate_sdk.storage.get_item(item_type=item_type)
@@ -53,9 +55,10 @@ def test_substrate_storage(substrate_sdk, item_type, item, config):
         f"Successfully removed the storage item type {item_type} for the address {config['SUBSTRATE_ADDRESS']}."
     )
     assert result.message == expected_remove_msg
-    assert re.fullmatch(pattern, result.receipt.block_hash) is not None
-    assert re.fullmatch(pattern, result.receipt.extrinsic_hash) is not None
-    assert result.receipt.fee is not None
+    is_success = result.receipt['_ExtrinsicReceipt__is_success']
+    assert is_success, "Transaction did not succeed."
+    assert 'extrinsic_hash' in result.receipt
+    assert 'block_hash' in result.receipt
 
     # Attempt to read the removed item and expect failure.
     with pytest.raises(GetItemError) as exc_info:

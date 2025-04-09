@@ -4,7 +4,7 @@ from peaq_sdk.types.common import ChainType
 from peaq_sdk.types.did import CustomDocumentFields, Verification, Signature, Service
 
 
-@pytest.fixture(params=["auto-did-test-009"])
+@pytest.fixture(params=["auto-did-test-015"])
 def name(request):
     return request.param
 

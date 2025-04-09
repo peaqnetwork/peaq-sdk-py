@@ -16,11 +16,6 @@ class ChainType(Enum):
     EVM = "evm"
     SUBSTRATE = "substrate"
 
-@dataclass
-class TransactionResult:
-    extrinsic_hash: str
-    block_hash: str
-    fee: int
 
 @dataclass
 class SDKMetadata:
@@ -45,7 +40,7 @@ class EvmTransaction():
 @dataclass
 class WrittenTransactionResult():
     message: str
-    receipt: TransactionResult
+    receipt: dict
 
 @dataclass
 class BuiltEvmTransactionResult():
