@@ -29,6 +29,7 @@ from peaq_sdk.utils.utils import evm_to_address
 from substrateinterface.base import SubstrateInterface
 from web3 import Web3
 from eth_abi import encode
+from google.protobuf.json_format import MessageToDict
 
 class Did(Base):
     """
@@ -215,7 +216,7 @@ class Did(Base):
             value=value,
             validity=str(resp['result']['validity']),
             created=str(resp['result']['created']),
-            document=document
+            document=MessageToDict(document)
         )
 
 
