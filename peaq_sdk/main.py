@@ -32,15 +32,16 @@ class Main(Base):
             base_url (str): The URL for connecting to the blockchain.
             chain_type (Optional[ChainType]): The type of blockchain (e.g., EVM or Substrate).
         """
-        super().__init__()
-        self.__metadata: SDKMetadata = SDKMetadata(
+        metadata: SDKMetadata = SDKMetadata(
             base_url=base_url,
             chain_type=chain_type,
             pair=None
         )
-        self._api = self._create_api()
-        self.did: Did = Did(self._api, self.__metadata)
-        self.storage: Storage = Storage(self._api, self.__metadata)
+        api = self._create_api(metadata)
+        super().__init__(api, metadata)
+        
+        self.did: Did = Did(api, metadata)
+        self.storage: Storage = Storage(api, metadata)
     
     @classmethod
     def create_instance(cls,
@@ -88,7 +89,7 @@ class Main(Base):
         """
         if not seed:
             return
-        if self.__metadata.chain_type == ChainType.EVM:
+        if self._metadata.chain_type == ChainType.EVM:
             key_str = seed[2:] if seed.startswith("0x") else seed
             if len(key_str) != 64:
                 raise ValueError("Invalid EVM private key length. Expected 64 hex characters (excluding '0x' prefix).")
@@ -116,11 +117,10 @@ class Main(Base):
         """
         if not seed:
             return
-        key_pair = self._create_key_pair(self.__metadata.chain_type, seed)
-        self.__metadata.pair = key_pair
+        self._create_key_pair(seed)
     
     
-    def _create_api(self) -> Union[Web3, SubstrateInterface]:
+    def _create_api(self, metadata: SDKMetadata) -> Union[Web3, SubstrateInterface]:
         """
         Initializes and returns an API provider for blockchain interaction based on the chain type 
         specified in the SDK metadata.
@@ -131,13 +131,13 @@ class Main(Base):
         Raises:
             BaseUrlError: If the base URL does not start with the expected protocol prefix.
         """
-        base_url: str = self.__metadata.base_url
-        if self.__metadata.chain_type == ChainType.EVM:
+        base_url: str = metadata.base_url
+        if metadata.chain_type == ChainType.EVM:
             expected_prefix: str = "https://"
             self._validate_base_url(base_url, expected_prefix, ChainType.EVM)
             api = Web3(Web3.HTTPProvider(base_url))
             return api
-        elif self.__metadata.chain_type in (ChainType.SUBSTRATE, None):
+        elif metadata.chain_type in (ChainType.SUBSTRATE, None):
             expected_prefix: str = "wss://"
             self._validate_base_url(base_url, expected_prefix, ChainType.SUBSTRATE)
             api = SubstrateInterface(url=base_url, ss58_format=42)

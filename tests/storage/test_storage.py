@@ -65,7 +65,7 @@ def test_substrate_storage(substrate_sdk, item_type, item, config):
     )
     assert str(exc_info.value) == expected_error
 
-@pytest.mark.skip(reason="Testing Substrate")
+@pytest.mark.skip(reason="Skipping until remove precompile is added")
 def test_evm_storage(evm_sdk, item_type, item, config):
     sdk, wss_url = evm_sdk
     
