@@ -35,6 +35,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}  # Only run this job when manually triggered
         run: pip install bump2version
       - name: Bump version
+        id: current_version
         run: |
           # Get the version bump type (major, minor, patch) from the input
           if ${{ github.event_name == 'workflow_dispatch' }} ; then
@@ -42,7 +43,7 @@ jobs:
            #reset dev version to current release version
            VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
            sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $VERSION/}" setup.cfg
-           echo "VERSION=$VERSION" >> $GITHUB_ENV
+           echo "version=$VERSION" >> $GITHUB_OUTPUT
           else
            VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['development']['version'])")
            echo "Current version: $VERSION"
@@ -63,12 +64,12 @@ jobs:
            sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $NEW_VERSION/}" setup.cfg
 
           # Output the new version for further steps
-          echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           fi
       - name: Push version bump changes
         run: |
            git add setup.cfg bumpversion.cfg 
-           git commit -m "Bump version to ${{ env.VERSION }}"
+           git commit -m "Bump version to ${{ steps.current_version.outputs.version }}"
            git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
            sleep 5 
   build:
@@ -132,6 +133,7 @@ jobs:
       Sign the Python distribution with Sigstore
       and upload them to GitHub Release
     needs:
+    - bump_version
     - publish-to-pypi
     runs-on: ubuntu-latest
 
@@ -150,16 +152,12 @@ jobs:
         inputs: >-
           ./dist/*.tar.gz
           ./dist/*.whl
-    - name: Get version from setup.cfg
-      run: |
-          VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
     - name: Create GitHub Release
       env:
         GITHUB_TOKEN: ${{ github.token }}
       run: >-
         gh release create
-        "v${{ env.VERSION }}"
+        "v${{ needs.bump_version.outputs.version }}"
         --repo "$GITHUB_REPOSITORY"
         --notes ""
     - name: Upload artifact signatures to GitHub Release
@@ -167,13 +165,14 @@ jobs:
         GITHUB_TOKEN: ${{ github.token }}
       run: >-
         gh release upload
-        "v${{ env.VERSION }}" dist/**
+        "v${{ needs.bump_version.outputs.version }}"" dist/**
         --repo "$GITHUB_REPOSITORY"
 
   publish-to-testpypi:
     name: Publish Python distribution to TestPyPI
     if: ${{ github.event_name != 'workflow_dispatch' }}
     needs:
+    - bump_version
     - build
     runs-on: ubuntu-latest
 
