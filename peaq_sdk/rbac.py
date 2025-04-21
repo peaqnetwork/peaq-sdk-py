@@ -1,4 +1,7 @@
+from typing import Optional
+import uuid
 
+from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
     SDKMetadata
 )
@@ -23,3 +26,13 @@ class Rbac(Base):
                 and optional signer.
         """
         super().__init__(api, metadata)
+        
+    def create_role(self, role_name: str, role_id: Optional[str] = None) -> None:
+        if role_id is None:
+            role_id = str(uuid.uuid4())[:32]
+        elif len(role_id) != 32:
+            print(len(role_id))
+            raise ValueError("Role Id length should be 32 char only")
+        
+        
+        print(role_id)
