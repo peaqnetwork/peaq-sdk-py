@@ -93,5 +93,6 @@ def evm_sdk(config, chain, connection_type):
     sdk = Main.create_instance(
         chain_type=ChainType.EVM, 
         base_url=base_rpc, 
-        seed=config["EVM_PRIVATE"])
+        seed=config["EVM_PRIVATE"]
+    )
     return sdk, base_wss

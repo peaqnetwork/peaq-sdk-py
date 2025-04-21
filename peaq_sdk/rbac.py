@@ -5,17 +5,23 @@ from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
+    PrecompileAddresses,
+    EvmTransaction,
+    BuiltEvmTransactionResult,
     CallModule,
     WrittenTransactionResult,
     BuiltCallTransactionResult
 )
 from peaq_sdk.types.rbac import (
-    RbacCallFunction
+    RbacCallFunction,
+    RbacFunctionSignatures
 )
 
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface
 from web3 import Web3
+from eth_abi import encode
+
 
 class Rbac(Base):
     """
@@ -41,8 +47,30 @@ class Rbac(Base):
             raise ValueError("Role Id length should be 32 char only")
         
         role_id_bytes = role_id.encode()
+        
         if self.metadata.chain_type is ChainType.EVM:
-            pass
+            rbac_function_selector = self.api.keccak(text=RbacFunctionSignatures.ADD_ROLE.value)[:4].hex()
+            role_name_encoded = role_name.encode("utf-8").hex()
+            encoded_params = encode(
+                ['bytes32', 'bytes'],
+                [bytes.fromhex(role_id_bytes.hex()), bytes.fromhex(role_name_encoded)]
+            ).hex()
+            
+            tx: EvmTransaction = {
+                "to": PrecompileAddresses.RBAC.value,
+                "data": f"0x{rbac_function_selector}{encoded_params}"
+            }
+            if self.metadata.pair:
+                receipt = self._send_evm_tx(tx)
+                return WrittenTransactionResult(
+                    message=f"Successfully added the RBAC role under the role name of {role_name} with the role id of {role_id}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltEvmTransactionResult(
+                    message=f"Constructed RBAC create role call for the role name of {role_name} and role id of {role_id}. You must sign and send externally.",
+                    tx=tx
+                )
         
         else:
             call = self.api.compose_call(
@@ -56,7 +84,7 @@ class Rbac(Base):
             if self.metadata.pair:
                 receipt = self._send_substrate_tx(call)
                 return WrittenTransactionResult(
-                    message=f"Successfully added the RBAC Role under the role name of {role_name} with the role id of {role_id}.",
+                    message=f"Successfully added the RBAC role under the role name of {role_name} with the role id of {role_id}.",
                     receipt=receipt
                 )
             else:
