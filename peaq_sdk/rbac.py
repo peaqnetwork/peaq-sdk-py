@@ -3,7 +3,14 @@ import uuid
 
 from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
-    SDKMetadata
+    ChainType,
+    SDKMetadata,
+    CallModule,
+    WrittenTransactionResult,
+    BuiltCallTransactionResult
+)
+from peaq_sdk.types.rbac import (
+    RbacCallFunction
 )
 
 # 3rd party imports
@@ -31,8 +38,29 @@ class Rbac(Base):
         if role_id is None:
             role_id = str(uuid.uuid4())[:32]
         elif len(role_id) != 32:
-            print(len(role_id))
             raise ValueError("Role Id length should be 32 char only")
         
+        role_id_bytes = role_id.encode()
+        if self.metadata.chain_type is ChainType.EVM:
+            pass
         
-        print(role_id)
+        else:
+            call = self.api.compose_call(
+                call_module=CallModule.PEAQ_RBAC.value,
+                call_function=RbacCallFunction.ADD_ROLE.value,
+                call_params={
+                    'role_id': role_id_bytes,
+                    'name': role_name
+                    }
+            )
+            if self.metadata.pair:
+                receipt = self._send_substrate_tx(call)
+                return WrittenTransactionResult(
+                    message=f"Successfully added the RBAC Role under the role name of {role_name} with the role id of {role_id}.",
+                    receipt=receipt
+                )
+            else:
+                return BuiltCallTransactionResult(
+                    message=f"Constructed RBAC create role call for the role name of {role_name} and role id of {role_id}. You must sign and send externally.",
+                    call=call
+                )

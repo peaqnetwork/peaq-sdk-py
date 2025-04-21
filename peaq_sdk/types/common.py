@@ -11,11 +11,9 @@ from substrateinterface.keypair import Keypair
 from substrateinterface.base import GenericCall
 from eth_account import Account
 
-
 class ChainType(Enum):
     EVM = "evm"
     SUBSTRATE = "substrate"
-
 
 @dataclass
 class SDKMetadata:
@@ -31,7 +29,7 @@ class PrecompileAddresses(str, Enum):
 class CallModule(str, Enum):
     PEAQ_DID = 'PeaqDid'
     PEAQ_STORAGE = 'PeaqStorage'
-    # Add more modules as needed
+    PEAQ_RBAC = 'PeaqRbac'
 
 class EvmTransaction():
     to: str

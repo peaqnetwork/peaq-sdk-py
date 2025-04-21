@@ -84,7 +84,7 @@ class Did(Base):
         
         serialized_did = self._generate_did_document(user_address, custom_document_fields)
         
-        if self.metadata.chain_type is ChainType.EVM:                
+        if self.metadata.chain_type is ChainType.EVM:
             did_function_selector = self.api.keccak(text=DidFunctionSignatures.ADD_ATTRIBUTE.value)[:4].hex()
             name_encoded = name.encode("utf-8").hex()
             did_encoded = serialized_did.encode("utf-8").hex()
