@@ -7,6 +7,7 @@ from typing import Optional, Union
 from peaq_sdk.base import Base
 from peaq_sdk.did import Did
 from peaq_sdk.storage import Storage
+from peaq_sdk.rbac import Rbac
 from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
 from peaq_sdk.types.main import CreateInstanceOptions
 
@@ -42,6 +43,7 @@ class Main(Base):
         
         self.did: Did = Did(api, metadata)
         self.storage: Storage = Storage(api, metadata)
+        self.rbac: Rbac = Rbac(api, metadata)
     
     @classmethod
     def create_instance(cls,
