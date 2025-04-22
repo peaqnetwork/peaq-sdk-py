@@ -1,5 +1,6 @@
 from typing import Optional
 import uuid
+import binascii
 
 from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
@@ -10,12 +11,17 @@ from peaq_sdk.types.common import (
     BuiltEvmTransactionResult,
     CallModule,
     WrittenTransactionResult,
-    BuiltCallTransactionResult
+    BuiltCallTransactionResult,
+    BaseUrlError
 )
 from peaq_sdk.types.rbac import (
     RbacCallFunction,
-    RbacFunctionSignatures
+    RbacFunctionSignatures,
+    GetRbacError,
+    FetchResponseData
 )
+
+from peaq_sdk.utils.utils import evm_to_address
 
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface
@@ -92,3 +98,38 @@ class Rbac(Base):
                     message=f"Constructed RBAC create role call for the role name of {role_name} and role id of {role_id}. You must sign and send externally.",
                     call=call
                 )
+                
+    def fetch_role(self, owner: str, role_id: str, wss_base_url: Optional[str] = None) -> FetchResponseData:
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage
+        role_id_bytes = _rpc_id(role_id)
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_ROLE.value, [owner_address, role_id_bytes, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"Role id of {role_id} was not found at the owner address of {owner}.") 
+        
+        ok = resp['result']['Ok']
+        role_id_str   = bytes(ok['id']).decode('utf-8')
+        role_name_str = bytes(ok['name']).decode('utf-8')
+        
+        return FetchResponseData(
+            id=role_id_str,
+            name=role_name_str,
+            enabled=ok['enabled']
+        )
+
+def _rpc_id(entity_id):
+    return [ord(c) for c in entity_id]
