@@ -98,7 +98,7 @@ class Did(Base):
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            if self.metadata.pair:
+            if self.metadata.pair and not self.metadata.get_real:
                 receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully added the DID under the name {name} for user {user_address}.",

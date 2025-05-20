@@ -210,7 +210,7 @@ class Base:
     def _send_evm_tx(self, tx: dict, max_attempts: int = 5) -> dict:
         """
         Sends an EVM transaction with retry logic by increasing gas price on failure.
-        if disconnection occurs attempts to reconnect.
+        If disconnection occurs attempts to reconnect.
 
         Args:
             tx (dict): Transaction dict with at minimum 'to' and 'data'.

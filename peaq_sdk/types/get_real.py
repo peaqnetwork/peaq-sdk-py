@@ -4,10 +4,10 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from enum import Enum
 
-# Used for Storage EVM precompiles
-class MachineStartionFactoryFunctionSignatures(str, Enum):
-    ADD_ATTRIBUTE = "addAttribute(address,bytes,bytes,uint32)"
-    READ_ATTRIBUTE = "readAttribute(address,bytes)"
-    UPDATE_ATTRIBUTE = "updateAttribute(address,bytes,bytes,uint32)"
+# Used for Machine Station Factory Smart Contract
+class MachineStationFactoryFunctionSignatures(str, Enum):
+    DEPLOY_MACHINE_SMART_ACCOUNT = "deployMachineSmartAccount(address,uint256,bytes)"
+    TRANSFER_MACHINE_STATION_BALANCE = "transferMachineStationBalance(address,uint256,bytes)"
+    EXECUTE_TRANSACTION = "executeTransaction(address,bytes,uint256,bytes)"
     REMOVE_ATTRIBUTE = "removeAttribute(address,bytes)"
 

@@ -168,7 +168,7 @@ class Main(Base):
         cls,
         base_url: str,
         machine_station_address: str,
-        owner_private_key: str,
+        depin_owner_private_key: str,
         machine_owner_private_key: str,
         service_url: str,
         api_key: str,
@@ -194,16 +194,16 @@ class Main(Base):
             Main: An initialized SDK object ready for executing blockchain operations.
         """
         sdk = cls(base_url, ChainType.EVM, get_real=True)
-        sdk._initialize_signer(owner_private_key)
+        sdk._initialize_signer(depin_owner_private_key)
         sdk.get_real = GetReal(
-            main_sdk=sdk,
+            sdk=sdk,
             machine_station_address=machine_station_address,
-            owner_private_key=owner_private_key,
+            depin_owner_private_key=depin_owner_private_key,
             machine_owner_private_key=machine_owner_private_key,
             service_url=service_url,
             api_key=api_key,
             project_api_key=project_api_key,
-            api=sdk.api,                   # passing API if needed
-            metadata=sdk.metadata          # passing metadata if needed
+            api=sdk.api,
+            metadata=sdk.metadata
         )
         return sdk
