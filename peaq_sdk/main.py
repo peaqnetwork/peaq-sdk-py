@@ -7,6 +7,7 @@ from typing import Optional, Union
 from peaq_sdk.base import Base
 from peaq_sdk.did import Did
 from peaq_sdk.storage import Storage
+from peaq_sdk.get_real import GetReal
 from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
 from peaq_sdk.types.main import CreateInstanceOptions
 
@@ -24,7 +25,7 @@ class Main(Base):
     initializing the signer, creating the API connection, and handling blockchain-specific operations.
     It inherits from Base, which contains common logic for both EVM and Substrate operations.
     """
-    def __init__(self, base_url: str, chain_type: Optional[ChainType]) -> None:
+    def __init__(self, base_url: str, chain_type: Optional[ChainType], get_real: Optional[ChainType] = False) -> None:
         """
         Initializes the Main class, representing the primary interface for the SDK.
 
@@ -35,7 +36,8 @@ class Main(Base):
         metadata: SDKMetadata = SDKMetadata(
             base_url=base_url,
             chain_type=chain_type,
-            pair=None
+            pair=None,
+            get_real=get_real
         )
         api = self._create_api(metadata)
         super().__init__(api, metadata)
@@ -160,3 +162,48 @@ class Main(Base):
                 f"Invalid base URL for {interaction}: {base_url}. "
                 f"It must start with '{expected_prefix}' to establish connection."
             )
+            
+    @classmethod
+    def get_real_instance(
+        cls,
+        base_url: str,
+        machine_station_address: str,
+        owner_private_key: str,
+        machine_owner_private_key: str,
+        service_url: str,
+        api_key: str,
+        project_api_key: str,
+        ) -> Main:
+        """
+        Creates a new Get Real instance for DePINs in the campaign. Utilizes the user deployed Machine Station Factory and is
+        only EVM compatible.
+
+        Args:
+            base_url (str): The connection URL for the blockchain.
+            machine_station_address (str): The address of the deployed contract for the machine station factory.
+            owner_private_key (str): Admin account owner that is responsible for funding and oversight on the machine station factory.
+            machine_owner_private_key (str): The externally owned account that represents the owner of the machine smart account.
+            service_url (str): URL used to connect to peaq's campaign service.
+            api_key (str): Key used to provide authentication with the peaq service.
+            project_api_key (str): Key used to provide authentication for a specific project.
+            
+            
+            seed (Optional[str]): The secret (mnemonic phrase or private key) used to generate the signer for executing transactions.
+
+        Returns:
+            Main: An initialized SDK object ready for executing blockchain operations.
+        """
+        sdk = cls(base_url, ChainType.EVM, get_real=True)
+        sdk._initialize_signer(owner_private_key)
+        sdk.get_real = GetReal(
+            main_sdk=sdk,
+            machine_station_address=machine_station_address,
+            owner_private_key=owner_private_key,
+            machine_owner_private_key=machine_owner_private_key,
+            service_url=service_url,
+            api_key=api_key,
+            project_api_key=project_api_key,
+            api=sdk.api,                   # passing API if needed
+            metadata=sdk.metadata          # passing metadata if needed
+        )
+        return sdk

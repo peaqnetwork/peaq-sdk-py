@@ -86,7 +86,7 @@ class Storage(Base):
                 "data": f"0x{add_item_function_selector}{encoded_params}"
             }
             
-            if self.metadata.pair:
+            if self.metadata.pair and not self.metadata.get_real:
                 account = self.metadata.pair
                 receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
