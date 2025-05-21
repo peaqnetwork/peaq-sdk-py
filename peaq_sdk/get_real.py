@@ -86,8 +86,6 @@ class GetReal(Base):
         self.service_api_key = api_key
         self.project_api_key = project_api_key
         self.machine_station_address = machine_station_address
-        # self.gas_station_owner_private = depin_private_key
-        # self.machine_owner_private = machine_owner_private_key
 
         # Create a wallet to sign DePIN as owner transactions
         self.depin_owner_account = Account.from_key(depin_owner_private_key)
@@ -116,31 +114,138 @@ class GetReal(Base):
 
         return f"Successfully Transferred balance to the new Machine Station Factory at address {new_machine_station_address}"
     
-    # TODO change to 'execute_storage_tx' or something like that 
-    def generate_storage_tx(self, email, item_type, item, tag):
+    def storage_tx(self, email, item_type, item, tag):
         """
         TODO
         """
+        storage_data = self.generate_storage_tx(email, item_type, item, tag)
+        
+        self.execute_transaction(
+            storage_data['target'],
+            storage_data['calldata'],
+            storage_data['nonce'],
+            storage_data['depin_signature'],
+        )
+        return "Success"
+    
+    # allow for projects to use custom fields
+    def did_tx(self, project, email, account_address, tag, custom_document_fields: Optional[str] = None):
+        """
+        TODO
+        """
+        did_data = self.generate_did_tx(project, email, account_address, tag, custom_document_fields)
+        
+        self.execute_transaction(
+            did_data['target'],
+            did_data['calldata'],
+            did_data['nonce'],
+            did_data['depin_signature'],
+        )
+        return "Success"
+    
+    def smart_account_storage_tx(self, smart_account_address, email, item_type, item, tag):
+        """
+        - if they don't have access to private key, return the eip-712signable message back for them to sign on the frontend
+        TODO
+        """
+        smart_account_storage_data = self.generate_smart_account_storage_tx(smart_account_address, email, item_type, item, tag)
+
+        self.execute_machine_transaction(
+            smart_account_storage_data['smart_account_address'],
+            smart_account_storage_data['target'],
+            smart_account_storage_data['calldata'],
+            smart_account_storage_data['nonce'],
+            smart_account_storage_data['depin_owner_signature'],
+            smart_account_storage_data['smart_account_owner_signature']
+        )
+        return "Success"
+        
+    def smart_account_did_tx(self, account_address, smart_account_address, project, email, tag, custom_document_fields: Optional[str] = None):
+        """
+        - if they don't have access to private key, return the eip-712 signable message back for them to sign on the frontend
+        TODO
+        """
+        smart_account_did_tx = self.generate_smart_account_did_tx(account_address, smart_account_address, project, email, tag, custom_document_fields)
+        
+        self.execute_machine_transaction(
+            smart_account_did_tx['smart_account_address'],
+            smart_account_did_tx['target'],
+            smart_account_did_tx['calldata'],
+            smart_account_did_tx['nonce'],
+            smart_account_did_tx['depin_owner_signature'],
+            smart_account_did_tx['smart_account_owner_signature']
+        )
+        return "Success"
+    
+    def smart_account_batch_txs(self, data_payloads):
+        """
+        TODO
+        """
+        # Unpack data payload
+        smart_account_addresses = [tx["smart_account_address"] for tx in data_payloads]
+        targets = [tx["target"] for tx in data_payloads]
+        calldata_list = [tx["calldata"] for tx in data_payloads]
+        machine_nonces = [tx["nonce"] for tx in data_payloads]
+        smart_account_owner_signatures = [tx["smart_account_owner_signature"] for tx in data_payloads]
+
+        # Generate a single batch‐nonce for the entire batch
+        nonce = secrets.randbits(128)
+        
+        depin_owner_signature = self.depin_owner_sign_typed_data_execute_machine_batch_transactions(smart_account_addresses, targets, calldata_list, nonce, machine_nonces)
+        
+        
+        self.execute_machine_batch_transaction(
+            smart_account_addresses,
+            targets,
+            calldata_list,
+            nonce,
+            machine_nonces,
+            depin_owner_signature,
+            smart_account_owner_signatures
+        )
+        
+        return "Success"
+
+    
+    def smart_account_transfer_balance(self, smart_account_address, recipient_address):
+        """
+        TODO
+        """
+        nonce = secrets.randbits(128)
+        
+        smart_account_owner_signature = self.machine_sign_typed_data_transfer_machine_balance(smart_account_address, recipient_address, nonce)
+        depin_owner_signature = self.owner_sign_typed_data_transfer_machine_balance(smart_account_address, recipient_address, nonce)
+        
+        
+        self.execute_machine_transfer_balance(
+            smart_account_address,
+            recipient_address,
+            nonce,
+            depin_owner_signature,
+            smart_account_owner_signature
+        )
+        
+        return "Success"
+
+        
+
+    # The following code generates the tx to be sent on chain
+    def generate_storage_tx(self, email, item_type, item, tag):
         nonce = secrets.randbits(128)
         response = self.store_data_key(email, item_type, tag)
         # TODO make sure you get a valid response back
         
         storage_calldata = self.sdk.storage.add_item(item_type, item)
         depin_signature = self.depin_owner_sign_typed_data_execute_transaction(PrecompileAddresses.STORAGE.value, storage_calldata.tx['data'], nonce)
-        
-        self.execute_transaction(
-            PrecompileAddresses.STORAGE.value,
-            storage_calldata.tx['data'],
-            nonce,
-            depin_signature,
-        )
-        return "Success"
     
-    # allow for projects to use custom fields
+        return {
+            "target": PrecompileAddresses.STORAGE.value,
+            "calldata": storage_calldata.tx['data'],
+            "nonce": nonce,
+            "depin_signature": depin_signature
+            }
+    
     def generate_did_tx(self, project, email, account_address, tag, custom_document_fields: Optional[str] = None):
-        """
-        TODO
-        """
         nonce = secrets.randbits(128)
         account_email_signature = self.generate_email_signature(email, account_address, tag)
         
@@ -161,19 +266,14 @@ class GetReal(Base):
         did_calldata = self.sdk.did.create(name=project, custom_document_fields=custom_fields, address=account_address)
         depin_signature = self.depin_owner_sign_typed_data_execute_transaction(PrecompileAddresses.DID.value, did_calldata.tx['data'], nonce)
 
-        self.execute_transaction(
-            PrecompileAddresses.DID.value,
-            did_calldata.tx['data'],
-            nonce,
-            depin_signature,
-        )
-        return "Success"
-    
+        return {
+            "target": PrecompileAddresses.DID.value,
+            "calldata": did_calldata.tx['data'],
+            "nonce": nonce,
+            "depin_signature": depin_signature
+            }
+        
     def generate_smart_account_storage_tx(self, smart_account_address, email, item_type, item, tag):
-        """
-        - if they don't have access to private key, return the eip-712signable message back for them to sign on the frontend
-        TODO
-        """
         nonce = secrets.randbits(128)
         response = self.store_data_key(email, item_type, tag)
         # TODO check validity
@@ -182,21 +282,16 @@ class GetReal(Base):
         smart_account_owner_signature = self.machine_owner_sign_typed_data_execute_machine_transaction(smart_account_address, PrecompileAddresses.STORAGE.value, storage_calldata.tx['data'], nonce)
         depin_owner_signature = self.depin_owner_sign_typed_data_execute_machine_transaction(smart_account_address, PrecompileAddresses.STORAGE.value, storage_calldata.tx['data'], nonce)
         
-        self.execute_machine_transaction(
-            smart_account_address,
-            PrecompileAddresses.STORAGE.value,
-            storage_calldata.tx['data'],
-            nonce,
-            depin_owner_signature,
-            smart_account_owner_signature,
-        )
-        return "Success"
+        return {
+            "smart_account_address": smart_account_address,
+            "target": PrecompileAddresses.STORAGE.value,
+            "calldata": storage_calldata.tx['data'],
+            "nonce": nonce,
+            "depin_owner_signature": depin_owner_signature,
+            "smart_account_owner_signature": smart_account_owner_signature
+        }
         
-    def generate_smart_account_create_did_tx(self, account_address, smart_account_address, project, email, tag, custom_document_fields: Optional[str] = None):
-        """
-        - if they don't have access to private key, return the eip-712 signable message back for them to sign on the frontend
-        TODO
-        """
+    def generate_smart_account_did_tx(self, account_address, smart_account_address, project, email, tag, custom_document_fields: Optional[str] = None):
         nonce = secrets.randbits(128)
         # TODO who is generating this signature? Create machine address or the eoa?
         # MAY NEED TO CHANGE TO smart_account_address
@@ -227,29 +322,16 @@ class GetReal(Base):
         smart_account_owner_signature = self.machine_owner_sign_typed_data_execute_machine_transaction(smart_account_address, PrecompileAddresses.DID.value, did_calldata.tx['data'], nonce)
         depin_owner_signature = self.depin_owner_sign_typed_data_execute_machine_transaction(smart_account_address, PrecompileAddresses.DID.value, did_calldata.tx['data'], nonce)
         
-        
-        self.execute_machine_transaction(
-            smart_account_address,
-            PrecompileAddresses.DID.value,
-            did_calldata.tx['data'],
-            nonce,
-            depin_owner_signature,
-            smart_account_owner_signature,
-        )
-        return "Success"
-    
-    def execute_machine_batch_txs():
-        """
-        TODO
-        """
-        pass
-    
-    def execute_machine_transfer_balance():
-        """
-        TODO
-        """
-        pass
-        
+        return {
+            "smart_account_address": smart_account_address,
+            "target": PrecompileAddresses.DID.value,
+            "calldata": did_calldata.tx['data'],
+            "nonce": nonce,
+            "depin_owner_signature": depin_owner_signature,
+            "smart_account_owner_signature": smart_account_owner_signature
+        }
+
+    # signatures
     def depin_owner_sign_typed_data_deploy_machine_smart_account(self, wallet_address, nonce):
         """
         TODO
@@ -398,6 +480,92 @@ class GetReal(Base):
             # TODO custom error
             raise
         
+    def depin_owner_sign_typed_data_execute_machine_batch_transactions(self, smart_account_addresses, targets, calldata_list, nonce, machine_nonces):
+        try:
+            domain = {
+                "name": "MachineStationFactory",
+                "version": "1",
+                "chainId": self.chain_id,
+                "verifyingContract": self.machine_station_address
+            }
+            types = {
+                "ExecuteMachineBatchTransactions": [
+                    {"name": "machineAddresses", "type": "address[]"},
+                    {"name": "targets", "type": "address[]"},
+                    {"name": "data", "type": "bytes[]"},
+                    {"name": "nonce", "type": "uint256"},
+                    {"name": "machineNonces", "type": "uint256[]"},
+                ],
+            }
+            message = {
+                "machineAddresses": smart_account_addresses,
+                "targets": targets,
+                "data": calldata_list,
+                "nonce": nonce,
+                "machineNonces": machine_nonces
+            }
+            
+            signable_message = encode_typed_data(domain, types, message)
+            signature = self.depin_owner_account.sign_message(signable_message).signature.hex()
+            return "0x" + signature
+        except Exception as e:
+            # TODO custom error
+            raise
+        
+    def machine_sign_typed_data_transfer_machine_balance(self, smart_account_address, recipient_address, nonce):
+        try:
+            domain = {
+                "name": "MachineSmartAccount",
+                "version": "1",
+                "chainId": self.chain_id,
+                "verifyingContract": smart_account_address
+            }
+            types = {
+                "TransferMachineBalance": [
+                    {"name": "recipientAddress", "type": "address"},
+                    {"name": "nonce", "type": "uint256"},
+                ],
+            }
+            message = {
+                "recipientAddress": recipient_address,
+                "nonce": nonce
+            }
+            
+            signable_message = encode_typed_data(domain, types, message)
+            signature = self.machine_account.sign_message(signable_message).signature.hex()
+            return "0x" + signature
+        except Exception as e:
+            # TODO custom error
+            raise
+        
+    def owner_sign_typed_data_transfer_machine_balance(self, smart_account_address, recipient_address, nonce):
+        try: 
+            domain = {
+                "name": "MachineStationFactory",
+                "version": "1",
+                "chainId": self.chain_id,
+                "verifyingContract": self.machine_station_address
+            }
+            types = {
+                "ExecuteMachineTransferBalance": [
+                    {"name": "machineAddress", "type": "address"},
+                    {"name": "recipientAddress", "type": "address"},
+                    {"name": "nonce", "type": "uint256"},
+                ],
+            }
+            message = {
+                "machineAddress": smart_account_address,
+                "recipientAddress": recipient_address,
+                "nonce": nonce
+            }
+            signable_message = encode_typed_data(domain, types, message)
+            signature = self.depin_owner_account.sign_message(signable_message).signature.hex()
+            return "0x" + signature
+        except Exception as e:
+            # TODO custom error
+            raise    
+        
+    
     # execute transactions
     def deploy_machine_smart_account(self, wallet_address, nonce, depin_signature):
         """
@@ -479,6 +647,53 @@ class GetReal(Base):
             encoded_params = encode(
                 ['address', 'address', 'bytes', 'uint256', 'bytes', 'bytes'],
                 [smart_account_address, target, calldata_bytes, nonce, depin_owner_signature_bytes, smart_account_owner_signature_bytes]
+            ).hex()
+            tx: EvmTransaction = {
+                "to": self.machine_station_address,
+                "data": f"0x{function_selector}{encoded_params}"
+            }
+            self._send_evm_tx(tx)
+        except Exception as e:
+            # TODO custom error
+            raise
+        
+    def execute_machine_batch_transaction(self, smart_account_addresses, targets, calldata_list, nonce, machine_nonces, depin_owner_signature, smart_account_owner_signatures):
+        try:
+            function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.EXECUTE_MACHINE_BATCH_TRANSACTIONS.value)[:4].hex()
+            
+            calldata_list_bytes = [
+                bytes.fromhex(d[2:])
+                for d in calldata_list
+            ]
+            depin_owner_signature_bytes = bytes.fromhex(depin_owner_signature[2:])
+            smart_account_owner_signatures_bytes = [
+                bytes.fromhex(s[2:])
+                for s in smart_account_owner_signatures
+            ]
+            
+            encoded_params = encode(
+                ['address[]', 'address[]', 'bytes[]', 'uint256', 'uint256[]', 'bytes', 'bytes[]'],
+                [smart_account_addresses, targets, calldata_list_bytes, nonce, machine_nonces, depin_owner_signature_bytes, smart_account_owner_signatures_bytes]
+            ).hex()
+            tx: EvmTransaction = {
+                "to": self.machine_station_address,
+                "data": f"0x{function_selector}{encoded_params}"
+            }
+            self._send_evm_tx(tx)
+        except Exception as e:
+            # TODO custom error
+            raise
+        
+    def execute_machine_transfer_balance(self, smart_account_address, recipient_address, nonce, depin_owner_signature, smart_account_owner_signature):
+        try:
+            
+            function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.EXECUTE_MACHINE_TRANSFER_BALANCE.value)[:4].hex()
+            depin_owner_signature_bytes = bytes.fromhex(depin_owner_signature[2:])
+            smart_account_owner_signature_bytes = bytes.fromhex(smart_account_owner_signature[2:])
+            
+            encoded_params = encode(
+                ['address', 'address', 'uint256', 'bytes', 'bytes'],
+                [smart_account_address, recipient_address, nonce, depin_owner_signature_bytes, smart_account_owner_signature_bytes]
             ).hex()
             tx: EvmTransaction = {
                 "to": self.machine_station_address,
