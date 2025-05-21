@@ -9,5 +9,5 @@ class MachineStationFactoryFunctionSignatures(str, Enum):
     DEPLOY_MACHINE_SMART_ACCOUNT = "deployMachineSmartAccount(address,uint256,bytes)"
     TRANSFER_MACHINE_STATION_BALANCE = "transferMachineStationBalance(address,uint256,bytes)"
     EXECUTE_TRANSACTION = "executeTransaction(address,bytes,uint256,bytes)"
-    REMOVE_ATTRIBUTE = "removeAttribute(address,bytes)"
+    EXECUTE_MACHINE_TRANSACTION = "executeMachineTransaction(address,address,bytes,uint256,bytes,bytes)"
 
