@@ -153,11 +153,12 @@ class GetReal(Base):
                 verifications=[Verification(type="EcdsaSecp256k1RecoveryMethod2020")],
                 # signature=[Signature], TODO do we want a signature here?
                 services=[Service(id='#emailSignature', type='emailSignature', data=account_email_signature),
-                          Service(id='#owner', type='depin_owner', data=self.depin_owner_account.address),
-                          Service(id='#owner', type='account_owner', data=account_address)]
+                          Service(id='#depin_project_address', type='address', data=self.depin_owner_account.address),
+                          Service(id='#eoa_address', type='address', data=account_address)]
             )
 
-        did_calldata = self.sdk.did.create(name=project, custom_document_fields=custom_fields)
+        # only case for depin to create its own?
+        did_calldata = self.sdk.did.create(name=project, custom_document_fields=custom_fields, address=account_address)
         depin_signature = self.depin_owner_sign_typed_data_execute_transaction(PrecompileAddresses.DID.value, did_calldata.tx['data'], nonce)
 
         self.execute_transaction(
