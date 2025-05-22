@@ -78,6 +78,3 @@ def evm_to_address(evm_address, ss58_format=42, hash_type="blake2"):
 
     # Encode the hashed message as an SS58 address
     return encode_address(hashed_message, ss58_format)
-
-def ss58_to_h160(evm_address, ss58_format=42, hash_type="blake2"):
-    pass

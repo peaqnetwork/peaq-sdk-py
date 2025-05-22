@@ -1,7 +1,6 @@
 from typing import Optional, Union
 from decimal import Decimal
 
-
 from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
     ChainType,
@@ -19,8 +18,6 @@ from web3 import Web3
 from substrateinterface.base import SubstrateInterface
 from substrateinterface.utils.ss58 import is_valid_ss58_address, ss58_decode
 from eth_abi import encode
-
-# TODO error checks if address format not recognized
 
 class Token(Base):
     """
