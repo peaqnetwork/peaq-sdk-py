@@ -90,6 +90,7 @@ class Token(Base):
         if self.metadata.chain_type == ChainType.EVM:
             addr_type = self._addr_type(to)
             if addr_type == "substrate": # evm->substrate
+                raise SystemError("EVM -> Substrate transfers will be added in the next runtime upgrade.")
                 function_selector = self.api.keccak(text=TokenFunctionSignatures.TRANSFER_TO_ACCOUNT_ID.value)[:4].hex()
                 pubkey = bytes.fromhex(ss58_decode(to))
                 encoded_params = encode(
