@@ -96,7 +96,7 @@ class Base:
             """
             # Check chain type
             if self._metadata.chain_type is ChainType.EVM:
-                if self._metadata.pair and not self._metadata.get_real:
+                if self._metadata.pair and not self._metadata.machine_station:
                     # We have a local EVM account
                     account = self._metadata.pair
                     return account.address

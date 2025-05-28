@@ -22,7 +22,7 @@ class SDKMetadata:
     chain_type: Optional[ChainType]
     base_url: str
     pair: Optional[Keypair | Account]
-    get_real: bool
+    machine_station: bool
     
 class PrecompileAddresses(str, Enum):
     DID = "0x0000000000000000000000000000000000000800"
