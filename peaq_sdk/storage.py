@@ -148,7 +148,7 @@ class Storage(Base):
         """
         if self.metadata.chain_type is ChainType.EVM:
             evm_address = (
-                getattr(self.metadata.pair, 'address', address)
+                getattr(self.metadata.pair and not self.metadata.machine_station, 'address', address)
                 if self.metadata.pair
                 else address
             )
@@ -280,7 +280,7 @@ class Storage(Base):
             ValueError: If called on EVM (not yet supported).
         """
         if self.metadata.chain_type is ChainType.EVM:
-            raise ValueError("Precompile for peaq Storage Remove Item will be included in the next runtime update.")
+            # raise ValueError("Precompile for peaq Storage Remove Item will be included in the next runtime update.")
             # remove error when upgrade deployed
             remove_item_function_selector = self.api.keccak(text=StorageFunctionSignatures.REMOVE_ITEM.value)[:4].hex()
             item_type_encoded = item_type.encode("utf-8").hex()
@@ -297,7 +297,7 @@ class Storage(Base):
                 "data": payload
             }
             
-            if self.metadata.pair:
+            if self.metadata.pair and not self.metadata.machine_station:
                 account = self.metadata.pair
                 receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(

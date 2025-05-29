@@ -23,6 +23,16 @@ def machine_station_address(request):
         pytest.skip("AGNG_MACHINE_STATION_ADDRESS not set in environment")
     return request.param
 
+@pytest.fixture(params=[os.getenv("AGNG_MACHINE_STATION_ADDRESS_2")])
+def machine_station_address_2(request):
+    """
+    Machine station contract address from environment variable AGNG_MACHINE_STATION_ADDRESS
+    """
+    if not request.param:
+        pytest.skip("AGNG_MACHINE_STATION_ADDRESS_2 not set in environment")
+    return request.param
+
+
 @pytest.fixture
 def machine_station_owner_private_key():
     """
@@ -31,6 +41,16 @@ def machine_station_owner_private_key():
     private_key = os.getenv("AGNG_MACHINE_STATION_OWNER_PRIVATE_KEY")
     if not private_key:
         pytest.skip("AGNG_MACHINE_STATION_OWNER_PRIVATE_KEY not set in environment")
+    return private_key
+
+@pytest.fixture
+def machine_station_2_owner_private_key():
+    """
+    Machine station owner's private key from environment variable AGNG_MACHINE_STATION_OWNER_PRIVATE_KEY
+    """
+    private_key = os.getenv("AGNG_MACHINE_STATION_2_OWNER_PRIVATE_KEY")
+    if not private_key:
+        pytest.skip("AGNG_MACHINE_STATION_2_OWNER_PRIVATE_KEY not set in environment")
     return private_key
 
 @pytest.fixture
@@ -49,7 +69,15 @@ def smart_account_address():
     Smart account address from environment variable AGNG_SMART_ACCOUNT_ADDRESS
     Falls back to default if not set
     """
-    return os.getenv("AGNG_SMART_ACCOUNT_ADDRESS", "0x3e3FF16083Bf0a444B8fF86C7156eB3368e3cefB")
+    return os.getenv("AGNG_SMART_ACCOUNT_ADDRESS")
+
+@pytest.fixture
+def smart_account_address_2():
+    """
+    Smart account address from environment variable AGNG_SMART_ACCOUNT_ADDRESS
+    Falls back to default if not set
+    """
+    return os.getenv("AGNG_SMART_ACCOUNT_ADDRESS_2")
 
 @pytest.fixture
 def machine_smart_account_owner_address():
@@ -57,15 +85,7 @@ def machine_smart_account_owner_address():
     Smart account address from environment variable AGNG_SMART_ACCOUNT_ADDRESS
     Falls back to default if not set
     """
-    return os.getenv("AGNG_MACHINE_SMART_ACCOUNT_OWNER_ADDRESS", "0x3e3FF16083Bf0a444B8fF86C7156eB3368e3cefB")
-
-@pytest.fixture
-def recipient_address():
-    """
-    Recipient address from environment variable AGNG_RECIPIENT_ADDRESS
-    Falls back to default if not set
-    """
-    return os.getenv("AGNG_RECIPIENT_ADDRESS", "0x4D00Ff5e3c3E16E99a17Fe61852335BC70DFcd28")
+    return os.getenv("AGNG_MACHINE_SMART_ACCOUNT_OWNER_ADDRESS")
 
 @pytest.fixture
 def storage_precompile_address():
@@ -73,7 +93,15 @@ def storage_precompile_address():
     Storage precompile address from environment variable AGNG_STORAGE_PRECOMPILE_ADDRESS
     Falls back to default if not set
     """
-    return os.getenv("AGNG_STORAGE_PRECOMPILE_ADDRESS", "0x0000000000000000000000000000000000000801")
+    return os.getenv("AGNG_STORAGE_PRECOMPILE_ADDRESS")
+
+@pytest.fixture
+def did_precompile_address():
+    """
+    DID precompile address from environment variable AGNG_DID_PRECOMPILE_ADDRESS
+    Falls back to default if not set
+    """
+    return os.getenv("AGNG_DID_PRECOMPILE_ADDRESS")
 
 @pytest.fixture
 def machine_station_sdk(evm_sdk, machine_station_address, machine_station_owner_private_key, machine_account_owner_private_key):
@@ -91,6 +119,25 @@ def machine_station_sdk(evm_sdk, machine_station_address, machine_station_owner_
         base_url=sdk.metadata.base_url,
         machine_station_address=machine_station_address,
         machine_station_owner_private_key=machine_station_owner_private_key,
+        machine_account_owner_private_key=machine_account_owner_private_key
+    )
+    
+@pytest.fixture
+def machine_station_sdk_2(evm_sdk, machine_station_address_2, machine_station_2_owner_private_key, machine_account_owner_private_key):
+    """
+    Creates a machine station SDK instance for testing.
+    Only runs on Agung network.
+    """
+    sdk, _ = evm_sdk
+    
+    # Skip if not on Agung network
+    if not is_agung_network(sdk.metadata.base_url):
+        pytest.skip("Machine Station tests only run on Agung network")
+    
+    return Main.machine_station_instance(
+        base_url=sdk.metadata.base_url,
+        machine_station_address=machine_station_address_2,
+        machine_station_owner_private_key=machine_station_2_owner_private_key,
         machine_account_owner_private_key=machine_account_owner_private_key
     )
 
@@ -113,3 +160,10 @@ def deployed_smart_account(machine_station_sdk, smart_account_address):
     assert deployed_address.startswith("0x")
     assert len(deployed_address) == 42
     return deployed_address 
+
+@pytest.fixture
+def wss_url_agng():
+    """
+    WSS URL from environment variable WSS_AGNG_PUBLIC_BASE_URL
+    """
+    return os.getenv("WSS_AGNG_PUBLIC_BASE_URL")

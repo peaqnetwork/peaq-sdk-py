@@ -372,7 +372,16 @@ class MachineStation(Base):
         
     def execute_transaction(self, target, calldata, nonce, machine_station_owner_signature):
         """
-        TODO
+        Executes a transaction through the machine station.
+        
+        Args:
+            target (str): The target contract address
+            calldata (str): The encoded function call data
+            nonce (int): Unique nonce for the transaction
+            machine_station_owner_signature (str): Signature from the machine station owner authorizing the transaction
+            
+        Returns:
+            WrittenTransactionResult: Contains the transaction receipt and success message
         """
         try:
             function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.EXECUTE_TRANSACTION.value)[:4].hex()
@@ -386,12 +395,14 @@ class MachineStation(Base):
                 "to": self.machine_station_address,
                 "data": f"0x{function_selector}{encoded_params}"
             }
-            self._send_evm_tx(tx)
+            receipt = self._send_evm_tx(tx)
             
-            # TODO return the receipt and a relevant message
+            return WrittenTransactionResult(
+                message=f"Successfully executed transaction on target {target} through machine station {self.machine_station_address}.",
+                receipt=receipt
+            )
         except Exception as e:
-            # TODO custom error
-            raise
+            raise ValueError(f"Failed to execute transaction: {str(e)}")
     
     def execute_machine_transaction(self, smart_account_address, target, calldata, nonce, machine_station_owner_signature, smart_account_owner_signature):
         try:
@@ -408,12 +419,14 @@ class MachineStation(Base):
                 "to": self.machine_station_address,
                 "data": f"0x{function_selector}{encoded_params}"
             }
-            self._send_evm_tx(tx)
+            receipt = self._send_evm_tx(tx)
             
-            # TODO return the receipt and a relevant message
+            return WrittenTransactionResult(
+                message=f"Successfully executed machine transaction from {smart_account_address} on target {target} through machine station {self.machine_station_address}.",
+                receipt=receipt
+            )
         except Exception as e:
-            # TODO custom error
-            raise
+            raise ValueError(f"Failed to execute machine transaction: {str(e)}")
         
     def execute_machine_batch_transaction(self, smart_account_addresses, targets, calldata_list, nonce, machine_nonces, machine_station_owner_signature, smart_account_owner_signatures):
         try:
@@ -437,16 +450,20 @@ class MachineStation(Base):
                 "to": self.machine_station_address,
                 "data": f"0x{function_selector}{encoded_params}"
             }
-            self._send_evm_tx(tx)
-            # TODO return the receipt and a relevant message
+            receipt = self._send_evm_tx(tx)
             
+            # Create a descriptive message for the batch operation
+            accounts_str = ", ".join(smart_account_addresses)
+            targets_str = ", ".join(targets)
+            return WrittenTransactionResult(
+                message=f"Successfully executed batch transactions from accounts [{accounts_str}] on targets [{targets_str}] through machine station {self.machine_station_address}.",
+                receipt=receipt
+            )
         except Exception as e:
-            # TODO custom error
-            raise
+            raise ValueError(f"Failed to execute machine batch transaction: {str(e)}")
         
     def execute_machine_transfer_balance(self, smart_account_address, recipient_address, nonce, machine_station_owner_signature, smart_account_owner_signature):
         try:
-            
             function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.EXECUTE_MACHINE_TRANSFER_BALANCE.value)[:4].hex()
             depin_owner_signature_bytes = bytes.fromhex(machine_station_owner_signature[2:])
             smart_account_owner_signature_bytes = bytes.fromhex(smart_account_owner_signature[2:])
@@ -459,7 +476,11 @@ class MachineStation(Base):
                 "to": self.machine_station_address,
                 "data": f"0x{function_selector}{encoded_params}"
             }
-            self._send_evm_tx(tx)
+            receipt = self._send_evm_tx(tx)
+            
+            return WrittenTransactionResult(
+                message=f"Successfully transferred balance from {smart_account_address} to {recipient_address} through machine station {self.machine_station_address}.",
+                receipt=receipt
+            )
         except Exception as e:
-            # TODO custom error
-            raise
+            raise ValueError(f"Failed to execute machine transfer balance: {str(e)}")

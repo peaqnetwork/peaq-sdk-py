@@ -159,6 +159,10 @@ python -m build
 ```
 deactivate
 ```
+### Remove virtual env
+```
+rm -rf working_env
+```
 
 ## Testing
 Checkout the `README.md` file in `/tests` directory for more information.

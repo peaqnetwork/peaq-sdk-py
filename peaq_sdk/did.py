@@ -173,7 +173,7 @@ class Did(Base):
         
         if self.metadata.chain_type is ChainType.EVM:
             evm_address = (
-                getattr(self.metadata.pair, 'address', address)
+                getattr(self.metadata.pair and not self.metadata.machine_station, 'address', address)
                 if self.metadata.pair
                 else address
             )
@@ -348,7 +348,7 @@ class Did(Base):
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            if self.metadata.pair:
+            if self.metadata.pair and not self.metadata.machine_station:
                 receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully removed the DID under the name {name} for user {user_address}.",

@@ -248,7 +248,7 @@ class Base:
                 tx_hash = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
 
                 try:
-                    receipt = self._api.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                    receipt = self._api.eth.wait_for_transaction_receipt(tx_hash, timeout=120) # shorten timeout maybe?
                     return receipt
                 except Exception as wait_error:
                     print(f"Attempt {attempt + 1}: Tx {tx_hash.hex()} not confirmed within timeout: {wait_error}")

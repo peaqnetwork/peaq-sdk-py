@@ -3,23 +3,25 @@ import pytest
 import re
 from web3 import Web3
 
+from peaq_sdk.types.did import CustomDocumentFields
+
 
 # EVM ONLY!!
-def test_deploy_smart_account_signature(machine_station_sdk, smart_account_address):
+def test_deploy_smart_account_signature(machine_station_sdk, machine_smart_account_owner_address):
     """Test creation of signature for deploying smart account"""
     nonce = secrets.randbits(128)
     signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_deploy_machine_smart_account(
-        machine_smart_account_owner_address=smart_account_address,
+        machine_smart_account_owner_address=machine_smart_account_owner_address,
         nonce=nonce
     )
     assert signature.startswith("0x")
     assert len(signature) == 132  # 0x + 130 hex chars
 
-def test_transfer_machine_station_balance_signature(machine_station_sdk, recipient_address):
+def test_transfer_machine_station_balance_signature(machine_station_sdk, machine_station_address_2):
     """Test creation of signature for transferring machine station balance"""
     nonce = secrets.randbits(128)
     signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_transfer_machine_station_balance(
-        new_machine_station_address=recipient_address,
+        new_machine_station_address=machine_station_address_2,
         nonce=nonce
     )
     assert signature.startswith("0x")
@@ -50,12 +52,12 @@ def test_execute_machine_transaction_signature(machine_station_sdk, smart_accoun
     assert signature.startswith("0x")
     assert len(signature) == 132
 
-def test_batch_transactions_signature(machine_station_sdk, smart_account_address, recipient_address, storage_precompile_address):
+def test_batch_transactions_signature(machine_station_sdk, smart_account_address, smart_account_address_2, storage_precompile_address):
     """Test creation of signature for batch transactions"""
     nonce = secrets.randbits(128)
     calldata = machine_station_sdk.storage.add_item(item_type="test_item", item="test_value")
     machine_nonces = [secrets.randbits(128), secrets.randbits(128)]
-    smart_accounts = [smart_account_address, recipient_address]
+    smart_accounts = [smart_account_address, smart_account_address_2]
     targets = [storage_precompile_address, storage_precompile_address]
     calldata_list = [calldata.tx['data'], calldata.tx['data']]
     
@@ -69,12 +71,12 @@ def test_batch_transactions_signature(machine_station_sdk, smart_account_address
     assert signature.startswith("0x")
     assert len(signature) == 132
 
-def test_transfer_machine_balance_signature(machine_station_sdk, smart_account_address, recipient_address):
+def test_transfer_machine_balance_signature(machine_station_sdk, smart_account_address, smart_account_address_2):
     """Test creation of signature for transferring machine balance"""
     nonce = secrets.randbits(128)
     signature = machine_station_sdk.machine_station.owner_sign_typed_data_transfer_machine_balance(
         smart_account_address=smart_account_address,
-        recipient_address=recipient_address,
+        recipient_address=smart_account_address_2,
         nonce=nonce
     )
     assert signature.startswith("0x")
@@ -93,12 +95,12 @@ def test_machine_owner_sign_execute_machine_transaction(machine_station_sdk, sma
     assert signature.startswith("0x")
     assert len(signature) == 132
 
-def test_machine_sign_transfer_machine_balance(machine_station_sdk, smart_account_address, recipient_address):
+def test_machine_sign_transfer_machine_balance(machine_station_sdk, smart_account_address, smart_account_address_2):
     """Test creation of signature for transferring machine balance"""
     nonce = secrets.randbits(128)
     signature = machine_station_sdk.machine_station.machine_sign_typed_data_transfer_machine_balance(
         smart_account_address=smart_account_address,
-        recipient_address=recipient_address,
+        recipient_address=smart_account_address_2,
         nonce=nonce
     )
     assert signature.startswith("0x")
@@ -145,151 +147,615 @@ def test_deploy_smart_account(machine_station_sdk, machine_smart_account_owner_a
     deployed_code = machine_station_sdk.api.eth.get_code(result.deployed_address)
     assert len(deployed_code) > 0, "No contract code found at deployed address"
 
-def test_transfer_machine_station_balance(machine_station_sdk, recipient_address):
+def test_transfer_machine_station_balance(machine_station_sdk, machine_station_address_2, machine_station_sdk_2):
     """Test transferring balance to a new machine station"""
     nonce = secrets.randbits(128)
     
     # Get signature for transfer
     signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_transfer_machine_station_balance(
-        new_machine_station_address=recipient_address,
+        new_machine_station_address=machine_station_address_2,
         nonce=nonce
     )
     
     # Execute the transfer
     result = machine_station_sdk.machine_station.execute_transfer_machine_station_balance(
-        new_machine_station_address=recipient_address,
+        new_machine_station_address=machine_station_address_2,
+        nonce=nonce,
+        machine_station_owner_signature=signature
+    )
+    # Test the result object structure
+    assert result is not None
+    assert result.message == f"Successfully transferred balance from {machine_station_sdk.machine_station.machine_station_address} to {machine_station_address_2}."
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    
+    # Transfer balance back to original machine station
+    nonce = secrets.randbits(128)
+    # Get signature for transfer
+    signature = machine_station_sdk_2.machine_station.depin_owner_sign_typed_data_transfer_machine_station_balance(
+        new_machine_station_address=machine_station_sdk.machine_station.machine_station_address,
+        nonce=nonce
+    )
+    
+    # Execute the transfer
+    result = machine_station_sdk_2.machine_station.execute_transfer_machine_station_balance(
+        new_machine_station_address=machine_station_sdk.machine_station.machine_station_address,
+        nonce=nonce,
+        machine_station_owner_signature=signature
+    )
+    # Test the result object structure
+    assert result is not None
+    assert result.message == f"Successfully transferred balance from {machine_station_sdk_2.machine_station.machine_station_address} to {machine_station_sdk.machine_station.machine_station_address}."
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    
+# create and remove an item from storage
+def test_execute_transaction_storage(machine_station_sdk, storage_precompile_address, wss_url_agng):
+    """Test executing a transaction through the machine station"""
+    random_suffix = secrets.token_hex(8)
+    test_item_type = f"test_item_{random_suffix}"
+    test_item_value = "test_value"
+    
+    # Create the transaction to add an item
+    storage_calldata = machine_station_sdk.storage.add_item(item_type=test_item_type, item=test_item_value)
+    nonce = secrets.randbits(128)
+    
+    # Get signature for the transaction
+    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    # Execute the transaction
+    result = machine_station_sdk.machine_station.execute_transaction(
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
         nonce=nonce,
         machine_station_owner_signature=signature
     )
     
-    # Test the result object structure
+    # Verify transaction result
     assert result is not None
-    assert result.message == f"Successfully transferred balance from {machine_station_sdk.machine_station_address} to {recipient_address}."
     assert result.receipt is not None
     assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully executed transaction on target {storage_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
     
-    # TODO: Add balance checks before and after transfer once we have a way to query balances
-    # This would involve:
-    # 1. Check original machine station balance
-    # 2. Check new machine station balance (should be 0)
-    # 3. Execute transfer
-    # 4. Check original machine station balance (should be 0)
-    # 5. Check new machine station balance (should have the transferred amount)
+    # Verify the item was actually added to storage
+    stored_items = machine_station_sdk.storage.get_item(item_type=test_item_type, address=machine_station_sdk.machine_station.machine_station_address, wss_base_url=wss_url_agng)
+    assert isinstance(stored_items, dict), "Expected storage.get_item to return a dictionary"
+    assert test_item_type in stored_items, f"Expected to find key '{test_item_type}' in storage response"
+    assert stored_items[test_item_type] == test_item_value, f"Expected stored value to be '{test_item_value}' but got '{stored_items[test_item_type]}'"
+    
+    # Create the transaction to remove an item
+    storage_calldata = machine_station_sdk.storage.remove_item(item_type=test_item_type)
+    nonce = secrets.randbits(128)
+    
+    # Get signature for the transaction
+    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    # Execute the transaction
+    result = machine_station_sdk.machine_station.execute_transaction(
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
+        nonce=nonce,
+        machine_station_owner_signature=signature
+    )
+    
+    # Verify remove transaction result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully executed transaction on target {storage_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
+    
+    # Verify the item was actually removed from storage
+    from peaq_sdk.types.storage import GetItemError
+    with pytest.raises(GetItemError) as exc_info:
+        machine_station_sdk.storage.get_item(
+            item_type=test_item_type, 
+            address=machine_station_sdk.machine_station.machine_station_address, 
+            wss_base_url=wss_url_agng
+        )
+    assert str(exc_info.value) == f"Item type of {test_item_type} was not found at address {machine_station_sdk.machine_station.machine_station_address}."
 
-# def test_execute_transaction(machine_station_sdk, storage_precompile_address):
-#     """Test executing a transaction through the machine station"""
-#     storage_calldata = machine_station_sdk.storage.add_item(item_type="test_item", item="test_value")
-#     nonce = secrets.randbits(128)
-#     signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
-#         target=storage_precompile_address,
-#         calldata=storage_calldata.tx['data'],
-#         nonce=nonce
-#     )
-#     result = machine_station_sdk.machine_station.execute_transaction(
-#         target=storage_precompile_address,
-#         calldata=storage_calldata.tx['data'],
-#         nonce=nonce,
-#         machine_station_owner_signature=signature
-#     )
-#     assert result is not None
-#     assert hasattr(result, 'transactionHash')
-#     assert result.status == 1
+# create and remove a DID
+def test_execute_transaction_did(machine_station_sdk, did_precompile_address, wss_url_agng):
+    """Test executing DID operations through the machine station"""
+    random_suffix = secrets.token_hex(8)
+    test_name = f"test_did_{random_suffix}"
+    
+    # Create the transaction to add a DID
+    did_calldata = machine_station_sdk.did.create(
+        name=test_name,
+        address=machine_station_sdk.machine_station.machine_station_address,
+        custom_document_fields=CustomDocumentFields()
+    )
+    nonce = secrets.randbits(128)
+    
+    # Get signature for the transaction
+    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    # Execute the transaction
+    result = machine_station_sdk.machine_station.execute_transaction(
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce,
+        machine_station_owner_signature=signature
+    )
+    
+    # Verify transaction result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully executed transaction on target {did_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
+    
+    # Verify the DID was actually created
+    did = machine_station_sdk.did.read(
+        name=test_name,
+        address=machine_station_sdk.machine_station.machine_station_address,
+        wss_base_url=wss_url_agng
+    )
+    assert did is not None, "Expected DID to exist"
+    assert did.name == test_name, f"Expected DID name to be '{test_name}' but got '{did.name}'"
+    
+    # Create the transaction to remove the DID
+    did_calldata = machine_station_sdk.did.remove(
+        name=test_name,
+        address=machine_station_sdk.machine_station.machine_station_address
+    )
+    nonce = secrets.randbits(128)
+    
+    # Get signature for the transaction
+    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    # Execute the transaction
+    result = machine_station_sdk.machine_station.execute_transaction(
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce,
+        machine_station_owner_signature=signature
+    )
+    
+    # Verify remove transaction result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully executed transaction on target {did_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
+    
+    # Verify the DID was actually removed
+    from peaq_sdk.types.did import GetDidError
+    with pytest.raises(GetDidError) as exc_info:
+        machine_station_sdk.did.read(
+            name=test_name,
+            address=machine_station_sdk.machine_station.machine_station_address,
+            wss_base_url=wss_url_agng
+        )
+    assert str(exc_info.value) == f"DID of name {test_name} was not found at address {machine_station_sdk.machine_station.machine_station_address}."
 
-# def test_execute_machine_transaction(machine_station_sdk, deployed_smart_account, storage_precompile_address):
-#     """Test executing a transaction from a smart account"""
-#     storage_calldata = machine_station_sdk.storage.add_item(item_type="test_item_2", item="test_value_2")
-#     nonce = secrets.randbits(128)
-    
-#     smart_account_signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
-#         smart_account_address=deployed_smart_account,
-#         target=storage_precompile_address,
-#         calldata=storage_calldata.tx['data'],
-#         nonce=nonce
-#     )
-    
-#     machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
-#         smart_account_address=deployed_smart_account,
-#         target=storage_precompile_address,
-#         calldata=storage_calldata.tx['data'],
-#         nonce=nonce
-#     )
-    
-#     result = machine_station_sdk.machine_station.execute_machine_transaction(
-#         smart_account_address=deployed_smart_account,
-#         target=storage_precompile_address,
-#         calldata=storage_calldata.tx['data'],
-#         nonce=nonce,
-#         machine_station_owner_signature=machine_station_owner_signature,
-#         smart_account_owner_signature=smart_account_signature
-#     )
-#     assert result is not None
-#     assert hasattr(result, 'transactionHash')
-#     assert result.status == 1
 
-# def test_execute_batch_transactions(machine_station_sdk, deployed_smart_account, smart_account_address, storage_precompile_address):
-#     """Test executing multiple transactions from multiple smart accounts"""
-#     smart_accounts = [deployed_smart_account, smart_account_address]
-#     targets = [storage_precompile_address, storage_precompile_address]
-#     storage_calldata = machine_station_sdk.storage.add_item(item_type="test_batch", item="test_value")
-#     calldata_list = [storage_calldata.tx['data'], storage_calldata.tx['data']]
+def test_execute_machine_transaction_storage(machine_station_sdk, smart_account_address, storage_precompile_address, wss_url_agng):
+    """Test executing storage operations through a machine smart account"""
+    # Create unique test item to prevent collisions
+    random_suffix = secrets.token_hex(8)
+    test_item_type = f"test_item_{random_suffix}"
+    test_item_value = "test_value"
     
-#     smart_account_signatures = []
-#     machine_nonces = []
+    # Create the transaction to add an item
+    storage_calldata = machine_station_sdk.storage.add_item(item_type=test_item_type, item=test_item_value)
+    nonce = secrets.randbits(128)
     
-#     for smart_account_address in smart_accounts:
-#         machine_nonce = secrets.randbits(128)
-#         machine_nonces.append(machine_nonce)
+    # Get signatures from both machine owner and machine station owner
+    smart_account_signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    # Execute the transaction to add the item
+    result = machine_station_sdk.machine_station.execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
+        nonce=nonce,
+        machine_station_owner_signature=machine_station_owner_signature,
+        smart_account_owner_signature=smart_account_signature
+    )
+    
+    # Verify add transaction result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully executed machine transaction from {smart_account_address} on target {storage_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
+    
+    # Verify the item was actually added to storage
+    stored_items = machine_station_sdk.storage.get_item(
+        item_type=test_item_type, 
+        address=smart_account_address,  # Use smart account address instead of machine station
+        wss_base_url=wss_url_agng
+    )
+    assert isinstance(stored_items, dict), "Expected storage.get_item to return a dictionary"
+    assert test_item_type in stored_items, f"Expected to find key '{test_item_type}' in storage response"
+    assert stored_items[test_item_type] == test_item_value, f"Expected stored value to be '{test_item_value}' but got '{stored_items[test_item_type]}'"
+    
+    # Create the transaction to remove the item
+    storage_calldata = machine_station_sdk.storage.remove_item(item_type=test_item_type)
+    nonce = secrets.randbits(128)
+    
+    # Get signatures for removal
+    smart_account_signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    # Execute the transaction to remove the item
+    result = machine_station_sdk.machine_station.execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=storage_precompile_address,
+        calldata=storage_calldata.tx['data'],
+        nonce=nonce,
+        machine_station_owner_signature=machine_station_owner_signature,
+        smart_account_owner_signature=smart_account_signature
+    )
+    
+    # Verify remove transaction result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully executed machine transaction from {smart_account_address} on target {storage_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
+    
+    # Verify the item was actually removed from storage
+    from peaq_sdk.types.storage import GetItemError
+    with pytest.raises(GetItemError) as exc_info:
+        machine_station_sdk.storage.get_item(
+            item_type=test_item_type,
+            address=smart_account_address,  # Use smart account address instead of machine station
+            wss_base_url=wss_url_agng
+        )
+    assert str(exc_info.value) == f"Item type of {test_item_type} was not found at address {smart_account_address}."
+
+def test_execute_machine_transaction_did(machine_station_sdk, smart_account_address, did_precompile_address, wss_url_agng):
+    """Test executing DID operations through a machine smart account"""
+    # Create unique test name to prevent collisions
+    random_suffix = secrets.token_hex(8)
+    test_name = f"test_did_{random_suffix}"
+    
+    # Create the transaction to add a DID
+    did_calldata = machine_station_sdk.did.create(
+        name=test_name,
+        address=smart_account_address,  # Use smart account address instead of machine station
+        custom_document_fields=CustomDocumentFields()
+    )
+    nonce = secrets.randbits(128)
+    
+    # Get signatures from both machine owner and machine station owner
+    smart_account_signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    # Execute the transaction to add the DID
+    result = machine_station_sdk.machine_station.execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce,
+        machine_station_owner_signature=machine_station_owner_signature,
+        smart_account_owner_signature=smart_account_signature
+    )
+    
+    # Verify add transaction result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully executed machine transaction from {smart_account_address} on target {did_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
+    
+    # Verify the DID was actually created
+    did = machine_station_sdk.did.read(
+        name=test_name,
+        address=smart_account_address,  # Use smart account address instead of machine station
+        wss_base_url=wss_url_agng
+    )
+    assert did is not None, "Expected DID to exist"
+    assert did.name == test_name, f"Expected DID name to be '{test_name}' but got '{did.name}'"
+    
+    # Create the transaction to remove the DID
+    did_calldata = machine_station_sdk.did.remove(
+        name=test_name,
+        address=smart_account_address  # Use smart account address instead of machine station
+    )
+    nonce = secrets.randbits(128)
+    
+    # Get signatures for removal
+    smart_account_signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce
+    )
+    
+    # Execute the transaction to remove the DID
+    result = machine_station_sdk.machine_station.execute_machine_transaction(
+        smart_account_address=smart_account_address,
+        target=did_precompile_address,
+        calldata=did_calldata.tx['data'],
+        nonce=nonce,
+        machine_station_owner_signature=machine_station_owner_signature,
+        smart_account_owner_signature=smart_account_signature
+    )
+    
+    # Verify remove transaction result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully executed machine transaction from {smart_account_address} on target {did_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
+    
+    # Verify the DID was actually removed
+    from peaq_sdk.types.did import GetDidError
+    with pytest.raises(GetDidError) as exc_info:
+        machine_station_sdk.did.read(
+            name=test_name,
+            address=smart_account_address,  # Use smart account address instead of machine station
+            wss_base_url=wss_url_agng
+        )
+    assert str(exc_info.value) == f"DID of name {test_name} was not found at address {smart_account_address}."
+
+def test_execute_batch_transactions(machine_station_sdk, smart_account_address, smart_account_address_2, storage_precompile_address, did_precompile_address, wss_url_agng):
+    """Test executing multiple transactions from multiple smart accounts"""
+    # Create unique test items to prevent collisions
+    random_suffix = secrets.token_hex(8)
+    test_item_type = f"test_item_{random_suffix}"
+    test_item_value = "test_value"
+    test_name = f"test_did_{random_suffix}"
+    
+    # Create storage and DID transactions
+    storage_calldata = machine_station_sdk.storage.add_item(
+        item_type=test_item_type,
+        item=test_item_value
+    )
+    did_calldata = machine_station_sdk.did.create(
+        name=test_name,
+        address=smart_account_address,
+        custom_document_fields=CustomDocumentFields()
+    )
+    
+    # Setup batch parameters for creation
+    smart_accounts = [smart_account_address_2, smart_account_address]  # Storage from first account, DID from second
+    targets = [storage_precompile_address, did_precompile_address]
+    calldata_list = [storage_calldata.tx['data'], did_calldata.tx['data']]
+    
+    smart_account_signatures = []
+    machine_nonces = []
+    
+    # Get signatures for each account's transaction
+    for i, account in enumerate(smart_accounts):
+        machine_nonce = secrets.randbits(128)
+        machine_nonces.append(machine_nonce)
         
-#         signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
-#             smart_account_address=smart_account_address,
-#             target=targets[0],
-#             calldata=calldata_list[0],
-#             nonce=machine_nonce
-#         )
-#         smart_account_signatures.append(signature)
+        signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+            smart_account_address=account,
+            target=targets[i],  # Use corresponding target for each account
+            calldata=calldata_list[i],  # Use corresponding calldata for each account
+            nonce=machine_nonce
+        )
+        smart_account_signatures.append(signature)
     
-#     nonce = secrets.randbits(128)
-#     machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_batch_transactions(
-#         smart_account_addresses=smart_accounts,
-#         targets=targets,
-#         calldata_list=calldata_list,
-#         nonce=nonce,
-#         machine_nonces=machine_nonces
-#     )
+    # Get machine station owner signature for batch creation
+    nonce = secrets.randbits(128)
+    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_batch_transactions(
+        smart_account_addresses=smart_accounts,
+        targets=targets,
+        calldata_list=calldata_list,
+        nonce=nonce,
+        machine_nonces=machine_nonces
+    )
     
-#     result = machine_station_sdk.machine_station.execute_machine_batch_transaction(
-#         smart_account_addresses=smart_accounts,
-#         targets=targets,
-#         calldata_list=calldata_list,
-#         nonce=nonce,
-#         machine_nonces=machine_nonces,
-#         machine_station_owner_signature=machine_station_owner_signature,
-#         smart_account_owner_signatures=smart_account_signatures
-#     )
-#     assert result is not None
-#     assert hasattr(result, 'transactionHash')
-#     assert result.status == 1
+    # Execute batch creation transaction
+    result = machine_station_sdk.machine_station.execute_machine_batch_transaction(
+        smart_account_addresses=smart_accounts,
+        targets=targets,
+        calldata_list=calldata_list,
+        nonce=nonce,
+        machine_nonces=machine_nonces,
+        machine_station_owner_signature=machine_station_owner_signature,
+        smart_account_owner_signatures=smart_account_signatures
+    )
+    
+    # Verify batch creation result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    accounts_str = ", ".join(smart_accounts)
+    targets_str = ", ".join(targets)
+    assert result.message == f"Successfully executed batch transactions from accounts [{accounts_str}] on targets [{targets_str}] through machine station {machine_station_sdk.machine_station.machine_station_address}."
+    
+    # Verify the storage item was created
+    stored_items = machine_station_sdk.storage.get_item(
+        item_type=test_item_type,
+        address=smart_account_address_2,
+        wss_base_url=wss_url_agng
+    )
+    assert isinstance(stored_items, dict), "Expected storage.get_item to return a dictionary"
+    assert test_item_type in stored_items, f"Expected to find key '{test_item_type}' in storage response"
+    assert stored_items[test_item_type] == test_item_value, f"Expected stored value to be '{test_item_value}' but got '{stored_items[test_item_type]}'"
+    
+    # Verify the DID was created
+    did = machine_station_sdk.did.read(
+        name=test_name,
+        address=smart_account_address,
+        wss_base_url=wss_url_agng
+    )
+    assert did is not None, "Expected DID to exist"
+    assert did.name == test_name, f"Expected DID name to be '{test_name}' but got '{did.name}'"
+    
+    # Create removal transactions
+    storage_remove_calldata = machine_station_sdk.storage.remove_item(item_type=test_item_type)
+    did_remove_calldata = machine_station_sdk.did.remove(
+        name=test_name,
+        address=smart_account_address
+    )
+    
+    # Setup batch parameters for removal
+    calldata_list = [storage_remove_calldata.tx['data'], did_remove_calldata.tx['data']]
+    smart_account_signatures = []
+    machine_nonces = []
+    
+    # Get signatures for each account's removal transaction
+    for i, account in enumerate(smart_accounts):
+        machine_nonce = secrets.randbits(128)
+        machine_nonces.append(machine_nonce)
+        
+        signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+            smart_account_address=account,
+            target=targets[i],
+            calldata=calldata_list[i],
+            nonce=machine_nonce
+        )
+        smart_account_signatures.append(signature)
+    
+    # Get machine station owner signature for batch removal
+    nonce = secrets.randbits(128)
+    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_batch_transactions(
+        smart_account_addresses=smart_accounts,
+        targets=targets,
+        calldata_list=calldata_list,
+        nonce=nonce,
+        machine_nonces=machine_nonces
+    )
+    
+    # Execute batch removal transaction
+    result = machine_station_sdk.machine_station.execute_machine_batch_transaction(
+        smart_account_addresses=smart_accounts,
+        targets=targets,
+        calldata_list=calldata_list,
+        nonce=nonce,
+        machine_nonces=machine_nonces,
+        machine_station_owner_signature=machine_station_owner_signature,
+        smart_account_owner_signatures=smart_account_signatures
+    )
+    
+    # Verify batch removal result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    accounts_str = ", ".join(smart_accounts)
+    targets_str = ", ".join(targets)
+    assert result.message == f"Successfully executed batch transactions from accounts [{accounts_str}] on targets [{targets_str}] through machine station {machine_station_sdk.machine_station.machine_station_address}."
+    
+    # Verify storage item was removed
+    from peaq_sdk.types.storage import GetItemError
+    with pytest.raises(GetItemError) as exc_info:
+        machine_station_sdk.storage.get_item(
+            item_type=test_item_type,
+            address=smart_account_address_2,
+            wss_base_url=wss_url_agng
+        )
+    assert str(exc_info.value) == f"Item type of {test_item_type} was not found at address {smart_account_address_2}."
+    
+    # Verify DID was removed
+    from peaq_sdk.types.did import GetDidError
+    with pytest.raises(GetDidError) as exc_info:
+        machine_station_sdk.did.read(
+            name=test_name,
+            address=smart_account_address,
+            wss_base_url=wss_url_agng
+        )
+    assert str(exc_info.value) == f"DID of name {test_name} was not found at address {smart_account_address}."
 
-# def test_transfer_machine_balance(machine_station_sdk, deployed_smart_account, recipient_address):
-#     """Test transferring balance from a smart account"""
-#     nonce = secrets.randbits(128)
-#     smart_account_signature = machine_station_sdk.machine_station.machine_sign_typed_data_transfer_machine_balance(
-#         smart_account_address=deployed_smart_account,
-#         recipient_address=recipient_address,
-#         nonce=nonce
-#     )
-#     machine_station_owner_signature = machine_station_sdk.machine_station.owner_sign_typed_data_transfer_machine_balance(
-#         smart_account_address=deployed_smart_account,
-#         recipient_address=recipient_address,
-#         nonce=nonce
-#     )
-#     result = machine_station_sdk.machine_station.execute_machine_transfer_balance(
-#         smart_account_address=deployed_smart_account,
-#         recipient_address=recipient_address,
-#         nonce=nonce,
-#         machine_station_owner_signature=machine_station_owner_signature,
-#         smart_account_owner_signature=smart_account_signature
-#     )
-#     assert result is not None
-#     assert hasattr(result, 'transactionHash')
-#     assert result.status == 1 
+def test_transfer_machine_balance(machine_station_sdk, smart_account_address, smart_account_address_2):
+    """Test transferring balance between smart accounts"""
+    # First transfer: from deployed_smart_account to smart_account_address_2
+    nonce = secrets.randbits(128)
+    smart_account_signature = machine_station_sdk.machine_station.machine_sign_typed_data_transfer_machine_balance(
+        smart_account_address=smart_account_address,
+        recipient_address=smart_account_address_2,
+        nonce=nonce
+    )
+    machine_station_owner_signature = machine_station_sdk.machine_station.owner_sign_typed_data_transfer_machine_balance(
+        smart_account_address=smart_account_address,
+        recipient_address=smart_account_address_2,
+        nonce=nonce
+    )
+    result = machine_station_sdk.machine_station.execute_machine_transfer_balance(
+        smart_account_address=smart_account_address,
+        recipient_address=smart_account_address_2,
+        nonce=nonce,
+        machine_station_owner_signature=machine_station_owner_signature,
+        smart_account_owner_signature=smart_account_signature
+    )
+    
+    # Verify first transfer result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully transferred balance from {smart_account_address} to {smart_account_address_2} through machine station {machine_station_sdk.machine_station.machine_station_address}."
+
+    # Second transfer: from smart_account_address_2 back to deployed_smart_account
+    nonce = secrets.randbits(128)
+    smart_account_signature = machine_station_sdk.machine_station.machine_sign_typed_data_transfer_machine_balance(
+        smart_account_address=smart_account_address_2,
+        recipient_address=smart_account_address,
+        nonce=nonce
+    )
+    machine_station_owner_signature = machine_station_sdk.machine_station.owner_sign_typed_data_transfer_machine_balance(
+        smart_account_address=smart_account_address_2,
+        recipient_address=smart_account_address,
+        nonce=nonce
+    )
+    result = machine_station_sdk.machine_station.execute_machine_transfer_balance(
+        smart_account_address=smart_account_address_2,
+        recipient_address=smart_account_address,
+        nonce=nonce,
+        machine_station_owner_signature=machine_station_owner_signature,
+        smart_account_owner_signature=smart_account_signature
+    )
+    
+    # Verify second transfer result
+    assert result is not None
+    assert result.receipt is not None
+    assert result.receipt["status"] == 1  # Check transaction success
+    assert result.message == f"Successfully transferred balance from {smart_account_address_2} to {smart_account_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
