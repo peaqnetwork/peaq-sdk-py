@@ -7,15 +7,17 @@ from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
     SDKMetadata,
     EvmTransaction,
-    PrecompileAddresses
+    PrecompileAddresses,
+    WrittenTransactionResult
 )
 from peaq_sdk.types.did import (
     CustomDocumentFields, 
     Verification,
     Service,
 )
-from peaq_sdk.types.get_real import (
-    MachineStationFactoryFunctionSignatures
+from peaq_sdk.types.machine_station import (
+    MachineStationFactoryFunctionSignatures,
+    DeployedSmartAccountResult
 )
 
 from substrateinterface.base import SubstrateInterface
@@ -82,8 +84,8 @@ class MachineStation(Base):
             }
             
             signable_message = encode_typed_data(domain, types, message)
-            depin_signature = self.machine_station_owner_private_key.sign_message(signable_message).signature.hex()
-            return "0x" + depin_signature
+            machine_station_owner_signature = self.machine_station_owner_private_key.sign_message(signable_message).signature.hex()
+            return "0x" + machine_station_owner_signature
         except Exception as e:
             # TODO custom error
             raise
@@ -111,8 +113,8 @@ class MachineStation(Base):
             }
             
             signable_message = encode_typed_data(domain, types, message)
-            depin_signature = self.machine_station_owner_private_key.sign_message(signable_message).signature.hex()
-            return "0x" + depin_signature
+            machine_station_owner_signature = self.machine_station_owner_private_key.sign_message(signable_message).signature.hex()
+            return "0x" + machine_station_owner_signature
         except Exception as e:
             # TODO custom error
             raise
@@ -142,8 +144,8 @@ class MachineStation(Base):
             }
             
             signable_message = encode_typed_data(domain, types, message)
-            depin_signature = self.machine_station_owner_private_key.sign_message(signable_message).signature.hex()
-            return "0x" + depin_signature
+            machine_station_owner_signature = self.machine_station_owner_private_key.sign_message(signable_message).signature.hex()
+            return "0x" + machine_station_owner_signature
         except Exception as e:
             # TODO custom error
             raise
@@ -170,7 +172,8 @@ class MachineStation(Base):
             }
             
             signable_message = encode_typed_data(domain, types, message)
-            # TODO have return the signature message back to the user if they don't have access to their private key
+            # TODO have return the signature message back to the user if they don't have access to their private key. 
+            # Return a singable message object to the frontend for signature request. Get EIP-712 message to show up properly.
             signature = self.machine_account.sign_message(signable_message).signature.hex()
             return "0x" + signature
         except Exception as e:
@@ -296,7 +299,15 @@ class MachineStation(Base):
     # execute transactions
     def deploy_machine_smart_account(self, machine_smart_account_owner_address, nonce, machine_station_owner_signature):
         """
-        TODO
+        Deploys a new machine smart account contract.
+        
+        Args:
+            machine_smart_account_owner_address (str): The address that will own the deployed smart account
+            nonce (int): Unique nonce for the transaction
+            machine_station_owner_signature (str): Signature from the machine station owner authorizing deployment
+            
+        Returns:
+            DeployedSmartAccountResult: Contains the transaction receipt, success message, and deployed smart account address
         """
         try:
             function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.DEPLOY_MACHINE_SMART_ACCOUNT.value)[:4].hex()
@@ -311,21 +322,32 @@ class MachineStation(Base):
                 "data": f"0x{function_selector}{encoded_params}"
             }
             receipt = self._send_evm_tx(tx)
-            smart_account_address = keccak(text="MachineSmartAccountDeployed(address)").hex()
+            smart_account_deployed_topic = self.api.keccak(text="MachineSmartAccountDeployed(address)").hex()
             
             for log in receipt["logs"]:
-                if log["topics"][0].hex() == smart_account_address and len(log["topics"]) > 1:
+                if log["topics"][0].hex() == smart_account_deployed_topic and len(log["topics"]) > 1:
                     smart_account_address = Web3.to_checksum_address(log["topics"][1].hex()[24:])
-                    return smart_account_address
+                    return DeployedSmartAccountResult(
+                        message=f"Successfully deployed machine smart account at address {smart_account_address}.",
+                        receipt=receipt,
+                        deployed_address=smart_account_address
+                    )
 
             raise ValueError("MachineSmartAccountDeployed event not found in logs")
         except Exception as e:
-            # TODO custom error
-            raise
+            raise ValueError(f"Failed to deploy machine smart account: {str(e)}")
         
     def execute_transfer_machine_station_balance(self, new_machine_station_address, nonce, machine_station_owner_signature):
         """
-        TODO
+        Transfers the balance from the current machine station to a new one.
+        
+        Args:
+            new_machine_station_address (str): The address of the new machine station to transfer balance to
+            nonce (int): Unique nonce for the transaction
+            machine_station_owner_signature (str): Signature from the machine station owner authorizing transfer
+            
+        Returns:
+            WrittenTransactionResult: Contains the transaction receipt and success message
         """
         try:
             selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.TRANSFER_MACHINE_STATION_BALANCE.value)[:4].hex()
@@ -339,11 +361,14 @@ class MachineStation(Base):
                 "to": self.machine_station_address,
                 "data": f"0x{selector}{encoded_params}"
             }
-            self._send_evm_tx(tx)
+            receipt = self._send_evm_tx(tx)
             
-            # TODO return the receipt and a relevant message
+            return WrittenTransactionResult(
+                message=f"Successfully transferred balance from {self.machine_station_address} to {new_machine_station_address}.",
+                receipt=receipt
+            )
         except Exception as e:
-            raise
+            raise ValueError(f"Failed to transfer machine station balance: {str(e)}")
         
     def execute_transaction(self, target, calldata, nonce, machine_station_owner_signature):
         """

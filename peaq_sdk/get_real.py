@@ -14,7 +14,7 @@ from peaq_sdk.types.did import (
     Verification,
     Service,
 )
-from peaq_sdk.types.get_real import (
+from peaq_sdk.types.machine_station import (
     MachineStationFactoryFunctionSignatures
 )
 
