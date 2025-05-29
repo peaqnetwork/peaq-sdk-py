@@ -108,8 +108,8 @@ class GetReal(MachineStation):
             nonce = secrets.randbits(128)
             
         depin_signature = self.depin_owner_sign_typed_data_deploy_machine_smart_account(owner_eoa_address, nonce)
-        smart_account_address = self.deploy_machine_smart_account(owner_eoa_address, nonce, depin_signature)
-        return smart_account_address
+        result = self.deploy_machine_smart_account(owner_eoa_address, nonce, depin_signature)
+        return result
     
     def transfer_machine_station_balance(self, new_machine_station_address: str, nonce: Optional[int] = None) -> str:
         """
@@ -131,9 +131,9 @@ class GetReal(MachineStation):
             nonce = secrets.randbits(128)
             
         depin_signature = self.depin_owner_sign_typed_data_transfer_machine_station_balance(new_machine_station_address, nonce)
-        self.execute_transfer_machine_station_balance(new_machine_station_address, nonce, depin_signature)
+        result = self.execute_transfer_machine_station_balance(new_machine_station_address, nonce, depin_signature)
 
-        return f"Successfully transferred balance to the new Machine Station Factory at address {new_machine_station_address}"
+        return result
     
     def storage_tx(
         self,
@@ -163,13 +163,13 @@ class GetReal(MachineStation):
             
         storage_data = self.generate_storage_tx(email, item_type, item, tag)
         
-        self.execute_transaction(
+        result = self.execute_transaction(
             storage_data['target'],
             storage_data['calldata'],
             storage_data['nonce'],
             storage_data['depin_signature'],
         )
-        return "Success"
+        return result
     
     # allow for projects to use custom fields
     def did_tx(self, project, email, account_address, tag, custom_document_fields: Optional[str] = None):
@@ -178,13 +178,13 @@ class GetReal(MachineStation):
         """
         did_data = self.generate_did_tx(project, email, account_address, tag, custom_document_fields)
         
-        self.execute_transaction(
+        result = self.execute_transaction(
             did_data['target'],
             did_data['calldata'],
             did_data['nonce'],
             did_data['depin_signature'],
         )
-        return "Success"
+        return result
     
     def smart_account_storage_tx(self, smart_account_address, email, item_type, item, tag):
         """
@@ -193,7 +193,7 @@ class GetReal(MachineStation):
         """
         smart_account_storage_data = self.generate_smart_account_storage_tx(smart_account_address, email, item_type, item, tag)
 
-        self.execute_machine_transaction(
+        result = self.execute_machine_transaction(
             smart_account_storage_data['smart_account_address'],
             smart_account_storage_data['target'],
             smart_account_storage_data['calldata'],
@@ -201,7 +201,7 @@ class GetReal(MachineStation):
             smart_account_storage_data['depin_owner_signature'],
             smart_account_storage_data['smart_account_owner_signature']
         )
-        return "Success"
+        return result
         
     def smart_account_did_tx(self, account_address, smart_account_address, project, email, tag, custom_document_fields: Optional[str] = None):
         """
@@ -210,7 +210,7 @@ class GetReal(MachineStation):
         """
         smart_account_did_tx = self.generate_smart_account_did_tx(account_address, smart_account_address, project, email, tag, custom_document_fields)
         
-        self.execute_machine_transaction(
+        result = self.execute_machine_transaction(
             smart_account_did_tx['smart_account_address'],
             smart_account_did_tx['target'],
             smart_account_did_tx['calldata'],
@@ -218,7 +218,7 @@ class GetReal(MachineStation):
             smart_account_did_tx['depin_owner_signature'],
             smart_account_did_tx['smart_account_owner_signature']
         )
-        return "Success"
+        return result
     
     def smart_account_batch_txs(self, data_payloads):
         """
@@ -237,7 +237,7 @@ class GetReal(MachineStation):
         depin_owner_signature = self.depin_owner_sign_typed_data_execute_machine_batch_transactions(smart_account_addresses, targets, calldata_list, nonce, machine_nonces)
         
         
-        self.execute_machine_batch_transaction(
+        result = self.execute_machine_batch_transactions(    
             smart_account_addresses,
             targets,
             calldata_list,
@@ -247,7 +247,7 @@ class GetReal(MachineStation):
             smart_account_owner_signatures
         )
         
-        return "Success"
+        return result
 
     
     def smart_account_transfer_balance(self, smart_account_address, recipient_address):
@@ -260,7 +260,7 @@ class GetReal(MachineStation):
         depin_owner_signature = self.owner_sign_typed_data_transfer_machine_balance(smart_account_address, recipient_address, nonce)
         
         
-        self.execute_machine_transfer_balance(
+        result = self.execute_machine_transfer_balance(
             smart_account_address,
             recipient_address,
             nonce,
@@ -268,7 +268,7 @@ class GetReal(MachineStation):
             smart_account_owner_signature
         )
         
-        return "Success"
+        return result
 
         
     # Build the Machine Station Factory transactions that are Get-Real Specific 

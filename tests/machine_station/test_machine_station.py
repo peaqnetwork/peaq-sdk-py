@@ -595,7 +595,7 @@ def test_execute_batch_transactions(machine_station_sdk, smart_account_address, 
     )
     
     # Execute batch creation transaction
-    result = machine_station_sdk.machine_station.execute_machine_batch_transaction(
+    result = machine_station_sdk.machine_station.execute_machine_batch_transactions(
         smart_account_addresses=smart_accounts,
         targets=targets,
         calldata_list=calldata_list,
@@ -668,7 +668,7 @@ def test_execute_batch_transactions(machine_station_sdk, smart_account_address, 
     )
     
     # Execute batch removal transaction
-    result = machine_station_sdk.machine_station.execute_machine_batch_transaction(
+    result = machine_station_sdk.machine_station.execute_machine_batch_transactions(
         smart_account_addresses=smart_accounts,
         targets=targets,
         calldata_list=calldata_list,

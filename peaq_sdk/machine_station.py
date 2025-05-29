@@ -428,7 +428,7 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to execute machine transaction: {str(e)}")
         
-    def execute_machine_batch_transaction(self, smart_account_addresses, targets, calldata_list, nonce, machine_nonces, machine_station_owner_signature, smart_account_owner_signatures):
+    def execute_machine_batch_transactions(self, smart_account_addresses, targets, calldata_list, nonce, machine_nonces, machine_station_owner_signature, smart_account_owner_signatures):
         try:
             function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.EXECUTE_MACHINE_BATCH_TRANSACTIONS.value)[:4].hex()
             
