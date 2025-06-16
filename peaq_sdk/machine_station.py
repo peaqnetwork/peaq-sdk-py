@@ -173,7 +173,7 @@ class MachineStation(Base):
             
             signable_message = encode_typed_data(domain, types, message)
             # TODO have return the signature message back to the user if they don't have access to their private key. 
-            # Return a singable message object to the frontend for signature request. Get EIP-712 message to show up properly.
+            # Return a signable message object to the frontend for signature request. Get EIP-712 message to show up properly.
             signature = self.machine_account.sign_message(signable_message).signature.hex()
             return "0x" + signature
         except Exception as e:

@@ -6,9 +6,23 @@ from web3 import Web3
 from peaq_sdk.types.did import CustomDocumentFields
 
 
-# EVM ONLY!!
+# Tests for the Machine Station module
+#
+# This test suite verifies the functionality of the Machine Station smart contract interface.
+# Tests are organized into two main categories:
+# 1. Signature Generation Tests - Verify correct signature creation for various operations
+# 2. Transaction Execution Tests - Verify successful execution of operations on-chain
+#
+# The test suite uses fixtures defined in conftest.py for common test setup.
+
+# ============================================================================
+# Signature Generation Tests
+# These tests verify that signatures are correctly generated for various operations
+# ============================================================================
+
 def test_deploy_smart_account_signature(machine_station_sdk, machine_smart_account_owner_address):
-    """Test creation of signature for deploying smart account"""
+    """Test signature generation for deploying a new smart account.
+    Verifies that the signature has the correct format and length."""
     nonce = secrets.randbits(128)
     signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_deploy_machine_smart_account(
         machine_smart_account_owner_address=machine_smart_account_owner_address,
@@ -18,7 +32,8 @@ def test_deploy_smart_account_signature(machine_station_sdk, machine_smart_accou
     assert len(signature) == 132  # 0x + 130 hex chars
 
 def test_transfer_machine_station_balance_signature(machine_station_sdk, machine_station_address_2):
-    """Test creation of signature for transferring machine station balance"""
+    """Test signature generation for transferring balance between machine stations.
+    Verifies that the signature has the correct format and length."""
     nonce = secrets.randbits(128)
     signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_transfer_machine_station_balance(
         new_machine_station_address=machine_station_address_2,
@@ -28,7 +43,8 @@ def test_transfer_machine_station_balance_signature(machine_station_sdk, machine
     assert len(signature) == 132
 
 def test_execute_transaction_signature(machine_station_sdk, storage_precompile_address):
-    """Test creation of signature for executing transaction"""
+    """Test signature generation for executing a transaction through the machine station.
+    Verifies that the signature has the correct format and length."""
     nonce = secrets.randbits(128)
     calldata = machine_station_sdk.storage.add_item(item_type="test_item", item="test_value")
     signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
@@ -40,7 +56,8 @@ def test_execute_transaction_signature(machine_station_sdk, storage_precompile_a
     assert len(signature) == 132
 
 def test_execute_machine_transaction_signature(machine_station_sdk, smart_account_address, storage_precompile_address):
-    """Test creation of signature for executing machine transaction"""
+    """Test signature generation for executing a transaction through a machine smart account.
+    Verifies that both machine station owner and smart account owner signatures are correct."""
     nonce = secrets.randbits(128)
     calldata = machine_station_sdk.storage.add_item(item_type="test_item", item="test_value")
     signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
@@ -53,7 +70,8 @@ def test_execute_machine_transaction_signature(machine_station_sdk, smart_accoun
     assert len(signature) == 132
 
 def test_batch_transactions_signature(machine_station_sdk, smart_account_address, smart_account_address_2, storage_precompile_address):
-    """Test creation of signature for batch transactions"""
+    """Test signature generation for batch transactions from multiple smart accounts.
+    Verifies that signatures are correctly generated for each transaction in the batch."""
     nonce = secrets.randbits(128)
     calldata = machine_station_sdk.storage.add_item(item_type="test_item", item="test_value")
     machine_nonces = [secrets.randbits(128), secrets.randbits(128)]
@@ -72,7 +90,8 @@ def test_batch_transactions_signature(machine_station_sdk, smart_account_address
     assert len(signature) == 132
 
 def test_transfer_machine_balance_signature(machine_station_sdk, smart_account_address, smart_account_address_2):
-    """Test creation of signature for transferring machine balance"""
+    """Test signature generation for transferring balance between smart accounts.
+    Verifies that the signature has the correct format and length."""
     nonce = secrets.randbits(128)
     signature = machine_station_sdk.machine_station.owner_sign_typed_data_transfer_machine_balance(
         smart_account_address=smart_account_address,
@@ -83,7 +102,8 @@ def test_transfer_machine_balance_signature(machine_station_sdk, smart_account_a
     assert len(signature) == 132
 
 def test_machine_owner_sign_execute_machine_transaction(machine_station_sdk, smart_account_address, storage_precompile_address):
-    """Test creation of signature for executing machine transaction"""
+    """Test signature generation by machine owner for executing transactions.
+    Verifies that the machine owner can correctly sign transaction execution requests."""
     nonce = secrets.randbits(128)
     calldata = machine_station_sdk.storage.add_item(item_type="test_item", item="test_value")
     signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
@@ -96,7 +116,8 @@ def test_machine_owner_sign_execute_machine_transaction(machine_station_sdk, sma
     assert len(signature) == 132
 
 def test_machine_sign_transfer_machine_balance(machine_station_sdk, smart_account_address, smart_account_address_2):
-    """Test creation of signature for transferring machine balance"""
+    """Test signature generation by machine for balance transfers.
+    Verifies that the machine can correctly sign balance transfer requests."""
     nonce = secrets.randbits(128)
     signature = machine_station_sdk.machine_station.machine_sign_typed_data_transfer_machine_balance(
         smart_account_address=smart_account_address,
@@ -106,8 +127,21 @@ def test_machine_sign_transfer_machine_balance(machine_station_sdk, smart_accoun
     assert signature.startswith("0x")
     assert len(signature) == 132
 
+# ============================================================================
+# Transaction Execution Tests
+# These tests verify the actual execution of operations on the blockchain
+# ============================================================================
+
 def test_deploy_smart_account(machine_station_sdk, machine_smart_account_owner_address):
-    """Test deploying a new smart account and verify its on-chain deployment"""
+    """Test deploying a new smart account and verify its on-chain deployment.
+    
+    Steps:
+    1. Generate deployment signature
+    2. Deploy smart account
+    3. Verify deployment success and address format
+    4. Verify deployment event in transaction logs
+    5. Verify contract code exists on chain
+    """
     nonce = secrets.randbits(128)
     
     # Get signature for deployment
@@ -148,7 +182,14 @@ def test_deploy_smart_account(machine_station_sdk, machine_smart_account_owner_a
     assert len(deployed_code) > 0, "No contract code found at deployed address"
 
 def test_transfer_machine_station_balance(machine_station_sdk, machine_station_address_2, machine_station_sdk_2):
-    """Test transferring balance to a new machine station"""
+    """Test transferring balance between machine stations.
+    
+    Steps:
+    1. Transfer balance from first machine station to second
+    2. Verify transfer success
+    3. Transfer balance back to first machine station
+    4. Verify return transfer success
+    """
     nonce = secrets.randbits(128)
     
     # Get signature for transfer
@@ -191,7 +232,14 @@ def test_transfer_machine_station_balance(machine_station_sdk, machine_station_a
     
 # create and remove an item from storage
 def test_execute_transaction_storage(machine_station_sdk, storage_precompile_address, wss_url_agng):
-    """Test executing a transaction through the machine station"""
+    """Test executing storage operations through the machine station.
+    
+    Steps:
+    1. Create and add a storage item
+    2. Verify item was added successfully
+    3. Remove the storage item
+    4. Verify item was removed successfully
+    """
     random_suffix = secrets.token_hex(8)
     test_item_type = f"test_item_{random_suffix}"
     test_item_value = "test_value"
@@ -264,7 +312,14 @@ def test_execute_transaction_storage(machine_station_sdk, storage_precompile_add
 
 # create and remove a DID
 def test_execute_transaction_did(machine_station_sdk, did_precompile_address, wss_url_agng):
-    """Test executing DID operations through the machine station"""
+    """Test executing DID operations through the machine station.
+    
+    Steps:
+    1. Create a new DID
+    2. Verify DID creation success
+    3. Remove the DID
+    4. Verify DID removal success
+    """
     random_suffix = secrets.token_hex(8)
     test_name = f"test_did_{random_suffix}"
     
@@ -346,7 +401,14 @@ def test_execute_transaction_did(machine_station_sdk, did_precompile_address, ws
 
 
 def test_execute_machine_transaction_storage(machine_station_sdk, smart_account_address, storage_precompile_address, wss_url_agng):
-    """Test executing storage operations through a machine smart account"""
+    """Test executing storage operations through a machine smart account.
+    
+    Steps:
+    1. Create and add a storage item through smart account
+    2. Verify item was added successfully
+    3. Remove the storage item through smart account
+    4. Verify item was removed successfully
+    """
     # Create unique test item to prevent collisions
     random_suffix = secrets.token_hex(8)
     test_item_type = f"test_item_{random_suffix}"
@@ -443,7 +505,14 @@ def test_execute_machine_transaction_storage(machine_station_sdk, smart_account_
     assert str(exc_info.value) == f"Item type of {test_item_type} was not found at address {smart_account_address}."
 
 def test_execute_machine_transaction_did(machine_station_sdk, smart_account_address, did_precompile_address, wss_url_agng):
-    """Test executing DID operations through a machine smart account"""
+    """Test executing DID operations through a machine smart account.
+    
+    Steps:
+    1. Create a new DID through smart account
+    2. Verify DID creation success
+    3. Remove the DID through smart account
+    4. Verify DID removal success
+    """
     # Create unique test name to prevent collisions
     random_suffix = secrets.token_hex(8)
     test_name = f"test_did_{random_suffix}"
@@ -545,7 +614,15 @@ def test_execute_machine_transaction_did(machine_station_sdk, smart_account_addr
     assert str(exc_info.value) == f"DID of name {test_name} was not found at address {smart_account_address}."
 
 def test_execute_batch_transactions(machine_station_sdk, smart_account_address, smart_account_address_2, storage_precompile_address, did_precompile_address, wss_url_agng):
-    """Test executing multiple transactions from multiple smart accounts"""
+    """Test executing multiple transactions from multiple smart accounts in a single batch.
+    
+    Steps:
+    1. Create storage item from first account and DID from second account
+    2. Execute batch creation transaction
+    3. Verify both operations succeeded
+    4. Remove both items in another batch transaction
+    5. Verify both removals succeeded
+    """
     # Create unique test items to prevent collisions
     random_suffix = secrets.token_hex(8)
     test_item_type = f"test_item_{random_suffix}"
@@ -707,7 +784,14 @@ def test_execute_batch_transactions(machine_station_sdk, smart_account_address, 
     assert str(exc_info.value) == f"DID of name {test_name} was not found at address {smart_account_address}."
 
 def test_transfer_machine_balance(machine_station_sdk, smart_account_address, smart_account_address_2):
-    """Test transferring balance between smart accounts"""
+    """Test transferring balance between smart accounts.
+    
+    Steps:
+    1. Transfer balance from first smart account to second
+    2. Verify transfer success
+    3. Transfer balance back to first smart account
+    4. Verify return transfer success
+    """
     # First transfer: from deployed_smart_account to smart_account_address_2
     nonce = secrets.randbits(128)
     smart_account_signature = machine_station_sdk.machine_station.machine_sign_typed_data_transfer_machine_balance(

@@ -317,13 +317,17 @@ class GetReal(MachineStation):
             "depin_signature": depin_signature
             }
         
-    def generate_smart_account_storage_tx(self, smart_account_address, email, item_type, item, tag):
+    # TODO be able to send a signable message back to the frontend for signature request
+    def generate_smart_account_storage_tx(self, smart_account_address, email, item_type, item, tag, signature: Optional[str] = None):
         nonce = secrets.randbits(128)
         response = self.store_data_key(email, item_type, tag)
         # TODO check validity
         
         storage_calldata = self.sdk.storage.add_item(item_type, item)
-        smart_account_owner_signature = self.machine_owner_sign_typed_data_execute_machine_transaction(smart_account_address, PrecompileAddresses.STORAGE.value, storage_calldata.tx['data'], nonce)
+        
+        # generate a message to sign if not provided
+        if not signature:
+            smart_account_owner_signature = self.machine_owner_sign_typed_data_execute_machine_transaction(smart_account_address, PrecompileAddresses.STORAGE.value, storage_calldata.tx['data'], nonce)
         depin_owner_signature = self.depin_owner_sign_typed_data_execute_machine_transaction(smart_account_address, PrecompileAddresses.STORAGE.value, storage_calldata.tx['data'], nonce)
         
         return {

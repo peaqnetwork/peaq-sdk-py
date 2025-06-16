@@ -477,7 +477,7 @@ class Did(Base):
             verification_method.public_key_multibase = address
             return verification_method
         
-        if verification.type not in ("Ed25519VerificationKey2020", "Sr25519VerificationKey2020", "EcdsaSecp256k1RecoveryMethod2020"):
+        if verification.type not in ("Sr25519VerificationKey2020", "EcdsaSecp256k1RecoveryMethod2020"):
             raise ValueError(
                 "Substrate verification.type must be "
                 "'Ed25519VerificationKey2020', 'Sr25519VerificationKey2020', or 'EcdsaSecp256k1RecoveryMethod2020'"
@@ -488,6 +488,7 @@ class Did(Base):
         if verification.public_key_multibase:
             verification_method.public_key_multibase = verification.public_key_multibase
         else:
+            # TODO calculate public key multibase from public key
             verification_method.public_key_multibase = address
         
         return verification_method
