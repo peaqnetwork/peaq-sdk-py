@@ -1,28 +1,34 @@
 import pytest
+import uuid
 
-@pytest.fixture(params=["my-role"])
+@pytest.fixture(params=["test-role"])
 def role_name(request):
     return request.param
 
-@pytest.fixture(params=["9120e637-991c-4ea0-b47e-84a8154f"])
-def role_id(request):
+@pytest.fixture
+def role_id():
+    """Generate a unique 32-character role ID for each test."""
+    return str(uuid.uuid4())[:32]
+
+@pytest.fixture(params=["test-group"])
+def group_name(request):
     return request.param
 
-@pytest.fixture(autouse=True)
-def substrate_sdk(evm_sdk, substrate_sdk, chain):
-    """
-    Choose which SDK instance to use for storage tests.
-    You can override or parametrize here if you need separate EVM vs Substrate runs.
-    """
-    # e.g. default to substrate for storage
-    return substrate_sdk
+@pytest.fixture
+def group_id():
+    """Generate a unique 32-character group ID for each test."""
+    return str(uuid.uuid4())[:32]
 
-@pytest.fixture(autouse=True)
-def evm_sdk(evm_sdk, substrate_sdk, chain):
-    """
-    Choose which SDK instance to use for storage tests.
-    You can override or parametrize here if you need separate EVM vs Substrate runs.
-    """
-    # e.g. default to substrate for storage
-    evm_sdk, base_wss = evm_sdk
-    return evm_sdk, base_wss
+@pytest.fixture(params=["test-permission"])
+def permission_name(request):
+    return request.param
+
+@pytest.fixture
+def permission_id():
+    """Generate a unique 32-character permission ID for each test."""
+    return str(uuid.uuid4())[:32]
+
+@pytest.fixture
+def user_id():
+    """Generate a unique 32-character user ID for each test."""
+    return str(uuid.uuid4())[:32]

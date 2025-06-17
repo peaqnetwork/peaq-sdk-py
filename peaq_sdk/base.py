@@ -165,7 +165,7 @@ class Base:
             Exception: For other submission errors.
         """
         tip_value = 0
-        max_attempts = 5
+        max_attempts = 8  # Increased from 5 to handle pool congestion better
         attempt = 0
         
         while attempt < max_attempts:
@@ -197,11 +197,32 @@ class Base:
                 
             except SubstrateRequestException as e:
                 error_message = str(e)
-                if "Priority is too low" in error_message:
-                    print(f"Attempt {attempt + 1}: Priority too low with tip {tip_value}, incrementing tip based on expected...")
+                print(error_message)
+                # Parse JSON error if it's a JSON string
+                try:
+                    error_data = ast.literal_eval(error_message) if isinstance(error_message, str) and error_message.startswith('{') else {'message': error_message}
+                except (ValueError, SyntaxError):
+                    error_data = {'message': error_message}
+                
+                # Extract the actual error message
+                actual_error = error_data.get('message', error_message)
+                
+                if "Priority is too low" in actual_error:
+                    print(f"Attempt {attempt + 1}: Priority too low with tip {tip_value}, incrementing tip by 25%...")
                     tip_value += int(tip_increment * 1.25)
                     attempt += 1
                     time.sleep(0.5)
+                elif "Immediately Dropped" in actual_error or error_data.get('code') == 1016:
+                    print(f"Attempt {attempt + 1}: Transaction dropped from pool (tip={tip_value}), increasing tip more aggressively...")
+                    # Increase tip more aggressively for pool rejection
+                    tip_value += int(tip_increment * 2.0)  # 100% increase instead of 25%
+                    attempt += 1
+                    time.sleep(1.0)  # Longer wait to let pool clear
+                elif "limit" in actual_error.lower() or "pool" in actual_error.lower():
+                    print(f"Attempt {attempt + 1}: Pool limit reached (tip={tip_value}), waiting and retrying with higher tip...")
+                    tip_value += int(tip_increment * 1.5)  # 50% increase
+                    attempt += 1
+                    time.sleep(2.0)  # Wait longer for pool to clear
                 else:
                     raise Exception(error_message)
         else:
@@ -239,8 +260,30 @@ class Base:
                 # Get payment info once
                 if attempt == 0:
                     gas_price = self._api.eth.gas_price
+                    # Add buffer to initial gas price to reduce base fee conflicts
+                    gas_price = int(gas_price * 1.1)  # 10% buffer
                 
-                tx['gasPrice'] = gas_price
+                # Try to use EIP-1559 style transaction if supported
+                try:
+                    latest_block = self._api.eth.get_block('latest')
+                    if 'baseFeePerGas' in latest_block:
+                        # Network supports EIP-1559, use type 2 transaction
+                        base_fee = latest_block['baseFeePerGas']
+                        max_priority_fee = int(gas_price * 0.1)  # 10% of gas price as priority fee
+                        max_fee = base_fee * 2 + max_priority_fee  # 2x base fee + priority
+                        
+                        tx['maxFeePerGas'] = max_fee
+                        tx['maxPriorityFeePerGas'] = max_priority_fee
+                        tx['type'] = '0x2'  # EIP-1559 transaction type
+                        # Remove legacy gasPrice when using EIP-1559
+                        if 'gasPrice' in tx:
+                            del tx['gasPrice']
+                    else:
+                        # Fallback to legacy transaction
+                        tx['gasPrice'] = gas_price
+                except Exception:
+                    # If EIP-1559 detection fails, use legacy transaction
+                    tx['gasPrice'] = gas_price
                 tx['chainId'] = self._api.eth.chain_id
                 tx['gas'] = self._api.eth.estimate_gas(tx)
 
@@ -257,6 +300,14 @@ class Base:
                         pending_tx = self._api.eth.get_transaction(tx_hash)
                         print(f"Tx {tx_hash.hex()} is still pending. Increasing gas price by 25% and retrying with the same nonce {nonce}...")
                         gas_price = int(gas_price * 1.25)
+                        
+                        # Update fees based on transaction type
+                        if 'maxFeePerGas' in tx:
+                            tx['maxFeePerGas'] = int(tx['maxFeePerGas'] * 1.25)
+                            tx['maxPriorityFeePerGas'] = int(tx['maxPriorityFeePerGas'] * 1.25)
+                        else:
+                            tx['gasPrice'] = gas_price
+                            
                         attempt += 1
                         time.sleep(0.5)
                         continue
@@ -275,11 +326,46 @@ class Base:
                     "intrinsic gas too low",
                     "nonce too low",
                     "already known",
-                    "transaction underpriced"
+                    "transaction underpriced",
+                    "gas price less than block base fee"
                 ]
                 if any(sub in error_message for sub in low_fee_errors):
-                    print(f"Attempt {attempt + 1}: Low fee (gasPrice={gas_price}). Increasing gas by 25% and retrying...")
-                    gas_price = int(gas_price * 1.25)
+                    if "gas price less than block base fee" in error_message:
+                        # For base fee errors, get fresh gas price and increase more aggressively
+                        print(f"Attempt {attempt + 1}: Gas price below base fee. Getting fresh gas price and increasing by 50%...")
+                        fresh_gas_price = self._api.eth.gas_price
+                        gas_price = max(int(fresh_gas_price * 1.5), int(gas_price * 1.5))
+                        
+                        # Update EIP-1559 fees if transaction is using them
+                        if 'maxFeePerGas' in tx:
+                            try:
+                                latest_block = self._api.eth.get_block('latest')
+                                if 'baseFeePerGas' in latest_block:
+                                    base_fee = latest_block['baseFeePerGas']
+                                    max_priority_fee = int(gas_price * 0.1)
+                                    max_fee = base_fee * 3 + max_priority_fee  # More aggressive: 3x base fee
+                                    tx['maxFeePerGas'] = max_fee
+                                    tx['maxPriorityFeePerGas'] = max_priority_fee
+                            except Exception:
+                                # Fallback to legacy transaction on error
+                                if 'maxFeePerGas' in tx:
+                                    del tx['maxFeePerGas']
+                                if 'maxPriorityFeePerGas' in tx:
+                                    del tx['maxPriorityFeePerGas']
+                                if 'type' in tx:
+                                    del tx['type']
+                                tx['gasPrice'] = gas_price
+                    else:
+                        print(f"Attempt {attempt + 1}: Low fee. Increasing gas by 25% and retrying...")
+                        gas_price = int(gas_price * 1.25)
+                        
+                        # Update fees based on transaction type
+                        if 'maxFeePerGas' in tx:
+                            tx['maxFeePerGas'] = int(tx['maxFeePerGas'] * 1.25)
+                            tx['maxPriorityFeePerGas'] = int(tx['maxPriorityFeePerGas'] * 1.25)
+                        else:
+                            tx['gasPrice'] = gas_price
+                    
                     attempt += 1
                     time.sleep(0.5)
                 elif "connection error" in error_message.lower() or "connection closed" in error_message.lower():

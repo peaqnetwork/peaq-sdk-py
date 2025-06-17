@@ -42,13 +42,13 @@ from peaq_sdk.types import ChainType
 # Without signing capabilities (read-only and transaction creation)
 sdk = Sdk.create_instance(
     base_url="wss://peaq.api.onfinality.io/public-ws",
-    chain_type=ChainType.Substrate,
+    chain_type=ChainType.SUBSTRATE,
 )
 
 # With signing capabilities
 sdk = Sdk.create_instance(
     base_url="wss://peaq.api.onfinality.io/public-ws",
-    chain_type=ChainType.Substrate,
+    chain_type=ChainType.SUBSTRATE,
     seed=my_private_key_or_mnemonic,
 )
 ```
