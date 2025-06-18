@@ -7,6 +7,7 @@ from typing import Optional, Union
 from peaq_sdk.base import Base
 from peaq_sdk.did import Did
 from peaq_sdk.storage import Storage
+from peaq_sdk.pay import Pay
 from peaq_sdk.rbac import Rbac
 from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
 from peaq_sdk.types.main import CreateInstanceOptions
@@ -43,6 +44,7 @@ class Main(Base):
         
         self.did: Did = Did(api, metadata)
         self.storage: Storage = Storage(api, metadata)
+        self.pay = Pay(self._api, self._metadata)
         self.rbac: Rbac = Rbac(api, metadata)
     
     @classmethod
@@ -89,9 +91,13 @@ class Main(Base):
                 or is not a valid hexadecimal string.
             ValueError: If the substrate mnemonic does not consist of 12 or 24 words.
         """
+        # is_sub = is_valid_ss58_address(addr)
+        # is_evm = Web3.is_address(addr)
+        # but for private keys??
         if not seed:
             return
         if self._metadata.chain_type == ChainType.EVM:
+            # TODO allow setting with a mnemonic phrase for EVM
             key_str = seed[2:] if seed.startswith("0x") else seed
             if len(key_str) != 64:
                 raise ValueError("Invalid EVM private key length. Expected 64 hex characters (excluding '0x' prefix).")
