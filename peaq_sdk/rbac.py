@@ -525,6 +525,332 @@ class Rbac(Base):
             enabled=ok['enabled']
         )
 
+    def fetch_roles(self, owner: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+        """Fetches all roles for the given owner."""
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage using RPC request
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_ROLES.value, [owner_address, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"Roles not found for owner address {owner}.")
+        
+        roles_data = resp['result']['Ok']
+        response_data = []
+        
+        for role in roles_data:
+            response_data.append(FetchResponseData(
+                id=bytes(role['id']).decode('utf-8'),
+                name=bytes(role['name']).decode('utf-8'),
+                enabled=role['enabled']
+            ))
+        
+        return response_data
+
+    def fetch_groups(self, owner: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+        """Fetches all groups for the given owner."""
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage using RPC request
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_GROUPS.value, [owner_address, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"Groups not found for owner address {owner}.")
+        
+        groups_data = resp['result']['Ok']
+        response_data = []
+        
+        for group in groups_data:
+            response_data.append(FetchResponseData(
+                id=bytes(group['id']).decode('utf-8'),
+                name=bytes(group['name']).decode('utf-8'),
+                enabled=group['enabled']
+            ))
+        
+        return response_data
+
+    def fetch_permissions(self, owner: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+        """Fetches all permissions for the given owner."""
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage using RPC request
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_PERMISSIONS.value, [owner_address, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"Permissions not found for owner address {owner}.")
+        
+        permissions_data = resp['result']['Ok']
+        response_data = []
+        
+        for permission in permissions_data:
+            response_data.append(FetchResponseData(
+                id=bytes(permission['id']).decode('utf-8'),
+                name=bytes(permission['name']).decode('utf-8'),
+                enabled=permission['enabled']
+            ))
+        
+        return response_data
+
+    def fetch_user_roles(self, owner: str, user_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseRole2User]:
+        """Fetches all roles assigned to a user."""
+        if len(user_id) != 32:
+            raise GetRbacError("User Id length should be 32 char only")
+            
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage using RPC request
+        user_id_bytes = _rpc_id(user_id)
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_USER_ROLES.value, [owner_address, user_id_bytes, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"No role is assigned to user {user_id}.")
+        
+        user_roles_data = resp['result']['Ok']
+        response_data = []
+        
+        for item in user_roles_data:
+            response_data.append(FetchResponseRole2User(
+                role=bytes(item['role']).decode('utf-8'),
+                user=bytes(item['user']).decode('utf-8')
+            ))
+        
+        return response_data
+
+    def fetch_group_roles(self, owner: str, group_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseRole2Group]:
+        """Fetches all roles assigned to a group."""
+        if len(group_id) != 32:
+            raise GetRbacError("Group Id length should be 32 char only")
+            
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage using RPC request
+        group_id_bytes = _rpc_id(group_id)
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_GROUP_ROLES.value, [owner_address, group_id_bytes, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"No roles found for group {group_id}.")
+        
+        group_roles_data = resp['result']['Ok']
+        response_data = []
+        
+        for item in group_roles_data:
+            response_data.append(FetchResponseRole2Group(
+                role=bytes(item['role']).decode('utf-8'),
+                group=bytes(item['group']).decode('utf-8')
+            ))
+        
+        return response_data
+
+    def fetch_user_groups(self, owner: str, user_id: str, wss_base_url: Optional[str] = None) -> List[ResponseFetchUserGroups]:
+        """Fetches all groups assigned to a user."""
+        if len(user_id) != 32:
+            raise GetRbacError("User Id length should be 32 char only")
+            
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage using RPC request
+        user_id_bytes = _rpc_id(user_id)
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_USER_GROUPS.value, [owner_address, user_id_bytes, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"No groups assigned to user {user_id}.")
+        
+        user_groups_data = resp['result']['Ok']
+        response_data = []
+        
+        for item in user_groups_data:
+            response_data.append(ResponseFetchUserGroups(
+                user=bytes(item['user']).decode('utf-8'),
+                group=bytes(item['group']).decode('utf-8')
+            ))
+        
+        return response_data
+
+    def fetch_role_permissions(self, owner: str, role_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseRole2Permission]:
+        """Fetches all permissions assigned to a role."""
+        if len(role_id) != 32:
+            raise GetRbacError("Role Id length should be 32 char only")
+            
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage using RPC request
+        role_id_bytes = _rpc_id(role_id)
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_ROLE_PERMISSIONS.value, [owner_address, role_id_bytes, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"No permissions found for role {role_id}.")
+        
+        role_permissions_data = resp['result']['Ok']
+        response_data = []
+        
+        for item in role_permissions_data:
+            response_data.append(FetchResponseRole2Permission(
+                permission=bytes(item['permission']).decode('utf-8'),
+                role=bytes(item['role']).decode('utf-8')
+            ))
+        
+        return response_data
+
+    def fetch_user_permissions(self, owner: str, user_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+        """Fetches all permissions available to a user (through direct role assignments and group memberships)."""
+        if len(user_id) != 32:
+            raise GetRbacError("User Id length should be 32 char only")
+            
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage using RPC request
+        user_id_bytes = _rpc_id(user_id)
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_USER_PERMISSIONS.value, [owner_address, user_id_bytes, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"No permissions found for user {user_id}.")
+        
+        user_permissions_data = resp['result']['Ok']
+        response_data = []
+        
+        for permission in user_permissions_data:
+            response_data.append(FetchResponseData(
+                id=bytes(permission['id']).decode('utf-8'),
+                name=bytes(permission['name']).decode('utf-8'),
+                enabled=permission['enabled']
+            ))
+        
+        return response_data
+
+    def fetch_group_permissions(self, owner: str, group_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+        """Fetches all permissions available to a group (through role assignments)."""
+        if len(group_id) != 32:
+            raise GetRbacError("Group Id length should be 32 char only")
+            
+        if self.metadata.chain_type is ChainType.EVM:
+            if not wss_base_url:
+                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
+            owner_address = evm_to_address(owner)
+            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+        else:
+            api = self.api
+            owner_address = owner
+        
+        # Query storage using RPC request
+        group_id_bytes = _rpc_id(group_id)
+        block_hash = api.get_block_hash(None)
+        
+        resp = api.rpc_request(
+            RbacCallFunction.GET_GROUP_PERMISSIONS.value, [owner_address, group_id_bytes, block_hash]
+        )
+        
+        # Check result
+        if 'Err' in resp['result']:
+            raise GetRbacError(f"No permissions found for group {group_id}.")
+        
+        group_permissions_data = resp['result']['Ok']
+        response_data = []
+        
+        for permission in group_permissions_data:
+            response_data.append(FetchResponseData(
+                id=bytes(permission['id']).decode('utf-8'),
+                name=bytes(permission['name']).decode('utf-8'),
+                enabled=permission['enabled']
+            ))
+        
+        return response_data
+
     def disable_role(self, role_id: str):
         """Disables a role."""
         if len(role_id) != 32:

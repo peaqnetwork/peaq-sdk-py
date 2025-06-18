@@ -368,41 +368,41 @@ class TestRBACUpdateOperations:
         assert 'extrinsic_hash' in result.receipt
         assert result.receipt['_ExtrinsicReceipt__is_success']
     
-    # def test_substrate_update_group(self, substrate_sdk, group_id, group_name):
-    #     """Test creating then updating a group name on Substrate."""
-    #     # First create the group
-    #     create_result = substrate_sdk.rbac.create_group(group_name=group_name, group_id=group_id)
-    #     assert isinstance(create_result, WrittenTransactionResult)
-    #     assert create_result.receipt['_ExtrinsicReceipt__is_success']
+    def test_substrate_update_group(self, substrate_sdk, group_id, group_name):
+        """Test creating then updating a group name on Substrate."""
+        # First create the group
+        create_result = substrate_sdk.rbac.create_group(group_name=group_name, group_id=group_id)
+        assert isinstance(create_result, WrittenTransactionResult)
+        assert create_result.receipt['_ExtrinsicReceipt__is_success']
         
-    #     # Then update it
-    #     new_name = f"updated-{group_name}"
-    #     result = substrate_sdk.rbac.update_group(
-    #         group_id=group_id, 
-    #         group_name=new_name
-    #     )
-    #     assert isinstance(result, WrittenTransactionResult)
-    #     assert f"Successfully updated group {group_id} with name {new_name}" in result.message
-    #     assert 'extrinsic_hash' in result.receipt
-    #     assert result.receipt['_ExtrinsicReceipt__is_success']
+        # Then update it
+        new_name = f"updated-{group_name}"
+        result = substrate_sdk.rbac.update_group(
+            group_id=group_id, 
+            group_name=new_name
+        )
+        assert isinstance(result, WrittenTransactionResult)
+        assert f"Successfully updated group {group_id} with name {new_name}" in result.message
+        assert 'extrinsic_hash' in result.receipt
+        assert result.receipt['_ExtrinsicReceipt__is_success']
     
-    # def test_substrate_update_permission(self, substrate_sdk, permission_id, permission_name):
-    #     """Test creating then updating a permission name on Substrate."""
-    #     # First create the permission
-    #     create_result = substrate_sdk.rbac.create_permission(permission_name=permission_name, permission_id=permission_id)
-    #     assert isinstance(create_result, WrittenTransactionResult)
-    #     assert create_result.receipt['_ExtrinsicReceipt__is_success']
+    def test_substrate_update_permission(self, substrate_sdk, permission_id, permission_name):
+        """Test creating then updating a permission name on Substrate."""
+        # First create the permission
+        create_result = substrate_sdk.rbac.create_permission(permission_name=permission_name, permission_id=permission_id)
+        assert isinstance(create_result, WrittenTransactionResult)
+        assert create_result.receipt['_ExtrinsicReceipt__is_success']
         
-    #     # Then update it
-    #     new_name = f"updated-{permission_name}"
-    #     result = substrate_sdk.rbac.update_permission(
-    #         permission_id=permission_id, 
-    #         permission_name=new_name
-    #     )
-    #     assert isinstance(result, WrittenTransactionResult)
-    #     assert f"Successfully updated permission {permission_id} with name {new_name}" in result.message
-    #     assert 'extrinsic_hash' in result.receipt
-    #     assert result.receipt['_ExtrinsicReceipt__is_success']
+        # Then update it
+        new_name = f"updated-{permission_name}"
+        result = substrate_sdk.rbac.update_permission(
+            permission_id=permission_id, 
+            permission_name=new_name
+        )
+        assert isinstance(result, WrittenTransactionResult)
+        assert f"Successfully updated permission {permission_id} with name {new_name}" in result.message
+        assert 'extrinsic_hash' in result.receipt
+        assert result.receipt['_ExtrinsicReceipt__is_success']
     
     def test_evm_update_role(self, evm_sdk, role_id, role_name):
         """Test creating then updating a role name on EVM."""
@@ -811,7 +811,7 @@ class TestRBACIntegration:
         role_id = role_result.message.split("role id of ")[-1].split(".")[0]
         group_id = group_result.message.split("group id of ")[-1].split(".")[0]
         permission_id = permission_result.message.split("permission id of ")[-1].split(".")[0]
-        user_id = "integration-test-user-id-123456"  # Exactly 32 chars
+        user_id = "integration-test-user-id-1234567"  # Exactly 32 chars
         
         # Test assignments
         substrate_sdk.rbac.assign_permission_to_role(permission_id=permission_id, role_id=role_id)
@@ -857,7 +857,7 @@ class TestRBACIntegration:
         role_id = role_result.message.split("role id of ")[-1].split(".")[0]
         group_id = group_result.message.split("group id of ")[-1].split(".")[0]
         permission_id = permission_result.message.split("permission id of ")[-1].split(".")[0]
-        user_id = "integration-test-user-id-123456"  # Exactly 32 chars
+        user_id = "integration-test-user-id-1234567"  # Exactly 32 chars
         
         # Test assignments
         sdk.rbac.assign_permission_to_role(permission_id=permission_id, role_id=role_id)
@@ -889,3 +889,547 @@ class TestRBACIntegration:
         sdk.rbac.disable_role(role_id=role_id)
         sdk.rbac.disable_group(group_id=group_id)
         sdk.rbac.disable_permission(permission_id=permission_id)
+
+    def test_evm_unassign_user_to_group_nonexistent(self, evm_sdk, role_id, group_id, user_id):
+        sdk, wss_url = evm_sdk
+        # Try to unassign user from non-existent group
+        with pytest.raises(Exception):
+            sdk.rbac.unassign_user_to_group(
+                owner=sdk.metadata.pair.address,
+                group_id=group_id,
+                user_id=user_id
+            )
+
+class TestRbacFetchRoles:
+    """Test fetching all roles."""
+    
+    def test_substrate_fetch_roles(self, substrate_sdk, role_id):
+        result = substrate_sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Fetch all roles
+        roles = substrate_sdk.rbac.fetch_roles(owner=substrate_sdk.metadata.pair.ss58_address)
+        assert isinstance(roles, list)
+        assert len(roles) > 0
+        
+        # Check if our created role is in the list
+        role_ids = [role.id for role in roles]
+        assert role_id in role_ids
+        
+        # Find our role and verify its properties
+        our_role = next(role for role in roles if role.id == role_id)
+        assert our_role.name == "Test Role"
+        assert our_role.enabled is True
+    
+    def test_evm_fetch_roles(self, evm_sdk, role_id):
+        sdk, wss_url = evm_sdk
+        result = sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Fetch all roles
+        roles = sdk.rbac.fetch_roles(owner=sdk.metadata.pair.address, wss_base_url=wss_url)
+        assert isinstance(roles, list)
+        assert len(roles) > 0
+        
+        # Check if our created role is in the list
+        role_ids = [role.id for role in roles]
+        assert role_id in role_ids
+        
+        # Find our role and verify its properties
+        our_role = next(role for role in roles if role.id == role_id)
+        assert our_role.name == "Test Role"
+        assert our_role.enabled is True
+
+class TestRbacFetchGroups:
+    """Test fetching all groups."""
+    
+    def test_substrate_fetch_groups(self, substrate_sdk, group_id):
+        result = substrate_sdk.rbac.create_group(group_name="Test Group", group_id=group_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Fetch all groups
+        groups = substrate_sdk.rbac.fetch_groups(owner=substrate_sdk.metadata.pair.ss58_address)
+        assert isinstance(groups, list)
+        assert len(groups) > 0
+        
+        # Check if our created group is in the list
+        group_ids = [group.id for group in groups]
+        assert group_id in group_ids
+        
+        # Find our group and verify its properties
+        our_group = next(group for group in groups if group.id == group_id)
+        assert our_group.name == "Test Group"
+        assert our_group.enabled is True
+    
+    def test_evm_fetch_groups(self, evm_sdk, group_id):
+        sdk, wss_url = evm_sdk
+        result = sdk.rbac.create_group(group_name="Test Group", group_id=group_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Fetch all groups
+        groups = sdk.rbac.fetch_groups(owner=sdk.metadata.pair.address, wss_base_url=wss_url)
+        assert isinstance(groups, list)
+        assert len(groups) > 0
+        
+        # Check if our created group is in the list
+        group_ids = [group.id for group in groups]
+        assert group_id in group_ids
+        
+        # Find our group and verify its properties
+        our_group = next(group for group in groups if group.id == group_id)
+        assert our_group.name == "Test Group"
+        assert our_group.enabled is True
+
+class TestRbacFetchPermissions:
+    """Test fetching all permissions."""
+    
+    def test_substrate_fetch_permissions(self, substrate_sdk, permission_id):
+        result = substrate_sdk.rbac.create_permission(permission_name="Test Permission", permission_id=permission_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Fetch all permissions
+        permissions = substrate_sdk.rbac.fetch_permissions(owner=substrate_sdk.metadata.pair.ss58_address)
+        assert isinstance(permissions, list)
+        assert len(permissions) > 0
+        
+        # Check if our created permission is in the list
+        permission_ids = [perm.id for perm in permissions]
+        assert permission_id in permission_ids
+        
+        # Find our permission and verify its properties
+        our_permission = next(perm for perm in permissions if perm.id == permission_id)
+        assert our_permission.name == "Test Permission"
+        assert our_permission.enabled is True
+    
+    def test_evm_fetch_permissions(self, evm_sdk, permission_id):
+        sdk, wss_url = evm_sdk
+        result = sdk.rbac.create_permission(permission_name="Test Permission", permission_id=permission_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Fetch all permissions
+        permissions = sdk.rbac.fetch_permissions(owner=sdk.metadata.pair.address, wss_base_url=wss_url)
+        assert isinstance(permissions, list)
+        assert len(permissions) > 0
+        
+        # Check if our created permission is in the list
+        permission_ids = [perm.id for perm in permissions]
+        assert permission_id in permission_ids
+        
+        # Find our permission and verify its properties
+        our_permission = next(perm for perm in permissions if perm.id == permission_id)
+        assert our_permission.name == "Test Permission"
+        assert our_permission.enabled is True
+
+class TestRbacFetchUserRoles:
+    """Test fetching user roles."""
+    
+    def test_substrate_fetch_user_roles(self, substrate_sdk, role_id, user_id):
+        # Create role first
+        result = substrate_sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Assign role to user
+        result = substrate_sdk.rbac.assign_role_to_user(
+            role_id=role_id,
+            user_id=user_id
+        )
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Fetch user roles
+        user_roles = substrate_sdk.rbac.fetch_user_roles(
+            owner=substrate_sdk.metadata.pair.ss58_address,
+            user_id=user_id
+        )
+        assert isinstance(user_roles, list)
+        assert len(user_roles) > 0
+        
+        # Verify our role assignment is present
+        role_ids = [assignment.role for assignment in user_roles]
+        assert role_id in role_ids
+        
+        # Verify user ID matches
+        our_assignment = next(assignment for assignment in user_roles if assignment.role == role_id)
+        assert our_assignment.user == user_id
+    
+    def test_evm_fetch_user_roles(self, evm_sdk, role_id, user_id):
+        sdk, wss_url = evm_sdk
+        
+        # Create role first
+        result = sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Assign role to user
+        result = sdk.rbac.assign_role_to_user(
+            role_id=role_id,
+            user_id=user_id
+        )
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Fetch user roles
+        user_roles = sdk.rbac.fetch_user_roles(
+            owner=sdk.metadata.pair.address,
+            user_id=user_id,
+            wss_base_url=wss_url
+        )
+        assert isinstance(user_roles, list)
+        assert len(user_roles) > 0
+        
+        # Verify our role assignment is present
+        role_ids = [assignment.role for assignment in user_roles]
+        assert role_id in role_ids
+        
+        # Verify user ID matches
+        our_assignment = next(assignment for assignment in user_roles if assignment.role == role_id)
+        assert our_assignment.user == user_id
+
+class TestRbacFetchGroupRoles:
+    """Test fetching group roles."""
+    
+    def test_substrate_fetch_group_roles(self, substrate_sdk, role_id, group_id):
+        # Create role and group first
+        result = substrate_sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        result = substrate_sdk.rbac.create_group(group_name="Test Group", group_id=group_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Assign role to group
+        result = substrate_sdk.rbac.assign_role_to_group(
+            role_id=role_id,
+            group_id=group_id
+        )
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Fetch group roles
+        group_roles = substrate_sdk.rbac.fetch_group_roles(
+            owner=substrate_sdk.metadata.pair.ss58_address,
+            group_id=group_id
+        )
+        assert isinstance(group_roles, list)
+        assert len(group_roles) > 0
+        
+        # Verify our role assignment is present
+        role_ids = [assignment.role for assignment in group_roles]
+        assert role_id in role_ids
+        
+        # Verify group ID matches
+        our_assignment = next(assignment for assignment in group_roles if assignment.role == role_id)
+        assert our_assignment.group == group_id
+    
+    def test_evm_fetch_group_roles(self, evm_sdk, role_id, group_id):
+        sdk, wss_url = evm_sdk
+        
+        # Create role and group first
+        result = sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        result = sdk.rbac.create_group(group_name="Test Group", group_id=group_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Assign role to group
+        result = sdk.rbac.assign_role_to_group(
+            role_id=role_id,
+            group_id=group_id
+        )
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Fetch group roles
+        group_roles = sdk.rbac.fetch_group_roles(
+            owner=sdk.metadata.pair.address,
+            group_id=group_id,
+            wss_base_url=wss_url
+        )
+        assert isinstance(group_roles, list)
+        assert len(group_roles) > 0
+        
+        # Verify our role assignment is present
+        role_ids = [assignment.role for assignment in group_roles]
+        assert role_id in role_ids
+        
+        # Verify group ID matches
+        our_assignment = next(assignment for assignment in group_roles if assignment.role == role_id)
+        assert our_assignment.group == group_id
+
+class TestRbacFetchUserGroups:
+    """Test fetching user groups."""
+    
+    def test_substrate_fetch_user_groups(self, substrate_sdk, group_id, user_id):
+        # Create group first
+        result = substrate_sdk.rbac.create_group(group_name="Test Group", group_id=group_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Assign user to group
+        result = substrate_sdk.rbac.assign_user_to_group(
+            group_id=group_id,
+            user_id=user_id
+        )
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Fetch user groups
+        user_groups = substrate_sdk.rbac.fetch_user_groups(
+            owner=substrate_sdk.metadata.pair.ss58_address,
+            user_id=user_id
+        )
+        assert isinstance(user_groups, list)
+        assert len(user_groups) > 0
+        
+        # Verify our group assignment is present
+        group_ids = [assignment.group for assignment in user_groups]
+        assert group_id in group_ids
+        
+        # Verify user ID matches
+        our_assignment = next(assignment for assignment in user_groups if assignment.group == group_id)
+        assert our_assignment.user == user_id
+    
+    def test_evm_fetch_user_groups(self, evm_sdk, group_id, user_id):
+        sdk, wss_url = evm_sdk
+        
+        # Create group first
+        result = sdk.rbac.create_group(group_name="Test Group", group_id=group_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Assign user to group
+        result = sdk.rbac.assign_user_to_group(
+            group_id=group_id,
+            user_id=user_id
+        )
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Fetch user groups
+        user_groups = sdk.rbac.fetch_user_groups(
+            owner=sdk.metadata.pair.address,
+            user_id=user_id,
+            wss_base_url=wss_url
+        )
+        assert isinstance(user_groups, list)
+        assert len(user_groups) > 0
+        
+        # Verify our group assignment is present
+        group_ids = [assignment.group for assignment in user_groups]
+        assert group_id in group_ids
+        
+        # Verify user ID matches
+        our_assignment = next(assignment for assignment in user_groups if assignment.group == group_id)
+        assert our_assignment.user == user_id
+
+class TestRbacFetchRolePermissions:
+    """Test fetching role permissions."""
+    
+    def test_substrate_fetch_role_permissions(self, substrate_sdk, role_id, permission_id):
+        # Create role and permission first
+        result = substrate_sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        result = substrate_sdk.rbac.create_permission(permission_name="Test Permission", permission_id=permission_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Assign permission to role
+        result = substrate_sdk.rbac.assign_permission_to_role(
+            role_id=role_id,
+            permission_id=permission_id
+        )
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Fetch role permissions
+        role_permissions = substrate_sdk.rbac.fetch_role_permissions(
+            owner=substrate_sdk.metadata.pair.ss58_address,
+            role_id=role_id
+        )
+        assert isinstance(role_permissions, list)
+        assert len(role_permissions) > 0
+        
+        # Verify our permission assignment is present
+        permission_ids = [assignment.permission for assignment in role_permissions]
+        assert permission_id in permission_ids
+        
+        # Verify role ID matches
+        our_assignment = next(assignment for assignment in role_permissions if assignment.permission == permission_id)
+        assert our_assignment.role == role_id
+    
+    def test_evm_fetch_role_permissions(self, evm_sdk, role_id, permission_id):
+        sdk, wss_url = evm_sdk
+        
+        # Create role and permission first
+        result = sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        result = sdk.rbac.create_permission(permission_name="Test Permission", permission_id=permission_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Assign permission to role
+        result = sdk.rbac.assign_permission_to_role(
+            role_id=role_id,
+            permission_id=permission_id
+        )
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Fetch role permissions
+        role_permissions = sdk.rbac.fetch_role_permissions(
+            owner=sdk.metadata.pair.address,
+            role_id=role_id,
+            wss_base_url=wss_url
+        )
+        assert isinstance(role_permissions, list)
+        assert len(role_permissions) > 0
+        
+        # Verify our permission assignment is present
+        permission_ids = [assignment.permission for assignment in role_permissions]
+        assert permission_id in permission_ids
+        
+        # Verify role ID matches
+        our_assignment = next(assignment for assignment in role_permissions if assignment.permission == permission_id)
+        assert our_assignment.role == role_id
+
+class TestRbacFetchUserPermissions:
+    """Test fetching user permissions (both direct and through groups)."""
+    
+    def test_substrate_fetch_user_permissions_direct(self, substrate_sdk, role_id, permission_id, user_id):
+        # Create role and permission first
+        result = substrate_sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        result = substrate_sdk.rbac.create_permission(permission_name="Test Permission", permission_id=permission_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Assign permission to role
+        result = substrate_sdk.rbac.assign_permission_to_role(
+            role_id=role_id,
+            permission_id=permission_id
+        )
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Assign role to user
+        result = substrate_sdk.rbac.assign_role_to_user(
+            role_id=role_id,
+            user_id=user_id
+        )
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Fetch user permissions
+        user_permissions = substrate_sdk.rbac.fetch_user_permissions(
+            owner=substrate_sdk.metadata.pair.ss58_address,
+            user_id=user_id
+        )
+        assert isinstance(user_permissions, list)
+        assert len(user_permissions) > 0
+        
+        # Verify our permission is accessible
+        permission_ids = [perm.id for perm in user_permissions]
+        assert permission_id in permission_ids
+    
+    def test_evm_fetch_user_permissions_direct(self, evm_sdk, role_id, permission_id, user_id):
+        sdk, wss_url = evm_sdk
+        
+        # Create role and permission first
+        result = sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        result = sdk.rbac.create_permission(permission_name="Test Permission", permission_id=permission_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Assign permission to role
+        result = sdk.rbac.assign_permission_to_role(
+            role_id=role_id,
+            permission_id=permission_id
+        )
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Assign role to user
+        result = sdk.rbac.assign_role_to_user(
+            role_id=role_id,
+            user_id=user_id
+        )
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Fetch user permissions
+        user_permissions = sdk.rbac.fetch_user_permissions(
+            owner=sdk.metadata.pair.address,
+            user_id=user_id,
+            wss_base_url=wss_url
+        )
+        assert isinstance(user_permissions, list)
+        assert len(user_permissions) > 0
+        
+        # Verify our permission is accessible
+        permission_ids = [perm.id for perm in user_permissions]
+        assert permission_id in permission_ids
+
+class TestRbacFetchGroupPermissions:
+    """Test fetching group permissions."""
+    
+    def test_substrate_fetch_group_permissions(self, substrate_sdk, role_id, permission_id, group_id):
+        # Create role, permission, and group first
+        result = substrate_sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        result = substrate_sdk.rbac.create_permission(permission_name="Test Permission", permission_id=permission_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        result = substrate_sdk.rbac.create_group(group_name="Test Group", group_id=group_id)
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Assign permission to role
+        result = substrate_sdk.rbac.assign_permission_to_role(
+            role_id=role_id,
+            permission_id=permission_id
+        )
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Assign role to group
+        result = substrate_sdk.rbac.assign_role_to_group(
+            role_id=role_id,
+            group_id=group_id
+        )
+        assert 'extrinsic_hash' in result.receipt
+        
+        # Fetch group permissions
+        group_permissions = substrate_sdk.rbac.fetch_group_permissions(
+            owner=substrate_sdk.metadata.pair.ss58_address,
+            group_id=group_id
+        )
+        assert isinstance(group_permissions, list)
+        assert len(group_permissions) > 0
+        
+        # Verify our permission is accessible through the group
+        permission_ids = [perm.id for perm in group_permissions]
+        assert permission_id in permission_ids
+    
+    def test_evm_fetch_group_permissions(self, evm_sdk, role_id, permission_id, group_id):
+        sdk, wss_url = evm_sdk
+        
+        # Create role, permission, and group first
+        result = sdk.rbac.create_role(role_name="Test Role", role_id=role_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        result = sdk.rbac.create_permission(permission_name="Test Permission", permission_id=permission_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        result = sdk.rbac.create_group(group_name="Test Group", group_id=group_id)
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Assign permission to role
+        result = sdk.rbac.assign_permission_to_role(
+            role_id=role_id,
+            permission_id=permission_id
+        )
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Assign role to group
+        result = sdk.rbac.assign_role_to_group(
+            role_id=role_id,
+            group_id=group_id
+        )
+        assert hasattr(result.receipt, "transactionHash")
+        
+        # Fetch group permissions
+        group_permissions = sdk.rbac.fetch_group_permissions(
+            owner=sdk.metadata.pair.address,
+            group_id=group_id,
+            wss_base_url=wss_url
+        )
+        assert isinstance(group_permissions, list)
+        assert len(group_permissions) > 0
+        
+        # Verify our permission is accessible through the group
+        permission_ids = [perm.id for perm in group_permissions]
+        assert permission_id in permission_ids

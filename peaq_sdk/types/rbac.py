@@ -43,6 +43,15 @@ class RbacCallFunction(str, Enum):
     GET_ROLE = 'peaqrbac_fetchRole'
     GET_GROUP = 'peaqrbac_fetchGroup'
     GET_PERMISSION = 'peaqrbac_fetchPermission'
+    GET_ROLES = 'peaqrbac_fetchRoles'
+    GET_GROUPS = 'peaqrbac_fetchGroups'
+    GET_PERMISSIONS = 'peaqrbac_fetchPermissions'
+    GET_USER_GROUPS = 'peaqrbac_fetchUserGroups'
+    GET_USER_ROLES = 'peaqrbac_fetchUserRoles'
+    GET_USER_PERMISSIONS = 'peaqrbac_fetchUserPermissions'
+    GET_ROLE_PERMISSIONS = 'peaqrbac_fetchRolePermissions'
+    GET_GROUP_ROLES = 'peaqrbac_fetchGroupRoles'
+    GET_GROUP_PERMISSIONS = 'peaqrbac_fetchGroupPermissions'
     
 @dataclass
 class FetchResponseData:

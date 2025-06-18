@@ -2,6 +2,7 @@ from typing import Optional, Union
 import ast
 import json
 import time
+import signal
 
 from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, EvmTransaction, SeedError, SDKMetadata
 
@@ -180,7 +181,26 @@ class Base:
 
                 # Build + submit transaction
                 extrinsic = self._api.create_signed_extrinsic(call=call, keypair=self._metadata.pair, tip=tip_value)
-                receipt = self._api.submit_extrinsic(extrinsic, wait_for_inclusion=True)
+                
+                # Submit with timeout to prevent hanging
+
+                
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("Transaction submission timed out after 60 seconds")
+                
+                # Set timeout for slow networks
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(60)  # 60 second timeout
+                
+                try:
+                    receipt = self._api.submit_extrinsic(extrinsic, wait_for_inclusion=True)
+                    signal.alarm(0)  # Cancel timeout
+                except TimeoutError:
+                    signal.alarm(0)  # Cancel timeout
+                    print(f"Attempt {attempt + 1}: Transaction timed out after 60 seconds, retrying...")
+                    attempt += 1
+                    time.sleep(1.0)
+                    continue
                 
                 # check receipt
                 if receipt.error_message is not None:
