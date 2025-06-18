@@ -135,7 +135,6 @@ class Pay(Base):
             )
 
 
-    # transfer_erc20()
     def transfer_erc20(self, erc_20_address: str, recipient_address: str, amount: Union[int, float, str, Decimal], token_decimals: Union[int, float, str, Decimal] = None) -> WrittenTransactionResult:
         raw = self._to_raw_amount(amount,
             token_decimals=(
@@ -160,18 +159,6 @@ class Pay(Base):
         )
         
         
-    # transfer_from_erc20()
-    # pass 2 address can wallet A spend on behalf of wallet B
-    # 1. Call the allowance(address owner, address spender) → uint256 from the current sdk wallet owner
-    #       - see if it has been approved for the valued returned by allowances
-    # 2. 
-    
-    
-    
-        
-        
-    # TODO
-    # transfer_erc721()
     def transfer_erc721(self, erc_721_address: str, recipient_address: str, token_id: int) -> WrittenTransactionResult:
         
         function_selector = self.api.keccak(text=PayFunctionSignatures.ERC_721_SAFE_TRANSFER_FROM.value)[:4].hex()
@@ -207,6 +194,4 @@ class Pay(Base):
         return int(d * scale)
     
 
-    # native_transfer
-    # erc20_transfer
-    # asset_transfer
+    # asset_transfer ??
