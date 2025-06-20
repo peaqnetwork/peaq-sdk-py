@@ -184,6 +184,7 @@ The test suite is organized into modules:
 | quicknode | ❌ | ✅ |
 | quicknode_private | ❌ | ✅ |
 | onfinality | ✅ | ✅ |
+| onfinality_private | ✅ | ✅ |
 
 ## Test Mode Summary
 
@@ -214,8 +215,6 @@ Tests now use descriptive names that clearly show the chain and provider:
 - `peaq-quicknode-public` - Peaq with QuickNode public endpoints
 - `peaq-quicknode-private` - Peaq with QuickNode private endpoints
 
-**Note**: Each combination runs only once - no more duplicate tests!
-
 ## Debugging
 
 For debugging test failures:
@@ -230,7 +229,7 @@ QUICK_TEST=true TEST_PROVIDER=onfinality TEST_CHAIN=peaq pytest tests/rbac/ -v -
 # Run single test with output (you'll see the provider name clearly)
 QUICK_TEST=true pytest tests/rbac/test_rbac.py::TestRBACCreateOperations::test_substrate_create_role -v -s
 
-# Stop on first failure  
+# Stop on first failure
 QUICK_TEST=true pytest tests/ -x
 
 # Debug specific QuickNode endpoint

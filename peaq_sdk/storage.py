@@ -47,7 +47,7 @@ class Storage(Base):
         """
         super().__init__(api, metadata)
 
-    def add_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def add_item(self, item_type: str, item: object, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Adds a new item of `item_type` to the on-chain storage, storing `item`
         as its value.
@@ -60,6 +60,10 @@ class Storage(Base):
             item_type (str): A string key used to categorize or identify the item.
             item (object): The value to store. If not already a string, it is
                 serialized to JSON before being sent on-chain.
+            tip_multiplier (float): Multiplier for the estimated fee to use as tip. 
+                Default is 0.0 (no tip). Only applies to Substrate chains.
+            wait_for_finalization (bool): Whether to wait for Grandpa finalization. 
+                Default is True. Only applies to Substrate chains.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -107,7 +111,7 @@ class Storage(Base):
             
             if self.metadata.pair:
                 keypair = self.metadata.pair
-                receipt = self._send_substrate_tx(call)
+                receipt = self._send_substrate_tx(call, tip_multiplier, wait_for_finalization)
                 return WrittenTransactionResult(
                     message=f"Successfully added the storage item type {item_type} with item {item} for the address {keypair.ss58_address}.",
                     receipt=receipt
@@ -187,7 +191,7 @@ class Storage(Base):
         decoded = bytes.fromhex(raw[2:]).decode("utf-8")
         return GetItemResult(item_type=item_type, item=decoded).to_dict()
         
-    def update_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def update_item(self, item_type: str, item: object, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Updates an existing item under `item_type` in on-chain storage by
         replacing its value with `item`.
@@ -199,6 +203,10 @@ class Storage(Base):
         Args:
             item_type (str): The key used for the on-chain item.
             item (object): The new value for that key (JSON-stringified if not a str).
+            tip_multiplier (float): Multiplier for the estimated fee to use as tip. 
+                Default is 0.0 (no tip). Only applies to Substrate chains.
+            wait_for_finalization (bool): Whether to wait for Grandpa finalization. 
+                Default is True. Only applies to Substrate chains.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -245,7 +253,7 @@ class Storage(Base):
             
             if self.metadata.pair:
                 keypair = self.metadata.pair
-                receipt = self._send_substrate_tx(call)
+                receipt = self._send_substrate_tx(call, tip_multiplier, wait_for_finalization)
                 return WrittenTransactionResult(
                     message=f"Successfully updated the storage item type {item_type} with item {item} for the address {keypair.ss58_address}.",
                     receipt=receipt
@@ -256,7 +264,7 @@ class Storage(Base):
                     call=call
                 )
             
-    def remove_item(self, item_type: str) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def remove_item(self, item_type: str, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Removes an on-chain item under `item_type`.
         
@@ -268,6 +276,10 @@ class Storage(Base):
 
         Args:
             item_type (str): The key for the item to remove.
+            tip_multiplier (float): Multiplier for the estimated fee to use as tip. 
+                Default is 0.0 (no tip). Only applies to Substrate chains.
+            wait_for_finalization (bool): Whether to wait for Grandpa finalization. 
+                Default is True. Only applies to Substrate chains.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -280,7 +292,7 @@ class Storage(Base):
             ValueError: If called on EVM (not yet supported).
         """
         if self.metadata.chain_type is ChainType.EVM:
-            raise ValueError("Precompile for peaq Storage Remove Item will be included in the next runtime update.")
+            # raise ValueError("Precompile for peaq Storage Remove Item will be included in the next runtime update.")
             # remove error when upgrade deployed
             remove_item_function_selector = self.api.keccak(text=StorageFunctionSignatures.REMOVE_ITEM.value)[:4].hex()
             item_type_encoded = item_type.encode("utf-8").hex()
@@ -318,7 +330,7 @@ class Storage(Base):
             
             if self.metadata.pair:
                 keypair = self.metadata.pair
-                receipt = self._send_substrate_tx(call)
+                receipt = self._send_substrate_tx(call, tip_multiplier, wait_for_finalization)
                 return WrittenTransactionResult(
                     message=f"Successfully removed the storage item type {item_type} for the address {keypair.ss58_address}.",
                     receipt=receipt

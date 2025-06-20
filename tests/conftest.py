@@ -97,6 +97,7 @@ def create_test_id(chain, provider):
         "public": "public-rpc",
         "private": "onfinality-private", 
         "onfinality": "onfinality-public",
+        "onfinality_private": "onfinality-private",
         "quicknode": "quicknode-public",
         "quicknode_private": "quicknode-private"
     }

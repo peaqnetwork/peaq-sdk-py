@@ -2,7 +2,6 @@ from typing import Optional, Union
 import ast
 import json
 import time
-import signal
 
 from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, EvmTransaction, SeedError, SDKMetadata
 
@@ -124,14 +123,15 @@ class Base:
                         )
                     return address
     
-    def _send_substrate_tx(self, call: GenericCall) -> dict:
+    def _send_substrate_tx(self, call: GenericCall, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> dict:
         """
         Submits and waits for inclusion of a Substrate extrinsic, automatically
         retrying with increasing tip if needed.
 
         Args:
             call (GenericCall): A `substrateinterface` call object created via `compose_call`.
-            keypair (Keypair): Used to sign the extrinsic.
+            tip_multiplier (float): Multiplier for the estimated fee to use as tip. Default is 0.0 (no tip).
+            wait_for_finalization (bool): Whether to wait for Grandpa finalization. Default is True.
 
         Returns:
             dict: Full substrate receipt object.
@@ -139,24 +139,26 @@ class Base:
         Raises:
             ExtrinsicExecutionError: If the extrinsic fails or is rejected by the chain.
         """
-        receipt = self._send_with_tip(call)
+        receipt = self._send_with_tip(call, tip_multiplier, wait_for_finalization)
 
         if receipt.error_message is not None:
             error_type = receipt.error_message['type']
             error_name = receipt.error_message['name']
             raise ExtrinsicExecutionError(f"The extrinsic of {call.call_module['name']} threw a {error_type} Error with name {error_name}.")
 
-        return receipt.__dict__
+        return self._format_receipt(receipt, call)
+
     
-    def _send_with_tip(self, call: GenericCall) -> dict:
+    def _send_with_tip(self, call: GenericCall, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> dict:
         """
-        Attempts to submit a Substrate extrinsic, retrying up to 5 times
+        Attempts to submit a Substrate extrinsic, retrying up to 8 times
         with an increasing tip if the node rejects due to low priority.
         If the api disconnects, tries to establish a new connection.
 
         Args:
             call (GenericCall): A `substrateinterface` call object.
-            keypair (Keypair): The `Keypair` for signing.
+            tip_multiplier (float): Multiplier for the estimated fee to use as tip. Default is 0.0 (no tip).
+            wait_for_finalization (bool): Whether to wait for Grandpa finalization. Default is True.
 
         Returns:
             The extrinsic receipt object upon successful inclusion.
@@ -165,48 +167,28 @@ class Base:
             ExtrinsicExecutionError: If all retry attempts fail due to low priority.
             Exception: For other submission errors.
         """
-        tip_value = 0
-        max_attempts = 8  # Increased from 5 to handle pool congestion better
+        payment_info = self._api.get_payment_info(call, keypair=self._metadata.pair)
+        base_fee = payment_info['partialFee']
+
+        # Start tip at multiplier × base_fee (0 if no tip requested)
+        tip_value = int(base_fee * tip_multiplier) if tip_multiplier > 0 else 0
+        max_attempts = 8
         attempt = 0
-        
+
         while attempt < max_attempts:
             try:
-                # Check connection before attempt
-                self._api.rpc_request(method="system_health", params=[])
+                # build + submit
+                extrinsic = self._api.create_signed_extrinsic(
+                    call=call,
+                    keypair=self._metadata.pair,
+                    tip=tip_value
+                )
 
-                # Get payment info once
-                if attempt == 0:
-                    payment_info = self._api.get_payment_info(call, keypair=self._metadata.pair)
-                    tip_increment = payment_info['partialFee']
-
-                # Build + submit transaction
-                extrinsic = self._api.create_signed_extrinsic(call=call, keypair=self._metadata.pair, tip=tip_value)
-                
-                # Submit with timeout to prevent hanging
-
-                
-                def timeout_handler(signum, frame):
-                    raise TimeoutError("Transaction submission timed out after 60 seconds")
-                
-                # Set timeout for slow networks
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(60)  # 60 second timeout
-                
-                try:
-                    receipt = self._api.submit_extrinsic(extrinsic, wait_for_inclusion=True)
-                    signal.alarm(0)  # Cancel timeout
-                except TimeoutError:
-                    signal.alarm(0)  # Cancel timeout
-                    print(f"Attempt {attempt + 1}: Transaction timed out after 60 seconds, retrying...")
-                    attempt += 1
-                    time.sleep(1.0)
-                    continue
-                
-                # check receipt
-                if receipt.error_message is not None:
-                    error_type = receipt.error_message['type']
-                    error_name = receipt.error_message['name']
-                    raise ExtrinsicExecutionError(f"The extrinsic of {call.call_module['name']} threw a {error_type} Error with name {error_name}.")
+                receipt = self._api.submit_extrinsic(
+                    extrinsic,
+                    wait_for_inclusion=True,
+                    wait_for_finalization=wait_for_finalization
+                )
                 return receipt
 
             except WebSocketConnectionClosedException:
@@ -226,6 +208,9 @@ class Base:
                 
                 # Extract the actual error message
                 actual_error = error_data.get('message', error_message)
+                
+                payment_info = self._api.get_payment_info(call, keypair=self._metadata.pair)
+                tip_increment = payment_info['partialFee']
                 
                 if "Priority is too low" in actual_error:
                     print(f"Attempt {attempt + 1}: Priority too low with tip {tip_value}, incrementing tip by 25%...")
@@ -247,6 +232,46 @@ class Base:
                     raise Exception(error_message)
         else:
             raise ExtrinsicExecutionError("Failed to submit extrinsic after multiple attempts due to low priority.")
+        
+    def _format_receipt(self, receipt, call: GenericCall) -> dict:
+            """
+            Formats a substrate receipt object into a clean dictionary.
+
+            Args:
+                receipt: ExtrinsicReceipt object.
+                call (GenericCall): The original call submitted.
+
+            Returns:
+                dict: Cleaned receipt summary.
+            """
+            # Helper to extract 'did_account' from call_args if it exists
+            did_account = None
+            if hasattr(call, "call_args") and isinstance(call.call_args, list):
+                for arg in call.call_args:
+                    if isinstance(arg, dict) and arg.get("name") == "did_account":
+                        did_account = arg.get("value")
+                        break
+
+            return {
+                "extrinsic_hash": getattr(receipt, "extrinsic_hash", None),
+                "block_hash": getattr(receipt, "block_hash", None),
+                "finalized": getattr(receipt, "finalized", None),
+                "success": getattr(receipt, "is_success", None),
+                "call": {
+                    "module": call.call_module["name"],
+                    "function": call.call_function,
+                    "args": call.call_args
+                },
+                "events": [
+                    {
+                        "module": e.value["event"]["module_id"],
+                        "event": e.value["event"]["event_id"],
+                        "attributes": e.value["event"]["attributes"]
+                    }
+                    for e in getattr(receipt, "triggered_events", [])
+                ],
+                "fee": getattr(receipt, "total_fee_amount", None)
+            }
     
     def _send_evm_tx(self, tx: dict, max_attempts: int = 5) -> dict:
         """

@@ -60,7 +60,7 @@ class Pay(Base):
             return "substrate"
         if is_evm and not is_sub:
             return "evm"
-        raise ValueError(f"Address {addr!r} is neither a valid SS58 nor a valid EVM H160.")
+        raise ValueError(f"Address {addr!r} is neither a valid Substrate SS58 nor a valid EVM H160.")
 
 # native tokens
     def transfer_native(self, to: str, amount: Union[int, float, str, Decimal]) -> WrittenTransactionResult:
@@ -94,7 +94,6 @@ class Pay(Base):
         if self.metadata.chain_type == ChainType.EVM:
             addr_type = self._addr_type(to)
             if addr_type == "substrate": # evm->substrate
-                raise SystemError("EVM -> Substrate transfers will be added in the next runtime upgrade.")
                 function_selector = self.api.keccak(text=PayFunctionSignatures.TRANSFER_TO_ACCOUNT_ID.value)[:4].hex()
                 pubkey = bytes.fromhex(ss58_decode(to))
                 encoded_params = encode(
@@ -160,7 +159,6 @@ class Pay(Base):
         
         
     def transfer_erc721(self, erc_721_address: str, recipient_address: str, token_id: int) -> WrittenTransactionResult:
-        
         function_selector = self.api.keccak(text=PayFunctionSignatures.ERC_721_SAFE_TRANSFER_FROM.value)[:4].hex()
         encoded_params = encode(
             ["address", "address", "uint256"], 
