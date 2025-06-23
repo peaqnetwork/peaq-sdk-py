@@ -1,9 +1,15 @@
-from typing import Optional, Union
+from typing import Optional, Union, List
 import ast
 import json
 import time
+import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, EvmTransaction, SeedError, SDKMetadata
+from peaq_sdk.types.common import (
+    ChainType, ExtrinsicExecutionError, EvmTransaction, SeedError, SDKMetadata,
+    ConfirmationMode, BatchMode, TransactionConfig, BatchConfig, TxReceipt, 
+    BatchReceipt, CallModule, UtilityCallFunction, BatchExecutionError
+)
 
 from web3 import Web3
 from eth_account import Account
@@ -15,7 +21,8 @@ from websocket import WebSocketConnectionClosedException
 class Base:
     """
     Provides shared functionality for both EVM and Substrate SDK operations,
-    including signer generation and transaction submission logic.
+    including signer generation and transaction submission logic with improved
+    batch processing, retry mechanisms, and confirmation modes.
     """
     def __init__(self, api: Web3 | SubstrateInterface, metadata: SDKMetadata) -> None:
         """
@@ -122,157 +129,298 @@ class Base:
                             "Unable to sign or construct the transaction properly."
                         )
                     return address
-    
-    def _send_substrate_tx(self, call: GenericCall, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> dict:
-        """
-        Submits and waits for inclusion of a Substrate extrinsic, automatically
-        retrying with increasing tip if needed.
 
+    def send_transaction(
+        self, 
+        call: GenericCall, 
+        config: Optional[TransactionConfig] = None
+    ) -> TxReceipt:
+        """
+        Unified transaction sending with improved retry logic and confirmation modes.
+        
         Args:
-            call (GenericCall): A `substrateinterface` call object created via `compose_call`.
-            tip_multiplier (float): Multiplier for the estimated fee to use as tip. Default is 0.0 (no tip).
-            wait_for_finalization (bool): Whether to wait for Grandpa finalization. Default is True.
-
+            call (GenericCall): The substrate call to execute
+            config (Optional[TransactionConfig]): Configuration for transaction execution
+            
         Returns:
-            dict: Full substrate receipt object.
-
-        Raises:
-            ExtrinsicExecutionError: If the extrinsic fails or is rejected by the chain.
+            TxReceipt: Unified receipt format
         """
-        receipt = self._send_with_tip(call, tip_multiplier, wait_for_finalization)
-
-        if receipt.error_message is not None:
-            error_type = receipt.error_message['type']
-            error_name = receipt.error_message['name']
-            raise ExtrinsicExecutionError(f"The extrinsic of {call.call_module['name']} threw a {error_type} Error with name {error_name}.")
-
-        return self._format_receipt(receipt, call)
-
+        if config is None:
+            config = TransactionConfig()
+            
+        if self._metadata.chain_type == ChainType.EVM:
+            return self._send_evm_transaction(call, config)
+        else:
+            return self._send_substrate_transaction(call, config)
     
-    def _send_with_tip(self, call: GenericCall, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> dict:
+    def send_batch_transactions(
+        self,
+        calls: List[GenericCall],
+        batch_config: Optional[BatchConfig] = None
+    ) -> BatchReceipt:
         """
-        Attempts to submit a Substrate extrinsic, retrying up to 8 times
-        with an increasing tip if the node rejects due to low priority.
-        If the api disconnects, tries to establish a new connection.
-
+        Send multiple transactions with various batching strategies.
+        
         Args:
-            call (GenericCall): A `substrateinterface` call object.
-            tip_multiplier (float): Multiplier for the estimated fee to use as tip. Default is 0.0 (no tip).
-            wait_for_finalization (bool): Whether to wait for Grandpa finalization. Default is True.
-
+            calls (List[GenericCall]): List of calls to execute
+            batch_config (Optional[BatchConfig]): Batch execution configuration
+            
         Returns:
-            The extrinsic receipt object upon successful inclusion.
-
-        Raises:
-            ExtrinsicExecutionError: If all retry attempts fail due to low priority.
-            Exception: For other submission errors.
+            BatchReceipt: Receipt containing results of all transactions
         """
+        if batch_config is None:
+            batch_config = BatchConfig()
+            
+        if len(calls) > batch_config.max_batch_size:
+            raise BatchExecutionError(f"Batch size {len(calls)} exceeds maximum {batch_config.max_batch_size}")
+            
+        if batch_config.batch_mode == BatchMode.ATOMIC:
+            return self._send_atomic_batch(calls, batch_config)
+        elif batch_config.batch_mode == BatchMode.PARALLEL:
+            return self._send_parallel_batch(calls, batch_config)
+        else:  # SEQUENTIAL
+            return self._send_sequential_batch(calls, batch_config)
+    
+    def _send_atomic_batch(self, calls: List[GenericCall], batch_config: BatchConfig) -> BatchReceipt:
+        """
+        Send calls as a single atomic batch using utility.batchAll.
+        If any call fails, the entire batch rolls back.
+        """
+        if self._metadata.chain_type == ChainType.EVM:
+            raise BatchExecutionError("Atomic batch not supported for EVM chains")
+            
+        # Create utility.batchAll call
+        batch_call = self._api.compose_call(
+            call_module=CallModule.UTILITY.value,
+            call_function=UtilityCallFunction.BATCH_ALL.value,
+            call_params={'calls': calls}
+        )
+        
+        try:
+            receipt = self.send_transaction(batch_call, batch_config.transaction_config)
+            return BatchReceipt(
+                batch_hash=receipt.tx_hash,
+                receipts=[receipt],
+                success=receipt.success
+            )
+        except Exception as e:
+            return BatchReceipt(
+                success=False,
+                error=str(e)
+            )
+    
+    def _send_parallel_batch(self, calls: List[GenericCall], batch_config: BatchConfig) -> BatchReceipt:
+        """
+        Send calls concurrently using thread pool.
+        """
+        receipts = []
+        success = True
+        failed_at_index = None
+        
+        with ThreadPoolExecutor(max_workers=min(len(calls), 10)) as executor:
+            # Submit all calls
+            future_to_index = {
+                executor.submit(self.send_transaction, call, batch_config.transaction_config): i
+                for i, call in enumerate(calls)
+            }
+            
+            # Collect results
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    receipt = future.result()
+                    receipts.append((index, receipt))
+                    if not receipt.success:
+                        success = False
+                        if failed_at_index is None:
+                            failed_at_index = index
+                except Exception as e:
+                    success = False
+                    if failed_at_index is None:
+                        failed_at_index = index
+                    receipts.append((index, TxReceipt(
+                        tx_hash="",
+                        success=False,
+                        error=str(e)
+                    )))
+        
+        # Sort receipts by original order
+        receipts.sort(key=lambda x: x[0])
+        
+        return BatchReceipt(
+            receipts=[r[1] for r in receipts],
+            success=success,
+            failed_at_index=failed_at_index
+        )
+    
+    def _send_sequential_batch(self, calls: List[GenericCall], batch_config: BatchConfig) -> BatchReceipt:
+        """
+        Send calls one by one in sequence.
+        """
+        receipts = []
+        success = True
+        failed_at_index = None
+        
+        for i, call in enumerate(calls):
+            try:
+                receipt = self.send_transaction(call, batch_config.transaction_config)
+                receipts.append(receipt)
+                if not receipt.success:
+                    success = False
+                    failed_at_index = i
+                    break  # Stop on first failure for sequential mode
+            except Exception as e:
+                success = False
+                failed_at_index = i
+                receipts.append(TxReceipt(
+                    tx_hash="",
+                    success=False,
+                    error=str(e)
+                ))
+                break
+                
+        return BatchReceipt(
+            receipts=receipts,
+            success=success,
+            failed_at_index=failed_at_index
+        )
+    
+    def _send_substrate_transaction(self, call: GenericCall, config: TransactionConfig) -> TxReceipt:
+        """
+        Enhanced Substrate transaction sending with proper BUILD-SUBMIT-CONFIRM-FORMAT flow.
+        """
+        # BUILD PHASE
         payment_info = self._api.get_payment_info(call, keypair=self._metadata.pair)
         base_fee = payment_info['partialFee']
-
-        # Start tip at multiplier × base_fee (0 if no tip requested)
-        tip_value = int(base_fee * tip_multiplier) if tip_multiplier > 0 else 0
-        max_attempts = 8
+        tip = int(base_fee * config.fee_multiplier) if config.fee_multiplier > 0 else 0
+        
+        # SUBMIT & RETRY PHASE
         attempt = 0
-
-        while attempt < max_attempts:
+        current_tip = tip
+        
+        while attempt < config.max_retries:
             try:
-                # build + submit
+                # Sign transaction
                 extrinsic = self._api.create_signed_extrinsic(
                     call=call,
                     keypair=self._metadata.pair,
-                    tip=tip_value
+                    tip=current_tip
                 )
-
+                
+                # Submit transaction
                 receipt = self._api.submit_extrinsic(
                     extrinsic,
-                    wait_for_inclusion=True,
-                    wait_for_finalization=wait_for_finalization
+                    wait_for_inclusion=config.mode != ConfirmationMode.FAST,
+                    wait_for_finalization=config.mode == ConfirmationMode.SAFE or config.wait_for_finalization
                 )
-                return receipt
-
+                
+                # CONFIRMATION PHASE
+                if config.mode == ConfirmationMode.FAST:
+                    # Return immediately with tx hash
+                    return self._format_substrate_receipt(receipt, call, finalized=False)
+                else:
+                    # Wait for inclusion and optionally finalization
+                    return self._format_substrate_receipt(receipt, call, finalized=receipt.finalized)
+                    
             except WebSocketConnectionClosedException:
-                print("WebSocket was closed during submission. Reconnecting and retrying...")
+                print(f"Attempt {attempt + 1}: WebSocket closed, reconnecting...")
                 self._api = SubstrateInterface(url=self._metadata.base_url, ss58_format=42)
                 attempt += 1
                 time.sleep(0.5)
                 
             except SubstrateRequestException as e:
                 error_message = str(e)
-                print(error_message)
-                # Parse JSON error if it's a JSON string
-                try:
-                    error_data = ast.literal_eval(error_message) if isinstance(error_message, str) and error_message.startswith('{') else {'message': error_message}
-                except (ValueError, SyntaxError):
-                    error_data = {'message': error_message}
+                print(f"Attempt {attempt + 1}: {error_message}")
                 
-                # Extract the actual error message
-                actual_error = error_data.get('message', error_message)
-                
-                payment_info = self._api.get_payment_info(call, keypair=self._metadata.pair)
-                tip_increment = payment_info['partialFee']
-                
-                if "Priority is too low" in actual_error:
-                    print(f"Attempt {attempt + 1}: Priority too low with tip {tip_value}, incrementing tip by 25%...")
-                    tip_value += int(tip_increment * 1.25)
+                # Parse error and determine if we should retry with higher tip
+                if self._should_retry_with_higher_tip(error_message):
+                    current_tip = int(current_tip * 1.25)
                     attempt += 1
                     time.sleep(0.5)
-                elif "Immediately Dropped" in actual_error or error_data.get('code') == 1016:
-                    print(f"Attempt {attempt + 1}: Transaction dropped from pool (tip={tip_value}), increasing tip more aggressively...")
-                    # Increase tip more aggressively for pool rejection
-                    tip_value += int(tip_increment * 2.0)  # 100% increase instead of 25%
-                    attempt += 1
-                    time.sleep(1.0)  # Longer wait to let pool clear
-                elif "limit" in actual_error.lower() or "pool" in actual_error.lower():
-                    print(f"Attempt {attempt + 1}: Pool limit reached (tip={tip_value}), waiting and retrying with higher tip...")
-                    tip_value += int(tip_increment * 1.5)  # 50% increase
-                    attempt += 1
-                    time.sleep(2.0)  # Wait longer for pool to clear
                 else:
-                    raise Exception(error_message)
-        else:
-            raise ExtrinsicExecutionError("Failed to submit extrinsic after multiple attempts due to low priority.")
-        
-    def _format_receipt(self, receipt, call: GenericCall) -> dict:
-            """
-            Formats a substrate receipt object into a clean dictionary.
-
-            Args:
-                receipt: ExtrinsicReceipt object.
-                call (GenericCall): The original call submitted.
-
-            Returns:
-                dict: Cleaned receipt summary.
-            """
-            # Helper to extract 'did_account' from call_args if it exists
-            did_account = None
-            if hasattr(call, "call_args") and isinstance(call.call_args, list):
-                for arg in call.call_args:
-                    if isinstance(arg, dict) and arg.get("name") == "did_account":
-                        did_account = arg.get("value")
-                        break
-
-            return {
-                "extrinsic_hash": getattr(receipt, "extrinsic_hash", None),
-                "block_hash": getattr(receipt, "block_hash", None),
-                "finalized": getattr(receipt, "finalized", None),
-                "success": getattr(receipt, "is_success", None),
-                "call": {
-                    "module": call.call_module["name"],
-                    "function": call.call_function,
-                    "args": call.call_args
-                },
-                "events": [
-                    {
-                        "module": e.value["event"]["module_id"],
-                        "event": e.value["event"]["event_id"],
-                        "attributes": e.value["event"]["attributes"]
-                    }
-                    for e in getattr(receipt, "triggered_events", [])
-                ],
-                "fee": getattr(receipt, "total_fee_amount", None)
-            }
+                    raise ExtrinsicExecutionError(f"Transaction failed: {error_message}")
+                    
+        raise ExtrinsicExecutionError(f"Failed to submit transaction after {config.max_retries} attempts")
     
+    def _should_retry_with_higher_tip(self, error_message: str) -> bool:
+        """
+        Determine if we should retry with a higher tip based on the error message.
+        """
+        low_priority_errors = [
+            "Priority is too low",
+            "Immediately Dropped", 
+            "pool limit",
+            "limit"
+        ]
+        return any(error in error_message for error in low_priority_errors)
+    
+    def _format_substrate_receipt(self, receipt, call: GenericCall, finalized: bool = False) -> TxReceipt:
+        """
+        FORMAT RECEIPT PHASE: Safely extract and format receipt data.
+        """
+        try:
+            events = []
+            if hasattr(receipt, 'triggered_events'):
+                for event in receipt.triggered_events:
+                    try:
+                        events.append({
+                            "module": event.value["event"]["module_id"],
+                            "event": event.value["event"]["event_id"],
+                            "attributes": event.value["event"]["attributes"]
+                        })
+                    except (KeyError, IndexError, AttributeError):
+                        # Skip malformed events
+                        continue
+            
+            return TxReceipt(
+                tx_hash=getattr(receipt, "extrinsic_hash", ""),
+                block_hash=getattr(receipt, "block_hash", None),
+                success=getattr(receipt, "is_success", True) and receipt.error_message is None,
+                finalized=finalized,
+                events=events,
+                fee=getattr(receipt, "total_fee_amount", None),
+                error=str(receipt.error_message) if receipt.error_message else None
+            )
+        except Exception as e:
+            # Fallback for any formatting errors
+            return TxReceipt(
+                tx_hash=getattr(receipt, "extrinsic_hash", ""),
+                success=False,
+                error=f"Receipt formatting error: {str(e)}"
+            )
+    
+    # Keep existing legacy methods for backwards compatibility
+    def _send_substrate_tx(self, call: GenericCall, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> dict:
+        """
+        Legacy method - redirects to new implementation
+        """
+        config = TransactionConfig(
+            fee_multiplier=tip_multiplier,
+            wait_for_finalization=wait_for_finalization,
+            mode=ConfirmationMode.SAFE if wait_for_finalization else ConfirmationMode.BALANCED
+        )
+        receipt = self.send_transaction(call, config)
+        
+        # Convert back to legacy format
+        return self._legacy_format_receipt(receipt, call)
+
+    def _legacy_format_receipt(self, receipt: TxReceipt, call: GenericCall) -> dict:
+        """Convert new receipt format back to legacy format for backwards compatibility"""
+        return {
+            "extrinsic_hash": receipt.tx_hash,
+            "block_hash": receipt.block_hash,
+            "finalized": receipt.finalized,
+            "success": receipt.success,
+            "call": {
+                "module": call.call_module["name"],
+                "function": call.call_function,
+                "args": call.call_args
+            },
+            "events": receipt.events,
+            "fee": receipt.fee
+        }
+        
+    # Keep existing EVM methods unchanged for now - can be updated later
     def _send_evm_tx(self, tx: dict, max_attempts: int = 5) -> dict:
         """
         Sends an EVM transaction with retry logic by increasing gas price on failure.
@@ -422,5 +570,40 @@ class Base:
                     raise ExtrinsicExecutionError(f"EVM transaction failed: {error_message}")
                 
         raise ExtrinsicExecutionError("Failed to submit EVM transaction after multiple attempts.")
+    
+    def _send_evm_transaction(self, call, config: TransactionConfig) -> TxReceipt:
+        """
+        Enhanced EVM transaction sending (placeholder for future implementation)
+        """
+        # For now, convert to legacy format and use existing method
+        # This can be enhanced later with proper EVM BUILD-SUBMIT-CONFIRM-FORMAT flow
+        try:
+            receipt = self._send_evm_tx(call, config.max_retries)
+            return TxReceipt(
+                tx_hash=receipt['transactionHash'].hex(),
+                block_hash=receipt['blockHash'].hex(),
+                block_number=receipt['blockNumber'],
+                success=receipt['status'] == 1,
+                finalized=True,  # EVM transactions are considered finalized once included
+                fee=str(receipt.get('gasUsed', 0))
+            )
+        except Exception as e:
+            return TxReceipt(
+                tx_hash="",
+                success=False,
+                error=str(e)
+            )
+
+    # Keep old method signatures for backwards compatibility
+    def _send_with_tip(self, call: GenericCall, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> dict:
+        """Legacy method - use _send_substrate_tx instead"""
+        return self._send_substrate_tx(call, tip_multiplier, wait_for_finalization)
+    
+    def _format_receipt(self, receipt, call: GenericCall) -> dict:
+        """Legacy method for backwards compatibility"""
+        return self._legacy_format_receipt(
+            self._format_substrate_receipt(receipt, call),
+            call
+        )
         
         

@@ -1,7 +1,8 @@
 # python native imports
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, List
+import time
 
 # local imports
 from peaq_sdk.base import Base
@@ -9,11 +10,15 @@ from peaq_sdk.did import Did
 from peaq_sdk.storage import Storage
 from peaq_sdk.pay import Pay
 from peaq_sdk.rbac import Rbac
-from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
+from peaq_sdk.types.common import (
+    ChainType, SDKMetadata, BaseUrlError,
+    TransactionConfig, BatchConfig, BatchMode, ConfirmationMode,
+    TxReceipt, BatchReceipt
+)
 from peaq_sdk.types.main import CreateInstanceOptions
 
 # 3rd party imports
-from substrateinterface.base import SubstrateInterface
+from substrateinterface.base import SubstrateInterface, GenericCall
 from substrateinterface.keypair import Keypair, KeypairType
 from web3 import Web3
 
@@ -24,7 +29,8 @@ class Main(Base):
 
     The Main class serves as the primary interface for the SDK, providing methods for 
     initializing the signer, creating the API connection, and handling blockchain-specific operations.
-    It inherits from Base, which contains common logic for both EVM and Substrate operations.
+    It inherits from Base, which contains common logic for both EVM and Substrate operations
+    with enhanced batch processing and transaction control.
     """
     def __init__(self, base_url: str, chain_type: Optional[ChainType]) -> None:
         """
@@ -67,6 +73,328 @@ class Main(Base):
         sdk = Main(base_url, chain_type)
         sdk._initialize_signer(seed)
         return sdk
+    
+    # Enhanced transaction methods
+    def send_transaction_fast(self, call: GenericCall, fee_multiplier: float = 1.0) -> TxReceipt:
+        """
+        Send a transaction with FAST confirmation mode (returns immediately with tx hash).
+        
+        Args:
+            call (GenericCall): The call to execute
+            fee_multiplier (float): Fee multiplier for faster inclusion
+            
+        Returns:
+            TxReceipt: Transaction receipt with tx hash
+        """
+        config = TransactionConfig(
+            mode=ConfirmationMode.FAST,
+            fee_multiplier=fee_multiplier
+        )
+        return self.send_transaction(call, config)
+    
+    def send_transaction_balanced(
+        self, 
+        call: GenericCall, 
+        fee_multiplier: float = 1.0,
+        max_retries: int = 5
+    ) -> TxReceipt:
+        """
+        Send a transaction with BALANCED confirmation mode (waits for inclusion).
+        
+        Args:
+            call (GenericCall): The call to execute
+            fee_multiplier (float): Fee multiplier for transaction priority
+            max_retries (int): Maximum retry attempts
+            
+        Returns:
+            TxReceipt: Transaction receipt with inclusion confirmation
+        """
+        config = TransactionConfig(
+            mode=ConfirmationMode.BALANCED,
+            fee_multiplier=fee_multiplier,
+            max_retries=max_retries
+        )
+        return self.send_transaction(call, config)
+    
+    def send_transaction_safe(
+        self, 
+        call: GenericCall, 
+        fee_multiplier: float = 1.0,
+        max_retries: int = 5
+    ) -> TxReceipt:
+        """
+        Send a transaction with SAFE confirmation mode (waits for finalization).
+        
+        Args:
+            call (GenericCall): The call to execute
+            fee_multiplier (float): Fee multiplier for transaction priority
+            max_retries (int): Maximum retry attempts
+            
+        Returns:
+            TxReceipt: Transaction receipt with finalization confirmation
+        """
+        config = TransactionConfig(
+            mode=ConfirmationMode.SAFE,
+            fee_multiplier=fee_multiplier,
+            max_retries=max_retries,
+            wait_for_finalization=True
+        )
+        return self.send_transaction(call, config)
+    
+    # Batch transaction methods
+    def send_batch_atomic(
+        self,
+        calls: List[GenericCall],
+        fee_multiplier: float = 1.0,
+        max_retries: int = 5
+    ) -> BatchReceipt:
+        """
+        Send multiple calls atomically - if any fails, all fail.
+        Uses Substrate's utility.batchAll for atomic execution.
+        
+        Args:
+            calls (List[GenericCall]): List of calls to execute atomically
+            fee_multiplier (float): Fee multiplier for transaction priority
+            max_retries (int): Maximum retry attempts
+            
+        Returns:
+            BatchReceipt: Batch execution receipt
+        """
+        batch_config = BatchConfig(
+            batch_mode=BatchMode.ATOMIC,
+            transaction_config=TransactionConfig(
+                mode=ConfirmationMode.BALANCED,
+                fee_multiplier=fee_multiplier,
+                max_retries=max_retries
+            )
+        )
+        return self.send_batch_transactions(calls, batch_config)
+    
+    def send_batch_parallel(
+        self,
+        calls: List[GenericCall],
+        fee_multiplier: float = 1.0,
+        max_retries: int = 5
+    ) -> BatchReceipt:
+        """
+        Send multiple calls in parallel for faster execution.
+        
+        Args:
+            calls (List[GenericCall]): List of calls to execute in parallel
+            fee_multiplier (float): Fee multiplier for transaction priority
+            max_retries (int): Maximum retry attempts
+            
+        Returns:
+            BatchReceipt: Batch execution receipt
+        """
+        batch_config = BatchConfig(
+            batch_mode=BatchMode.PARALLEL,
+            transaction_config=TransactionConfig(
+                mode=ConfirmationMode.BALANCED,
+                fee_multiplier=fee_multiplier,
+                max_retries=max_retries
+            )
+        )
+        return self.send_batch_transactions(calls, batch_config)
+    
+    def send_batch_sequential(
+        self,
+        calls: List[GenericCall],
+        fee_multiplier: float = 1.0,
+        max_retries: int = 5
+    ) -> BatchReceipt:
+        """
+        Send multiple calls sequentially, stopping on first failure.
+        
+        Args:
+            calls (List[GenericCall]): List of calls to execute sequentially
+            fee_multiplier (float): Fee multiplier for transaction priority
+            max_retries (int): Maximum retry attempts
+            
+        Returns:
+            BatchReceipt: Batch execution receipt
+        """
+        batch_config = BatchConfig(
+            batch_mode=BatchMode.SEQUENTIAL,
+            transaction_config=TransactionConfig(
+                mode=ConfirmationMode.BALANCED,
+                fee_multiplier=fee_multiplier,
+                max_retries=max_retries
+            )
+        )
+        return self.send_batch_transactions(calls, batch_config)
+    
+    # Utility methods for benchmarking and optimization
+    def benchmark_transaction_modes(
+        self,
+        call_generator_func,
+        fee_multipliers: List[float] = [1.0, 1.5, 2.0]
+    ) -> dict:
+        """
+        Benchmark different transaction modes and fee multipliers.
+        
+        Args:
+            call_generator_func: Function that returns a unique GenericCall for each test
+            fee_multipliers (List[float]): Fee multipliers to test
+            
+        Returns:
+            dict: Benchmark results with timing and success rates
+        """
+        import time
+        results = {}
+        
+        for mode in [ConfirmationMode.FAST, ConfirmationMode.BALANCED, ConfirmationMode.SAFE]:
+            results[mode.value] = {}
+            for fee_mult in fee_multipliers:
+                start_time = time.time()
+                error_details = None
+                tx_hash = None
+                
+                try:
+                    # Get a unique call from the user-provided generator function
+                    unique_call = call_generator_func()
+                    
+                    config = TransactionConfig(
+                        mode=mode,
+                        fee_multiplier=fee_mult,
+                        wait_for_finalization=(mode == ConfirmationMode.SAFE)
+                    )
+                    receipt = self.send_transaction(unique_call, config)
+                    duration = time.time() - start_time
+                    
+                    # Check if the transaction actually succeeded
+                    if receipt.success:
+                        results[mode.value][f"fee_{fee_mult}"] = {
+                            "success": True,
+                            "duration": duration,
+                            "tx_hash": receipt.tx_hash,
+                            "finalized": receipt.finalized,
+                            "block_hash": receipt.block_hash
+                        }
+                    else:
+                        # Transaction was submitted but failed
+                        error_details = f"Transaction failed: {receipt.error or 'Unknown blockchain error'}"
+                        tx_hash = receipt.tx_hash
+                        results[mode.value][f"fee_{fee_mult}"] = {
+                            "success": False,
+                            "duration": duration,
+                            "error": error_details,
+                            "error_stage": "execution",
+                            "tx_hash": tx_hash,
+                            "receipt_error": receipt.error
+                        }
+                        
+                except Exception as e:
+                    duration = time.time() - start_time
+                    error_type = type(e).__name__
+                    error_message = str(e)
+                    
+                    # Categorize the error stage
+                    if "compose_call" in error_message or "call_generator" in error_message:
+                        error_stage = "call_generation"
+                    elif "sign" in error_message.lower() or "keypair" in error_message.lower():
+                        error_stage = "signing"
+                    elif "submit" in error_message.lower() or "send" in error_message.lower():
+                        error_stage = "submission"
+                    elif "priority" in error_message.lower() or "tip" in error_message.lower():
+                        error_stage = "fee_rejection"
+                    elif "timeout" in error_message.lower() or "wait" in error_message.lower():
+                        error_stage = "confirmation_timeout"
+                    elif "websocket" in error_message.lower() or "connection" in error_message.lower():
+                        error_stage = "network_connection"
+                    else:
+                        error_stage = "unknown"
+                    
+                    error_details = f"{error_type}: {error_message}"
+                    
+                    results[mode.value][f"fee_{fee_mult}"] = {
+                        "success": False,
+                        "duration": duration,
+                        "error": error_details,
+                        "error_stage": error_stage,
+                        "error_type": error_type
+                    }
+                
+                # Small delay between tests to ensure different timestamps
+                time.sleep(0.5)
+        
+        return results
+    
+    def get_optimal_fee_multiplier(
+        self,
+        call_generator_func,
+        target_confirmation_time: float = 30.0
+    ) -> float:
+        """
+        Determine optimal fee multiplier for target confirmation time.
+        
+        Args:
+            call_generator_func: Function that returns a unique GenericCall for each test
+            target_confirmation_time (float): Target time in seconds
+            
+        Returns:
+            float: Recommended fee multiplier
+        """
+        # This is a simplified heuristic - in practice, you'd want more sophisticated
+        # analysis based on network conditions and historical data
+        import time
+        
+        try:
+            # Test with different multipliers
+            test_multipliers = [1.0, 1.25, 1.5, 2.0, 3.0]
+            best_multiplier = 1.0
+            best_time_diff = float('inf')
+            successful_tests = []
+            
+            for multiplier in test_multipliers:
+                start_time = time.time()
+                try:
+                    # Get a unique call from the user-provided generator function
+                    unique_call = call_generator_func()
+                    
+                    config = TransactionConfig(
+                        mode=ConfirmationMode.BALANCED,
+                        fee_multiplier=multiplier,
+                        max_retries=3
+                    )
+                    receipt = self.send_transaction(unique_call, config)
+                    duration = time.time() - start_time
+                    
+                    if receipt.success:
+                        time_diff = abs(duration - target_confirmation_time)
+                        successful_tests.append({
+                            "multiplier": multiplier,
+                            "duration": duration,
+                            "time_diff": time_diff,
+                            "tx_hash": receipt.tx_hash
+                        })
+                        
+                        if time_diff < best_time_diff:
+                            best_time_diff = time_diff
+                            best_multiplier = multiplier
+                    else:
+                        print(f"  Fee multiplier {multiplier} failed: {receipt.error or 'Unknown error'}")
+                            
+                except Exception as e:
+                    print(f"  Fee multiplier {multiplier} error: {type(e).__name__}: {str(e)}")
+                    continue
+                
+                # Small delay between tests
+                time.sleep(0.5)
+            
+            if successful_tests:
+                print(f"  Successful tests: {len(successful_tests)}/{len(test_multipliers)}")
+                for test in successful_tests:
+                    print(f"    Multiplier {test['multiplier']}: {test['duration']:.2f}s (diff: {test['time_diff']:.2f}s)")
+            else:
+                print("  Warning: No successful tests for fee optimization")
+                    
+            return best_multiplier
+            
+        except Exception as e:
+            print(f"  Fee optimization failed with error: {type(e).__name__}: {str(e)}")
+            # Fallback to conservative multiplier
+            return 1.5
     
     def _initialize_signer(self, seed: Optional[str] = None) -> None:
         """
