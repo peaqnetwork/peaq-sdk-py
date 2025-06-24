@@ -170,18 +170,24 @@ class Main(Base):
         base_url: str,
         machine_station_address: str,
         machine_station_owner_private_key: str,
-        machine_account_owner_private_key: str,
         ) -> Main:
         """
-        TODO
+        Creates a new Machine Station instance for account abstraction functionality.
+        
+        Args:
+            base_url (str): The connection URL for the blockchain.
+            machine_station_address (str): The address of the deployed machine station contract.
+            machine_station_owner_private_key (str): Private key of the machine station owner (admin).
+            
+        Returns:
+            Main: An initialized SDK object with Machine Station functionality.
         """
-        sdk = cls(base_url, ChainType.EVM, machine_station=True) # change to better name
+        sdk = cls(base_url, ChainType.EVM, machine_station=True)
         sdk._initialize_signer(machine_station_owner_private_key)
         sdk.machine_station = MachineStation(
             sdk=sdk,
             machine_station_address=machine_station_address,
             machine_station_owner_private_key=machine_station_owner_private_key,
-            machine_account_owner_private_key=machine_account_owner_private_key,
             api=sdk.api,
             metadata=sdk.metadata
         )
@@ -194,7 +200,6 @@ class Main(Base):
         base_url: str,
         machine_station_address: str,
         machine_station_owner_private_key: str,
-        machine_account_owner_private_key: str,
         service_url: str,
         api_key: str,
         project_api_key: str,
@@ -207,7 +212,6 @@ class Main(Base):
             base_url (str): The connection URL for the blockchain.
             machine_station_address (str): The address of the deployed contract for the machine station factory.
             machine_station_owner_private_key (str): Admin account owner that is responsible for funding and oversight on the machine station factory.
-            machine_account_owner_private_key (str): The externally owned account that represents the owner of the machine smart account.
             service_url (str): URL used to connect to peaq's campaign service.
             api_key (str): Key used to provide authentication with the peaq service.
             project_api_key (str): Key used to provide authentication for a specific project.
@@ -224,7 +228,6 @@ class Main(Base):
             sdk=sdk,
             machine_station_address=machine_station_address,
             machine_station_owner_private_key=machine_station_owner_private_key,
-            machine_account_owner_private_key=machine_account_owner_private_key,
             service_url=service_url,
             api_key=api_key,
             project_api_key=project_api_key,

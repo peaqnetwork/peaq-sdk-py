@@ -148,7 +148,7 @@ def deployed_smart_account(machine_station_sdk, smart_account_address):
     Returns the deployed smart account address.
     """
     nonce = secrets.randbits(128)
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_deploy_machine_smart_account(
+    signature = machine_station_sdk.machine_station.admin_sign_deploy_machine_smart_account(
         machine_smart_account_owner_address=smart_account_address,
         nonce=nonce
     )

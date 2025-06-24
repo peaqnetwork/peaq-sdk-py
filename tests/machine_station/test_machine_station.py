@@ -24,7 +24,7 @@ def test_deploy_smart_account_signature(machine_station_sdk, machine_smart_accou
     """Test signature generation for deploying a new smart account.
     Verifies that the signature has the correct format and length."""
     nonce = secrets.randbits(128)
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_deploy_machine_smart_account(
+    signature = machine_station_sdk.machine_station.admin_sign_deploy_machine_smart_account(
         machine_smart_account_owner_address=machine_smart_account_owner_address,
         nonce=nonce
     )
@@ -35,19 +35,19 @@ def test_transfer_machine_station_balance_signature(machine_station_sdk, machine
     """Test signature generation for transferring balance between machine stations.
     Verifies that the signature has the correct format and length."""
     nonce = secrets.randbits(128)
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_transfer_machine_station_balance(
+    signature = machine_station_sdk.machine_station.admin_sign_transfer_machine_station_balance(
         new_machine_station_address=machine_station_address_2,
         nonce=nonce
     )
     assert signature.startswith("0x")
     assert len(signature) == 132
 
-def test_execute_transaction_signature(machine_station_sdk, storage_precompile_address):
+def test_transaction_signature(machine_station_sdk, storage_precompile_address):
     """Test signature generation for executing a transaction through the machine station.
     Verifies that the signature has the correct format and length."""
     nonce = secrets.randbits(128)
     calldata = machine_station_sdk.storage.add_item(item_type="test_item", item="test_value")
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
+    signature = machine_station_sdk.machine_station.admin_sign_transaction(
         target=storage_precompile_address,
         calldata=calldata.tx['data'],
         nonce=nonce
@@ -55,12 +55,12 @@ def test_execute_transaction_signature(machine_station_sdk, storage_precompile_a
     assert signature.startswith("0x")
     assert len(signature) == 132
 
-def test_execute_machine_transaction_signature(machine_station_sdk, smart_account_address, storage_precompile_address):
+def test_machine_transaction_signature(machine_station_sdk, smart_account_address, storage_precompile_address):
     """Test signature generation for executing a transaction through a machine smart account.
     Verifies that both machine station owner and smart account owner signatures are correct."""
     nonce = secrets.randbits(128)
     calldata = machine_station_sdk.storage.add_item(item_type="test_item", item="test_value")
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
+    signature = machine_station_sdk.machine_station.admin_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=storage_precompile_address,
         calldata=calldata.tx['data'],
@@ -79,7 +79,7 @@ def test_batch_transactions_signature(machine_station_sdk, smart_account_address
     targets = [storage_precompile_address, storage_precompile_address]
     calldata_list = [calldata.tx['data'], calldata.tx['data']]
     
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_batch_transactions(
+    signature = machine_station_sdk.machine_station.admin_sign_machine_batch_transactions(
         smart_account_addresses=smart_accounts,
         targets=targets,
         calldata_list=calldata_list,
@@ -93,7 +93,7 @@ def test_transfer_machine_balance_signature(machine_station_sdk, smart_account_a
     """Test signature generation for transferring balance between smart accounts.
     Verifies that the signature has the correct format and length."""
     nonce = secrets.randbits(128)
-    signature = machine_station_sdk.machine_station.owner_sign_typed_data_transfer_machine_balance(
+    signature = machine_station_sdk.machine_station.admin_sign_transfer_machine_balance(
         smart_account_address=smart_account_address,
         recipient_address=smart_account_address_2,
         nonce=nonce
@@ -101,12 +101,12 @@ def test_transfer_machine_balance_signature(machine_station_sdk, smart_account_a
     assert signature.startswith("0x")
     assert len(signature) == 132
 
-def test_machine_owner_sign_execute_machine_transaction(machine_station_sdk, smart_account_address, storage_precompile_address):
+def test_machine_owner_sign_machine_transaction(machine_station_sdk, smart_account_address, storage_precompile_address):
     """Test signature generation by machine owner for executing transactions.
     Verifies that the machine owner can correctly sign transaction execution requests."""
     nonce = secrets.randbits(128)
     calldata = machine_station_sdk.storage.add_item(item_type="test_item", item="test_value")
-    signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+    signature = machine_station_sdk.machine_station.machine_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=storage_precompile_address,
         calldata=calldata.tx['data'],
@@ -119,7 +119,7 @@ def test_machine_sign_transfer_machine_balance(machine_station_sdk, smart_accoun
     """Test signature generation by machine for balance transfers.
     Verifies that the machine can correctly sign balance transfer requests."""
     nonce = secrets.randbits(128)
-    signature = machine_station_sdk.machine_station.machine_sign_typed_data_transfer_machine_balance(
+    signature = machine_station_sdk.machine_station.machine_sign_transfer_machine_balance(
         smart_account_address=smart_account_address,
         recipient_address=smart_account_address_2,
         nonce=nonce
@@ -145,7 +145,7 @@ def test_deploy_smart_account(machine_station_sdk, machine_smart_account_owner_a
     nonce = secrets.randbits(128)
     
     # Get signature for deployment
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_deploy_machine_smart_account(
+    signature = machine_station_sdk.machine_station.admin_sign_deploy_machine_smart_account(
         machine_smart_account_owner_address=machine_smart_account_owner_address,
         nonce=nonce
     )
@@ -193,13 +193,13 @@ def test_transfer_machine_station_balance(machine_station_sdk, machine_station_a
     nonce = secrets.randbits(128)
     
     # Get signature for transfer
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_transfer_machine_station_balance(
+    signature = machine_station_sdk.machine_station.admin_sign_transfer_machine_station_balance(
         new_machine_station_address=machine_station_address_2,
         nonce=nonce
     )
     
     # Execute the transfer
-    result = machine_station_sdk.machine_station.execute_transfer_machine_station_balance(
+    result = machine_station_sdk.machine_station.transfer_machine_station_balance(
         new_machine_station_address=machine_station_address_2,
         nonce=nonce,
         machine_station_owner_signature=signature
@@ -213,13 +213,13 @@ def test_transfer_machine_station_balance(machine_station_sdk, machine_station_a
     # Transfer balance back to original machine station
     nonce = secrets.randbits(128)
     # Get signature for transfer
-    signature = machine_station_sdk_2.machine_station.depin_owner_sign_typed_data_transfer_machine_station_balance(
+    signature = machine_station_sdk_2.machine_station.admin_sign_transfer_machine_station_balance(
         new_machine_station_address=machine_station_sdk.machine_station.machine_station_address,
         nonce=nonce
     )
     
     # Execute the transfer
-    result = machine_station_sdk_2.machine_station.execute_transfer_machine_station_balance(
+    result = machine_station_sdk_2.machine_station.transfer_machine_station_balance(
         new_machine_station_address=machine_station_sdk.machine_station.machine_station_address,
         nonce=nonce,
         machine_station_owner_signature=signature
@@ -231,7 +231,7 @@ def test_transfer_machine_station_balance(machine_station_sdk, machine_station_a
     assert result.receipt["status"] == 1  # Check transaction success
     
 # create and remove an item from storage
-def test_execute_transaction_storage(machine_station_sdk, storage_precompile_address, wss_url_agng):
+def test_transaction_storage(machine_station_sdk, storage_precompile_address, wss_url_agng):
     """Test executing storage operations through the machine station.
     
     Steps:
@@ -249,7 +249,7 @@ def test_execute_transaction_storage(machine_station_sdk, storage_precompile_add
     nonce = secrets.randbits(128)
     
     # Get signature for the transaction
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
+    signature = machine_station_sdk.machine_station.admin_sign_transaction(
         target=storage_precompile_address,
         calldata=storage_calldata.tx['data'],
         nonce=nonce
@@ -280,7 +280,7 @@ def test_execute_transaction_storage(machine_station_sdk, storage_precompile_add
     nonce = secrets.randbits(128)
     
     # Get signature for the transaction
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
+    signature = machine_station_sdk.machine_station.admin_sign_transaction(
         target=storage_precompile_address,
         calldata=storage_calldata.tx['data'],
         nonce=nonce
@@ -311,7 +311,7 @@ def test_execute_transaction_storage(machine_station_sdk, storage_precompile_add
     assert str(exc_info.value) == f"Item type of {test_item_type} was not found at address {machine_station_sdk.machine_station.machine_station_address}."
 
 # create and remove a DID
-def test_execute_transaction_did(machine_station_sdk, did_precompile_address, wss_url_agng):
+def test_transaction_did(machine_station_sdk, did_precompile_address, wss_url_agng):
     """Test executing DID operations through the machine station.
     
     Steps:
@@ -332,7 +332,7 @@ def test_execute_transaction_did(machine_station_sdk, did_precompile_address, ws
     nonce = secrets.randbits(128)
     
     # Get signature for the transaction
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
+    signature = machine_station_sdk.machine_station.admin_sign_transaction(
         target=did_precompile_address,
         calldata=did_calldata.tx['data'],
         nonce=nonce
@@ -369,7 +369,7 @@ def test_execute_transaction_did(machine_station_sdk, did_precompile_address, ws
     nonce = secrets.randbits(128)
     
     # Get signature for the transaction
-    signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_transaction(
+    signature = machine_station_sdk.machine_station.admin_sign_transaction(
         target=did_precompile_address,
         calldata=did_calldata.tx['data'],
         nonce=nonce
@@ -400,7 +400,7 @@ def test_execute_transaction_did(machine_station_sdk, did_precompile_address, ws
     assert str(exc_info.value) == f"DID of name {test_name} was not found at address {machine_station_sdk.machine_station.machine_station_address}."
 
 
-def test_execute_machine_transaction_storage(machine_station_sdk, smart_account_address, storage_precompile_address, wss_url_agng):
+def test_machine_transaction_storage(machine_station_sdk, smart_account_address, storage_precompile_address, wss_url_agng):
     """Test executing storage operations through a machine smart account.
     
     Steps:
@@ -419,14 +419,14 @@ def test_execute_machine_transaction_storage(machine_station_sdk, smart_account_
     nonce = secrets.randbits(128)
     
     # Get signatures from both machine owner and machine station owner
-    smart_account_signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+    smart_account_signature = machine_station_sdk.machine_station.machine_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=storage_precompile_address,
         calldata=storage_calldata.tx['data'],
         nonce=nonce
     )
     
-    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
+    machine_station_owner_signature = machine_station_sdk.machine_station.admin_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=storage_precompile_address,
         calldata=storage_calldata.tx['data'],
@@ -464,14 +464,14 @@ def test_execute_machine_transaction_storage(machine_station_sdk, smart_account_
     nonce = secrets.randbits(128)
     
     # Get signatures for removal
-    smart_account_signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+    smart_account_signature = machine_station_sdk.machine_station.machine_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=storage_precompile_address,
         calldata=storage_calldata.tx['data'],
         nonce=nonce
     )
     
-    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
+    machine_station_owner_signature = machine_station_sdk.machine_station.admin_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=storage_precompile_address,
         calldata=storage_calldata.tx['data'],
@@ -504,7 +504,7 @@ def test_execute_machine_transaction_storage(machine_station_sdk, smart_account_
         )
     assert str(exc_info.value) == f"Item type of {test_item_type} was not found at address {smart_account_address}."
 
-def test_execute_machine_transaction_did(machine_station_sdk, smart_account_address, did_precompile_address, wss_url_agng):
+def test_machine_transaction_did(machine_station_sdk, smart_account_address, did_precompile_address, wss_url_agng):
     """Test executing DID operations through a machine smart account.
     
     Steps:
@@ -526,14 +526,14 @@ def test_execute_machine_transaction_did(machine_station_sdk, smart_account_addr
     nonce = secrets.randbits(128)
     
     # Get signatures from both machine owner and machine station owner
-    smart_account_signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+    smart_account_signature = machine_station_sdk.machine_station.machine_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=did_precompile_address,
         calldata=did_calldata.tx['data'],
         nonce=nonce
     )
     
-    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
+    machine_station_owner_signature = machine_station_sdk.machine_station.admin_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=did_precompile_address,
         calldata=did_calldata.tx['data'],
@@ -573,14 +573,14 @@ def test_execute_machine_transaction_did(machine_station_sdk, smart_account_addr
     nonce = secrets.randbits(128)
     
     # Get signatures for removal
-    smart_account_signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+    smart_account_signature = machine_station_sdk.machine_station.machine_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=did_precompile_address,
         calldata=did_calldata.tx['data'],
         nonce=nonce
     )
     
-    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_transaction(
+    machine_station_owner_signature = machine_station_sdk.machine_station.admin_sign_machine_transaction(
         smart_account_address=smart_account_address,
         target=did_precompile_address,
         calldata=did_calldata.tx['data'],
@@ -653,7 +653,7 @@ def test_execute_batch_transactions(machine_station_sdk, smart_account_address, 
         machine_nonce = secrets.randbits(128)
         machine_nonces.append(machine_nonce)
         
-        signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+        signature = machine_station_sdk.machine_station.machine_sign_machine_transaction(
             smart_account_address=account,
             target=targets[i],  # Use corresponding target for each account
             calldata=calldata_list[i],  # Use corresponding calldata for each account
@@ -663,7 +663,7 @@ def test_execute_batch_transactions(machine_station_sdk, smart_account_address, 
     
     # Get machine station owner signature for batch creation
     nonce = secrets.randbits(128)
-    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_batch_transactions(
+    machine_station_owner_signature = machine_station_sdk.machine_station.admin_sign_machine_batch_transactions(
         smart_account_addresses=smart_accounts,
         targets=targets,
         calldata_list=calldata_list,
@@ -726,7 +726,7 @@ def test_execute_batch_transactions(machine_station_sdk, smart_account_address, 
         machine_nonce = secrets.randbits(128)
         machine_nonces.append(machine_nonce)
         
-        signature = machine_station_sdk.machine_station.machine_owner_sign_typed_data_execute_machine_transaction(
+        signature = machine_station_sdk.machine_station.machine_sign_machine_transaction(
             smart_account_address=account,
             target=targets[i],
             calldata=calldata_list[i],
@@ -736,7 +736,7 @@ def test_execute_batch_transactions(machine_station_sdk, smart_account_address, 
     
     # Get machine station owner signature for batch removal
     nonce = secrets.randbits(128)
-    machine_station_owner_signature = machine_station_sdk.machine_station.depin_owner_sign_typed_data_execute_machine_batch_transactions(
+    machine_station_owner_signature = machine_station_sdk.machine_station.admin_sign_machine_batch_transactions(
         smart_account_addresses=smart_accounts,
         targets=targets,
         calldata_list=calldata_list,
@@ -794,17 +794,17 @@ def test_transfer_machine_balance(machine_station_sdk, smart_account_address, sm
     """
     # First transfer: from deployed_smart_account to smart_account_address_2
     nonce = secrets.randbits(128)
-    smart_account_signature = machine_station_sdk.machine_station.machine_sign_typed_data_transfer_machine_balance(
+    smart_account_signature = machine_station_sdk.machine_station.machine_sign_transfer_machine_balance(
         smart_account_address=smart_account_address,
         recipient_address=smart_account_address_2,
         nonce=nonce
     )
-    machine_station_owner_signature = machine_station_sdk.machine_station.owner_sign_typed_data_transfer_machine_balance(
+    machine_station_owner_signature = machine_station_sdk.machine_station.admin_sign_transfer_machine_balance(
         smart_account_address=smart_account_address,
         recipient_address=smart_account_address_2,
         nonce=nonce
     )
-    result = machine_station_sdk.machine_station.execute_machine_transfer_balance(
+    result = machine_station_sdk.machine_station.execute_transfer_machine_balance(
         smart_account_address=smart_account_address,
         recipient_address=smart_account_address_2,
         nonce=nonce,
@@ -820,17 +820,17 @@ def test_transfer_machine_balance(machine_station_sdk, smart_account_address, sm
 
     # Second transfer: from smart_account_address_2 back to deployed_smart_account
     nonce = secrets.randbits(128)
-    smart_account_signature = machine_station_sdk.machine_station.machine_sign_typed_data_transfer_machine_balance(
+    smart_account_signature = machine_station_sdk.machine_station.machine_sign_transfer_machine_balance(
         smart_account_address=smart_account_address_2,
         recipient_address=smart_account_address,
         nonce=nonce
     )
-    machine_station_owner_signature = machine_station_sdk.machine_station.owner_sign_typed_data_transfer_machine_balance(
+    machine_station_owner_signature = machine_station_sdk.machine_station.admin_sign_transfer_machine_balance(
         smart_account_address=smart_account_address_2,
         recipient_address=smart_account_address,
         nonce=nonce
     )
-    result = machine_station_sdk.machine_station.execute_machine_transfer_balance(
+    result = machine_station_sdk.machine_station.execute_transfer_machine_balance(
         smart_account_address=smart_account_address_2,
         recipient_address=smart_account_address,
         nonce=nonce,
