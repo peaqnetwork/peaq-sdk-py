@@ -89,25 +89,26 @@ class GetReal(MachineStation):
     # PUBLIC/CALLABLE FUNCTIONS
     # ========================================================================
         
-    def create_machine_account(self, owner_eoa_address: str, nonce: Optional[int] = None):
+    def create_machine_account(self, owner_eoa_address: str, nonce: Optional[int] = None, send_transaction: bool = False):
         """
         Creates a new smart account owned by the provided EOA address.
 
         Args:
             owner_eoa_address (str): The Externally Owned Account address that will own the smart account.
             nonce (Optional[int]): Optional nonce value. If not provided, a random 32-bit integer will be generated.
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
 
         Returns:
-            str: The address of the newly created smart account.
+            Union[str, dict]: The address of the newly created smart account if sent, or transaction data if send_transaction=False.
         """
         if nonce is None:
             nonce = secrets.randbits(32)
             
         admin_signature = self.admin_sign_deploy_machine_smart_account(owner_eoa_address, nonce)
-        result = self.deploy_machine_smart_account(owner_eoa_address, nonce, admin_signature)
+        result = self.deploy_machine_smart_account(owner_eoa_address, nonce, admin_signature, send_transaction)
         return result
     
-    def transfer_machine_station_balance(self, new_machine_station_address: str, nonce: Optional[int] = None) -> str:
+    def transfer_machine_station_balance(self, new_machine_station_address: str, nonce: Optional[int] = None, send_transaction: bool = False) -> str:
         """
         Transfers the balance from the current machine station to a new machine station address.
         This is typically used when upgrading or migrating to a new machine station contract.
@@ -115,9 +116,10 @@ class GetReal(MachineStation):
         Args:
             new_machine_station_address (str): The address of the new machine station contract that will receive the balance.
             nonce (Optional[int]): Optional nonce value. If not provided, a random 32-bit integer will be generated.
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
 
         Returns:
-            str: Success message with the new machine station address.
+            Union[str, dict]: Success message with the new machine station address if sent, or transaction data if send_transaction=False.
 
         Note:
             This operation requires the machine station owner's signature and can only be executed by 
@@ -127,7 +129,7 @@ class GetReal(MachineStation):
             nonce = secrets.randbits(32)
             
         admin_signature = self.admin_sign_transfer_machine_station_balance(new_machine_station_address, nonce)
-        result = self.execute_transfer_machine_station_balance(new_machine_station_address, nonce, admin_signature)
+        result = self.execute_transfer_machine_station_balance(new_machine_station_address, nonce, admin_signature, send_transaction)
 
         return result
     
@@ -137,7 +139,9 @@ class GetReal(MachineStation):
         item_type: str,
         item: str,
         tag: str,
-        nonce: Optional[int] = None
+        nonce: Optional[int] = None,
+        refund_amount: Optional[int] = None,
+        send_transaction: bool = False
     ) -> str:
         """
         Generates and executes a Get Real specific storage transaction. This transaction stores data on-chain
@@ -154,24 +158,30 @@ class GetReal(MachineStation):
             item (str): The actual data/value to be stored on-chain.
             tag (str): An identifier used to link and verify this transaction on-chain.
             nonce (Optional[int]): Optional nonce value. If not provided, a random 32-bit integer will be generated.
+            refund_amount (Optional[int]): Optional refund amount. If not provided, defaults to 0.
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
 
         Returns:
-            str: "Success" if the transaction is completed successfully.
+            Union[str, dict]: "Success" if the transaction is completed successfully, or transaction data if send_transaction=False.
         """
         if nonce is None:
             nonce = secrets.randbits(32)
+        if refund_amount is None:
+            refund_amount = 0
             
-        storage_data = self.generate_storage_tx(email, item_type, item, tag, nonce)
+        storage_data = self.generate_storage_tx(email, item_type, item, tag, nonce, refund_amount)
         
         result = self.execute_transaction(
             storage_data['target'],
             storage_data['calldata'],
             storage_data['nonce'],
+            storage_data['refund_amount'],
             storage_data['admin_signature'],
+            send_transaction
         )
         return result
     
-    def did_tx(self, project, email, account_address, tag, custom_document_fields: Optional[str] = None, nonce: Optional[int] = None):
+    def did_tx(self, project, email, account_address, tag, custom_document_fields: Optional[str] = None, nonce: Optional[int] = None, refund_amount: Optional[int] = None, send_transaction: bool = False):
         """
         Generates and executes a Get Real specific DID transaction.
 
@@ -182,24 +192,30 @@ class GetReal(MachineStation):
             tag (str): Tag for linking the transaction.
             custom_document_fields (Optional[str]): Custom DID document fields.
             nonce (Optional[int]): Optional nonce value. If not provided, a random 32-bit integer will be generated.
+            refund_amount (Optional[int]): Optional refund amount. If not provided, defaults to 0.
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
 
         Returns:
-            str: Transaction result.
+            Union[str, dict]: Transaction result if sent, or transaction data if send_transaction=False.
         """
         if nonce is None:
             nonce = secrets.randbits(32)
+        if refund_amount is None:
+            refund_amount = 0
             
-        did_data = self.generate_did_tx(project, email, account_address, tag, custom_document_fields, nonce)
+        did_data = self.generate_did_tx(project, email, account_address, tag, custom_document_fields, nonce, refund_amount)
         
         result = self.execute_transaction(
             did_data['target'],
             did_data['calldata'],
             did_data['nonce'],
+            did_data['refund_amount'],
             did_data['admin_signature'],
+            send_transaction
         )
         return result
     
-    def machine_account_storage_tx(self, machine_account_address, email, item_type, item, tag, machine_account_signature: Optional[str] = None, nonce: Optional[int] = None):
+    def machine_account_storage_tx(self, machine_account_address, email, item_type, item, tag, machine_account_signature: Optional[str] = None, nonce: Optional[int] = None, refund_amount: Optional[int] = None, send_transaction: bool = False):
         """
         Executes a storage transaction through a smart account.
         
@@ -214,23 +230,28 @@ class GetReal(MachineStation):
             tag (str): Tag for linking the transaction
             machine_account_signature (Optional[str]): Pre-signed signature from machine account owner
             nonce (Optional[int]): Optional nonce value. If not provided, a random 32-bit integer will be generated.
+            refund_amount (Optional[int]): Optional refund amount. If not provided, defaults to 0.
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
             
         Returns:
-            Union[WrittenTransactionResult, dict]: Transaction result if signature provided, 
-                                                 or signable message object for frontend signing
+            Union[WrittenTransactionResult, dict]: Transaction result if signature provided and sent, 
+                                                 signable message object for frontend signing, or 
+                                                 transaction data if send_transaction=False
         """
         if nonce is None:
             nonce = secrets.randbits(32)
+        if refund_amount is None:
+            refund_amount = 0
             
         # If no signature provided, generate and return signable message for frontend
         if machine_account_signature is None:
             return self._generate_machine_account_storage_signable_message(
-                machine_account_address, email, item_type, item, tag, nonce
+                machine_account_address, email, item_type, item, tag, nonce, refund_amount
             )
         
         # If signature provided, generate transaction data and execute
         machine_account_storage_data = self.generate_machine_account_storage_tx(
-            machine_account_address, email, item_type, item, tag, machine_account_signature, nonce
+            machine_account_address, email, item_type, item, tag, machine_account_signature, nonce, refund_amount
         )
         
         # Execute the transaction
@@ -239,12 +260,14 @@ class GetReal(MachineStation):
             machine_account_storage_data['target'],
             machine_account_storage_data['calldata'],
             machine_account_storage_data['nonce'],
+            machine_account_storage_data['refund_amount'],
             machine_account_storage_data['admin_signature'],
-            machine_account_storage_data['machine_account_signature']
+            machine_account_storage_data['machine_account_signature'],
+            send_transaction
         )
         return result
         
-    def machine_account_did_tx(self, account_address, machine_account_address, project, email, tag, custom_document_fields: Optional[str] = None, machine_account_signature: Optional[str] = None, nonce: Optional[int] = None):
+    def machine_account_did_tx(self, account_address, machine_account_address, project, email, tag, custom_document_fields: Optional[str] = None, machine_account_signature: Optional[str] = None, nonce: Optional[int] = None, refund_amount: Optional[int] = None, send_transaction: bool = False):
         """
         Executes a DID transaction through a smart account.
         
@@ -260,23 +283,28 @@ class GetReal(MachineStation):
             custom_document_fields (Optional[str]): Custom DID document fields
             machine_account_signature (Optional[str]): Pre-signed signature from machine account owner
             nonce (Optional[int]): Optional nonce value. If not provided, a random 32-bit integer will be generated.
+            refund_amount (Optional[int]): Optional refund amount. If not provided, defaults to 0.
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
             
         Returns:
-            Union[WrittenTransactionResult, dict]: Transaction result if signature provided, 
-                                                 or signable message object for frontend signing
+            Union[WrittenTransactionResult, dict]: Transaction result if signature provided and sent, 
+                                                 signable message object for frontend signing, or 
+                                                 transaction data if send_transaction=False
         """
         if nonce is None:
             nonce = secrets.randbits(32)
+        if refund_amount is None:
+            refund_amount = 0
             
         # If no signature provided, generate and return signable message for frontend
         if machine_account_signature is None:
             return self._generate_machine_account_did_signable_message(
-                account_address, machine_account_address, project, email, tag, custom_document_fields, nonce
+                account_address, machine_account_address, project, email, tag, custom_document_fields, nonce, refund_amount
             )
         
         # If signature provided, generate transaction data and execute
         machine_account_did_data = self.generate_machine_account_did_tx(
-            account_address, machine_account_address, project, email, tag, custom_document_fields, machine_account_signature, nonce
+            account_address, machine_account_address, project, email, tag, custom_document_fields, machine_account_signature, nonce, refund_amount
         )
         
         # Execute the transaction
@@ -285,24 +313,30 @@ class GetReal(MachineStation):
             machine_account_did_data['target'],
             machine_account_did_data['calldata'],
             machine_account_did_data['nonce'],
+            machine_account_did_data['refund_amount'],
             machine_account_did_data['admin_signature'],
-            machine_account_did_data['machine_account_owner_signature']
+            machine_account_did_data['machine_account_owner_signature'],
+            send_transaction
         )
         return result
     
-    def machine_account_batch_txs(self, data_payloads, nonce: Optional[int] = None):
+    def machine_account_batch_txs(self, data_payloads, nonce: Optional[int] = None, refund_amount: Optional[int] = None, send_transaction: bool = False):
         """
         Executes a batch of machine account transactions.
         
         Args:
             data_payloads (list): List of transaction payloads.
             nonce (Optional[int]): Optional nonce value. If not provided, a random 32-bit integer will be generated.
+            refund_amount (Optional[int]): Optional refund amount. If not provided, defaults to 0.
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
             
         Returns:
-            Transaction result.
+            Union[WrittenTransactionResult, dict]: Transaction result if sent, or transaction data if send_transaction=False.
         """
         if nonce is None:
             nonce = secrets.randbits(32)
+        if refund_amount is None:
+            refund_amount = 0
             
         # Unpack data payload
         machine_account_addresses = [tx["machine_account_address"] for tx in data_payloads]
@@ -311,16 +345,18 @@ class GetReal(MachineStation):
         machine_nonces = [tx["nonce"] for tx in data_payloads]
         machine_account_owner_signatures = [tx["machine_account_owner_signature"] for tx in data_payloads]
 
-        depin_owner_signature = self.admin_sign_machine_batch_transactions(machine_account_addresses, targets, calldata_list, nonce, machine_nonces)
+        depin_owner_signature = self.admin_sign_machine_batch_transactions(machine_account_addresses, targets, calldata_list, nonce, refund_amount, machine_nonces)
         
         result = self.execute_machine_batch_transactions(    
             machine_account_addresses,
             targets,
             calldata_list,
             nonce,
+            refund_amount,
             machine_nonces,
             depin_owner_signature,
-            machine_account_owner_signatures
+            machine_account_owner_signatures,
+            send_transaction
         )
         
         return result
@@ -357,7 +393,7 @@ class GetReal(MachineStation):
     # HELPER/PRIVATE FUNCTIONS
     # ========================================================================
 
-    def _generate_machine_account_storage_signable_message(self, machine_account_address, email, item_type, item, tag, nonce):
+    def _generate_machine_account_storage_signable_message(self, machine_account_address, email, item_type, item, tag, nonce, refund_amount):
         """
         Generates a signable message for smart account storage transaction.
         
@@ -365,7 +401,7 @@ class GetReal(MachineStation):
             dict: Complete response with signable message and transaction data for frontend
         """
         response = self.store_data_key(email, item_type, tag)
-        # TODO check validity in response
+        # TODO check validity
         
         storage_calldata = self.sdk.storage.add_item(item_type, item)
         
@@ -382,7 +418,8 @@ class GetReal(MachineStation):
             machine_account_address, 
             PrecompileAddresses.STORAGE.value, 
             storage_calldata.tx['data'], 
-            nonce
+            nonce,
+            refund_amount
         )
         
         return {
@@ -397,11 +434,12 @@ class GetReal(MachineStation):
                 "email": email,
                 "item_type": item_type,
                 "item": item,
-                "tag": tag
+                "tag": tag,
+                "refund_amount": refund_amount
             }
         }
         
-    def generate_machine_account_storage_tx(self, machine_account_address, email, item_type, item, tag, signature: str, nonce):
+    def generate_machine_account_storage_tx(self, machine_account_address, email, item_type, item, tag, signature: str, nonce, refund_amount):
         """
         Generates smart account storage transaction data with provided signature.
         This method assumes a valid signature is provided.
@@ -414,6 +452,7 @@ class GetReal(MachineStation):
             tag (str): Tag for linking the transaction
             signature (str): Machine account owner's signature
             nonce (int): Transaction nonce
+            refund_amount (int): Transaction refund amount
             
         Returns:
             dict: Transaction data ready for execution
@@ -426,7 +465,8 @@ class GetReal(MachineStation):
             machine_account_address, 
             PrecompileAddresses.STORAGE.value, 
             storage_calldata.tx['data'], 
-            nonce
+            nonce,
+            refund_amount
         )
         
         return {
@@ -434,11 +474,12 @@ class GetReal(MachineStation):
             "target": PrecompileAddresses.STORAGE.value,
             "calldata": storage_calldata.tx['data'],
             "nonce": nonce,
+            "refund_amount": refund_amount,
             "admin_signature": admin_signature,
             "machine_account_signature": signature
         }
 
-    def _generate_machine_account_did_signable_message(self, account_address, machine_account_address, project, email, tag, custom_document_fields: Optional[str] = None, nonce: int = None):
+    def _generate_machine_account_did_signable_message(self, account_address, machine_account_address, project, email, tag, custom_document_fields: Optional[str] = None, nonce: int = None, refund_amount: int = None):
         """
         Generates a signable message for smart account DID transaction.
         
@@ -483,7 +524,8 @@ class GetReal(MachineStation):
             machine_account_address, 
             PrecompileAddresses.DID.value, 
             did_calldata.tx['data'], 
-            nonce
+            nonce,
+            refund_amount
         )
         
         return {
@@ -499,11 +541,12 @@ class GetReal(MachineStation):
                 "project": project,
                 "email": email,
                 "tag": tag,
-                "custom_document_fields": custom_document_fields
+                "custom_document_fields": custom_document_fields,
+                "refund_amount": refund_amount
             }
         }
 
-    def generate_machine_account_did_tx(self, account_address, machine_account_address, project, email, tag, custom_document_fields: Optional[str] = None, signature: str = None, nonce: int = None):
+    def generate_machine_account_did_tx(self, account_address, machine_account_address, project, email, tag, custom_document_fields: Optional[str] = None, signature: str = None, nonce: int = None, refund_amount: int = None):
         """
         Generates smart account DID transaction data with provided signature.
         This method assumes a valid signature is provided.
@@ -517,6 +560,7 @@ class GetReal(MachineStation):
             custom_document_fields (Optional[str]): Custom DID document fields
             signature (str): Machine account owner's signature
             nonce (int): Transaction nonce
+            refund_amount (int): Transaction refund amount
             
         Returns:
             dict: Transaction data ready for execution
@@ -549,7 +593,8 @@ class GetReal(MachineStation):
             machine_account_address, 
             PrecompileAddresses.DID.value, 
             did_calldata.tx['data'], 
-            nonce
+            nonce,
+            refund_amount
         )
         
         return {
@@ -558,10 +603,11 @@ class GetReal(MachineStation):
             "calldata": did_calldata.tx['data'],
             "nonce": nonce,
             "admin_signature": admin_signature,
-            "machine_account_owner_signature": signature
+            "machine_account_owner_signature": signature,
+            "refund_amount": refund_amount
         }
 
-    def generate_storage_tx(self, email, item_type, item, tag, nonce):
+    def generate_storage_tx(self, email, item_type, item, tag, nonce, refund_amount):
         """
         Generates storage transaction data for direct execution.
         
@@ -571,6 +617,7 @@ class GetReal(MachineStation):
             item (str): The data to store
             tag (str): Tag for linking the transaction
             nonce (int): Transaction nonce
+            refund_amount (int): Transaction refund amount
             
         Returns:
             dict: Transaction data ready for execution
@@ -579,16 +626,17 @@ class GetReal(MachineStation):
         # TODO make sure you get a valid response back
         
         storage_calldata = self.sdk.storage.add_item(item_type, item)
-        admin_signature = self.admin_sign_transaction(PrecompileAddresses.STORAGE.value, storage_calldata.tx['data'], nonce)
+        admin_signature = self.admin_sign_transaction(PrecompileAddresses.STORAGE.value, storage_calldata.tx['data'], nonce, refund_amount)
     
         return {
             "target": PrecompileAddresses.STORAGE.value,
             "calldata": storage_calldata.tx['data'],
             "nonce": nonce,
+            "refund_amount": refund_amount,
             "admin_signature": admin_signature
         }
     
-    def generate_did_tx(self, project, email, account_address, tag, custom_document_fields: Optional[str] = None, nonce: int = None):
+    def generate_did_tx(self, project, email, account_address, tag, custom_document_fields: Optional[str] = None, nonce: int = None, refund_amount: int = None):
         """
         Generates DID transaction data for direct execution.
         
@@ -599,6 +647,7 @@ class GetReal(MachineStation):
             tag (str): Tag for linking the transaction
             custom_document_fields (Optional[str]): Custom DID document fields
             nonce (int): Transaction nonce
+            refund_amount (int): Transaction refund amount
             
         Returns:
             dict: Transaction data ready for execution
@@ -620,12 +669,13 @@ class GetReal(MachineStation):
 
         # only case for depin to create its own?
         did_calldata = self.sdk.did.create(name=project, custom_document_fields=custom_fields, address=account_address)
-        admin_signature = self.admin_sign_transaction(PrecompileAddresses.DID.value, did_calldata.tx['data'], nonce)
+        admin_signature = self.admin_sign_transaction(PrecompileAddresses.DID.value, did_calldata.tx['data'], nonce, refund_amount)
 
         return {
             "target": PrecompileAddresses.DID.value,
             "calldata": did_calldata.tx['data'],
             "nonce": nonce,
+            "refund_amount": refund_amount,
             "admin_signature": admin_signature
         }
 

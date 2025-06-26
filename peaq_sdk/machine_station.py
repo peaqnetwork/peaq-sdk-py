@@ -1,22 +1,14 @@
-import requests
-import secrets
-
-from typing import Optional, Union
+from typing import Optional
 
 from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
     SDKMetadata,
     EvmTransaction,
-    PrecompileAddresses,
     WrittenTransactionResult
-)
-from peaq_sdk.types.did import (
-    CustomDocumentFields, 
-    Verification,
-    Service,
 )
 from peaq_sdk.types.machine_station import (
     MachineStationFactoryFunctionSignatures,
+    MachineStationConfigKeys,
     DeployedSmartAccountResult
 )
 
@@ -25,7 +17,6 @@ from web3 import Web3
 from eth_abi import encode
 from eth_account import Account
 from eth_account.messages import encode_typed_data
-from eth_utils import keccak, to_hex
 
 
 
@@ -60,17 +51,56 @@ class MachineStation(Base):
 
         # Create a wallet to sign DePIN as owner transactions
         self.machine_station_owner_private_key = Account.from_key(machine_station_owner_private_key)
+        
+
+
+    def update_configs(self, key: MachineStationConfigKeys, value: int):
+        """
+        Updates configuration values in the machine station contract.
+        
+        Args:
+            key (str): The configuration key to update. Must be one of the valid config keys.
+            value (int): The new value to set for the configuration key.
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
+            
+        Returns:
+            Union[WrittenTransactionResult, dict]: Update result if sent, or transaction data if send_transaction=False.
+            
+        Raises:
+            ValueError: If the key is not found in valid configuration keys.
+        """
+        try:
+            function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.UPDATE_CONFIGS.value)[:4].hex()
+            
+            encoded_params = encode(
+                ['bytes32', 'uint256'],
+                [bytes.fromhex(key.value), value]
+            ).hex()
+            
+            tx: EvmTransaction = {
+                "to": self.machine_station_address,
+                "data": f"0x{function_selector}{encoded_params}"
+            }
+            
+            receipt = self._send_evm_tx(tx)
+            
+            return WrittenTransactionResult(
+                message=f"Successfully updated config '{key}' to {value} through machine station {self.machine_station_address}.",
+                receipt=receipt
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to update configs: {str(e)}")
          
         
-        # EIP-712 signatures
-    def admin_sign_deploy_machine_account(self, machine_account_owner_address, nonce):
+    # EIP-712 signatures
+    def admin_sign_deploy_machine_smart_account(self, machine_account_owner_address, nonce):
         """
         TODO
         """
         try:
             domain = {
                 "name": "MachineStationFactory",
-                "version": "1",
+                "version": "2",
                 "chainId": self.chain_id,
                 "verifyingContract": self.machine_station_address
             }
@@ -99,7 +129,7 @@ class MachineStation(Base):
         try: 
             domain = {
                 "name": "MachineStationFactory",
-                "version": "1",
+                "version": "2",
                 "chainId": self.chain_id,
                 "verifyingContract": self.machine_station_address
             }
@@ -121,14 +151,17 @@ class MachineStation(Base):
             # TODO custom error
             raise
         
-    def admin_sign_transaction(self, target, calldata, nonce):
+    def admin_sign_transaction(self, target, calldata, nonce, refund_amount: Optional[int] = None):
         """
         TODO
         """
+        if refund_amount is None:
+            refund_amount = 0
+            
         try:
             domain = {
                 "name": "MachineStationFactory",
-                "version": "1",
+                "version": "2",
                 "chainId": self.chain_id,
                 "verifyingContract": self.machine_station_address
             }
@@ -137,12 +170,14 @@ class MachineStation(Base):
                     {"name": "target", "type": "address"},
                     {"name": "data", "type": "bytes"},
                     {"name": "nonce", "type": "uint256"},
+                    {"name": "refundAmount", "type": "uint256"},
                 ],
             }
             message = {
                 "target": target,
                 "data": calldata,
-                "nonce": nonce
+                "nonce": nonce,
+                "refundAmount": refund_amount
             }
             
             signable_message = encode_typed_data(domain, types, message)
@@ -171,7 +206,7 @@ class MachineStation(Base):
         try:
             domain = {
                 "name": "MachineSmartAccount",
-                "version": "1",
+                "version": "2",
                 "chainId": self.chain_id,
                 "verifyingContract": machine_account_address
             }
@@ -199,11 +234,14 @@ class MachineStation(Base):
             # TODO custom error
             raise
         
-    def admin_sign_machine_transaction(self, machine_account_address, target, calldata, nonce):
+    def admin_sign_machine_transaction(self, machine_account_address, target, calldata, nonce, refund_amount: Optional[int] = None):
+        if refund_amount is None:
+            refund_amount = 0
+            
         try:
             domain = {
                 "name": "MachineStationFactory",
-                "version": "1",
+                "version": "2",
                 "chainId": self.chain_id,
                 "verifyingContract": self.machine_station_address
             }
@@ -213,13 +251,15 @@ class MachineStation(Base):
                     {"name": "target", "type": "address"},
                     {"name": "data", "type": "bytes"},
                     {"name": "nonce", "type": "uint256"},
+                    {"name": "refundAmount", "type": "uint256"},
                 ],
             }
             message = {
                 "machineAddress": machine_account_address,
                 "target": target,
                 "data": calldata,
-                "nonce": nonce
+                "nonce": nonce,
+                "refundAmount": refund_amount
             }
             
             signable_message = encode_typed_data(domain, types, message)
@@ -229,11 +269,14 @@ class MachineStation(Base):
             # TODO custom error
             raise
         
-    def admin_sign_machine_batch_transactions(self, machine_account_addresses, targets, calldata_list, nonce, machine_nonces):
+    def admin_sign_machine_batch_transactions(self, machine_account_addresses, targets, calldata_list, nonce, refund_amount: Optional[int] = None, machine_nonces: Optional[list] = None):
+        if refund_amount is None:
+            refund_amount = 0
+            
         try:
             domain = {
                 "name": "MachineStationFactory",
-                "version": "1",
+                "version": "2",
                 "chainId": self.chain_id,
                 "verifyingContract": self.machine_station_address
             }
@@ -243,6 +286,7 @@ class MachineStation(Base):
                     {"name": "targets", "type": "address[]"},
                     {"name": "data", "type": "bytes[]"},
                     {"name": "nonce", "type": "uint256"},
+                    {"name": "refundAmount", "type": "uint256"},
                     {"name": "machineNonces", "type": "uint256[]"},
                 ],
             }
@@ -251,6 +295,7 @@ class MachineStation(Base):
                 "targets": targets,
                 "data": calldata_list,
                 "nonce": nonce,
+                "refundAmount": refund_amount,
                 "machineNonces": machine_nonces
             }
             
@@ -279,7 +324,7 @@ class MachineStation(Base):
         try:
             domain = {
                 "name": "MachineSmartAccount",
-                "version": "1",
+                "version": "2",
                 "chainId": self.chain_id,
                 "verifyingContract": machine_account_address
             }
@@ -309,7 +354,7 @@ class MachineStation(Base):
         try: 
             domain = {
                 "name": "MachineStationFactory",
-                "version": "1",
+                "version": "2",
                 "chainId": self.chain_id,
                 "verifyingContract": self.machine_station_address
             }
@@ -334,7 +379,7 @@ class MachineStation(Base):
         
         
     # execute transactions
-    def deploy_machine_machine_account(self, machine_account_owner_address, nonce, machine_station_owner_signature):
+    def deploy_machine_smart_account(self, machine_account_owner_address, nonce, machine_station_owner_signature, send_transaction: bool = False):
         """
         Deploys a new machine smart account contract.
         
@@ -342,9 +387,10 @@ class MachineStation(Base):
             machine_account_owner_address (str): The address that will own the deployed smart account
             nonce (int): Unique nonce for the transaction
             machine_station_owner_signature (str): Signature from the machine station owner authorizing deployment
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
             
         Returns:
-            DeployedSmartAccountResult: Contains the transaction receipt, success message, and deployed smart account address
+            Union[DeployedSmartAccountResult, dict]: Deployment result if sent, or transaction data if send_transaction=False
         """
         try:
             function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.DEPLOY_MACHINE_SMART_ACCOUNT.value)[:4].hex()
@@ -358,6 +404,17 @@ class MachineStation(Base):
                 "to": self.machine_station_address,
                 "data": f"0x{function_selector}{encoded_params}"
             }
+            
+            if not send_transaction:
+                return {
+                    "transaction_data": tx,
+                    "message": "Transaction data ready for frontend wallet submission",
+                    "machine_account_owner_address": machine_account_owner_address,
+                    "machine_station_address": self.machine_station_address,
+                    "function": "deploy_machine_smart_account",
+                    "note": "After transaction is mined, listen for MachineSmartAccountDeployed event to get the deployed address"
+                }
+            
             receipt = self._send_evm_tx(tx)
             machine_account_deployed_topic = self.api.keccak(text="MachineSmartAccountDeployed(address)").hex()
             
@@ -374,7 +431,7 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to deploy machine smart account: {str(e)}")
         
-    def execute_transfer_machine_station_balance(self, new_machine_station_address, nonce, machine_station_owner_signature):
+    def execute_transfer_machine_station_balance(self, new_machine_station_address, nonce, machine_station_owner_signature, send_transaction: bool = False):
         """
         Transfers the balance from the current machine station to a new one.
         
@@ -382,9 +439,10 @@ class MachineStation(Base):
             new_machine_station_address (str): The address of the new machine station to transfer balance to
             nonce (int): Unique nonce for the transaction
             machine_station_owner_signature (str): Signature from the machine station owner authorizing transfer
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
             
         Returns:
-            WrittenTransactionResult: Contains the transaction receipt and success message
+            Union[WrittenTransactionResult, dict]: Transfer result if sent, or transaction data if send_transaction=False
         """
         try:
             selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.TRANSFER_MACHINE_STATION_BALANCE.value)[:4].hex()
@@ -398,6 +456,16 @@ class MachineStation(Base):
                 "to": self.machine_station_address,
                 "data": f"0x{selector}{encoded_params}"
             }
+            
+            if not send_transaction:
+                return {
+                    "transaction_data": tx,
+                    "message": "Transaction data ready for frontend wallet submission",
+                    "current_machine_station_address": self.machine_station_address,
+                    "new_machine_station_address": new_machine_station_address,
+                    "function": "execute_transfer_machine_station_balance"
+                }
+            
             receipt = self._send_evm_tx(tx)
             
             return WrittenTransactionResult(
@@ -407,7 +475,7 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to transfer machine station balance: {str(e)}")
         
-    def execute_transaction(self, target, calldata, nonce, machine_station_owner_signature):
+    def execute_transaction(self, target, calldata, nonce, refund_amount: Optional[int] = None, machine_station_owner_signature: Optional[str] = None, send_transaction: bool = False):
         """
         Executes a transaction through the machine station.
         
@@ -415,23 +483,38 @@ class MachineStation(Base):
             target (str): The target contract address
             calldata (str): The encoded function call data
             nonce (int): Unique nonce for the transaction
+            refund_amount (Optional[int]): Optional refund amount. If not provided, defaults to 0.
             machine_station_owner_signature (str): Signature from the machine station owner authorizing the transaction
+            send_transaction (bool): If True, sends the transaction automatically. If False, returns transaction data for frontend wallet submission.
             
         Returns:
-            WrittenTransactionResult: Contains the transaction receipt and success message
+            Union[WrittenTransactionResult, dict]: Transaction result if sent, or transaction data if send_transaction=False
         """
+        if refund_amount is None:
+            refund_amount = 0
+            
         try:
             function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.EXECUTE_TRANSACTION.value)[:4].hex()
             calldata_bytes = bytes.fromhex(calldata[2:])
             signature_bytes = bytes.fromhex(machine_station_owner_signature[2:])
             encoded_params = encode(
-                ['address', 'bytes', 'uint256', 'bytes'],
-                [target, calldata_bytes, nonce, signature_bytes]
+                ['address', 'bytes', 'uint256', 'uint256', 'bytes'],
+                [target, calldata_bytes, nonce, refund_amount, signature_bytes]
             ).hex()
             tx: EvmTransaction = {
                 "to": self.machine_station_address,
                 "data": f"0x{function_selector}{encoded_params}"
             }
+            
+            if not send_transaction:
+                return {
+                    "transaction_data": tx,
+                    "message": "Transaction data ready for frontend wallet submission",
+                    "target": target,
+                    "machine_station_address": self.machine_station_address,
+                    "function": "execute_transaction"
+                }
+            
             receipt = self._send_evm_tx(tx)
             
             return WrittenTransactionResult(
@@ -441,7 +524,11 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to execute transaction: {str(e)}")
     
-    def execute_machine_transaction(self, machine_account_address, target, calldata, nonce, machine_station_owner_signature, machine_account_owner_signature):
+    # By default return back the tx 
+    def execute_machine_transaction(self, machine_account_address, target, calldata, nonce, refund_amount: Optional[int] = None, machine_station_owner_signature: Optional[str] = None, machine_account_owner_signature: Optional[str] = None, send_transaction: bool = False):
+        if refund_amount is None:
+            refund_amount = 0
+            
         try:
             function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.EXECUTE_MACHINE_TRANSACTION.value)[:4].hex()
             calldata_bytes = bytes.fromhex(calldata[2:])
@@ -449,13 +536,24 @@ class MachineStation(Base):
             machine_account_owner_signature_bytes = bytes.fromhex(machine_account_owner_signature[2:])
             
             encoded_params = encode(
-                ['address', 'address', 'bytes', 'uint256', 'bytes', 'bytes'],
-                [machine_account_address, target, calldata_bytes, nonce, depin_owner_signature_bytes, machine_account_owner_signature_bytes]
+                ['address', 'address', 'bytes', 'uint256', 'uint256', 'bytes', 'bytes'],
+                [machine_account_address, target, calldata_bytes, nonce, refund_amount, depin_owner_signature_bytes, machine_account_owner_signature_bytes]
             ).hex()
             tx: EvmTransaction = {
                 "to": self.machine_station_address,
                 "data": f"0x{function_selector}{encoded_params}"
             }
+            
+            if not send_transaction:
+                return {
+                    "transaction_data": tx,
+                    "message": "Transaction data ready for frontend wallet submission",
+                    "machine_account_address": machine_account_address,
+                    "target": target,
+                    "machine_station_address": self.machine_station_address,
+                    "function": "execute_machine_transaction"
+                }
+            
             receipt = self._send_evm_tx(tx)
             
             return WrittenTransactionResult(
@@ -465,7 +563,10 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to execute machine transaction: {str(e)}")
         
-    def execute_machine_batch_transactions(self, machine_account_addresses, targets, calldata_list, nonce, machine_nonces, machine_station_owner_signature, machine_account_owner_signatures):
+    def execute_machine_batch_transactions(self, machine_account_addresses, targets, calldata_list, nonce, refund_amount: Optional[int] = None, machine_nonces: Optional[list] = None, machine_station_owner_signature: Optional[str] = None, machine_account_owner_signatures: Optional[list] = None, send_transaction: bool = False):
+        if refund_amount is None:
+            refund_amount = 0
+            
         try:
             function_selector = self.api.keccak(text=MachineStationFactoryFunctionSignatures.EXECUTE_MACHINE_BATCH_TRANSACTIONS.value)[:4].hex()
             
@@ -480,13 +581,27 @@ class MachineStation(Base):
             ]
             
             encoded_params = encode(
-                ['address[]', 'address[]', 'bytes[]', 'uint256', 'uint256[]', 'bytes', 'bytes[]'],
-                [machine_account_addresses, targets, calldata_list_bytes, nonce, machine_nonces, depin_owner_signature_bytes, machine_account_owner_signatures_bytes]
+                ['address[]', 'address[]', 'bytes[]', 'uint256', 'uint256', 'uint256[]', 'bytes', 'bytes[]'],
+                [machine_account_addresses, targets, calldata_list_bytes, nonce, refund_amount, machine_nonces, depin_owner_signature_bytes, machine_account_owner_signatures_bytes]
             ).hex()
             tx: EvmTransaction = {
                 "to": self.machine_station_address,
                 "data": f"0x{function_selector}{encoded_params}"
             }
+            
+            if not send_transaction:
+                accounts_str = ", ".join(machine_account_addresses)
+                targets_str = ", ".join(targets)
+                return {
+                    "transaction_data": tx,
+                    "message": "Transaction data ready for frontend wallet submission",
+                    "machine_account_addresses": machine_account_addresses,
+                    "targets": targets,
+                    "machine_station_address": self.machine_station_address,
+                    "function": "execute_machine_batch_transactions",
+                    "description": f"Batch transactions from accounts [{accounts_str}] on targets [{targets_str}]"
+                }
+            
             receipt = self._send_evm_tx(tx)
             
             # Create a descriptive message for the batch operation
