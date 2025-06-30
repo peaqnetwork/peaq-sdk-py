@@ -8,6 +8,8 @@ from peaq_sdk.base import Base
 from peaq_sdk.did import Did
 from peaq_sdk.storage import Storage
 from peaq_sdk.token import Token
+from peaq_sdk.get_real import GetReal
+from peaq_sdk.machine_station import MachineStation
 from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
 from peaq_sdk.types.main import CreateInstanceOptions
 
@@ -25,7 +27,7 @@ class Main(Base):
     initializing the signer, creating the API connection, and handling blockchain-specific operations.
     It inherits from Base, which contains common logic for both EVM and Substrate operations.
     """
-    def __init__(self, base_url: str, chain_type: Optional[ChainType]) -> None:
+    def __init__(self, base_url: str, chain_type: Optional[ChainType], machine_station: Optional[ChainType] = False) -> None:
         """
         Initializes the Main class, representing the primary interface for the SDK.
 
@@ -36,7 +38,8 @@ class Main(Base):
         metadata: SDKMetadata = SDKMetadata(
             base_url=base_url,
             chain_type=chain_type,
-            pair=None
+            pair=None,
+            machine_station=machine_station
         )
         api = self._create_api(metadata)
         super().__init__(api, metadata)
@@ -162,3 +165,75 @@ class Main(Base):
                 f"Invalid base URL for {interaction}: {base_url}. "
                 f"It must start with '{expected_prefix}' to establish connection."
             )
+            
+    @classmethod
+    def machine_station_instance(
+        cls,
+        base_url: str,
+        machine_station_address: str,
+        machine_station_owner_private_key: str,
+        ) -> Main:
+        """
+        Creates a new Machine Station instance for account abstraction functionality.
+        
+        Args:
+            base_url (str): The connection URL for the blockchain.
+            machine_station_address (str): The address of the deployed machine station contract.
+            machine_station_owner_private_key (str): Private key of the machine station owner (admin).
+            
+        Returns:
+            Main: An initialized SDK object with Machine Station functionality.
+        """
+        sdk = cls(base_url, ChainType.EVM, machine_station=True)
+        sdk._initialize_signer(machine_station_owner_private_key)
+        sdk.machine_station = MachineStation(
+            sdk=sdk,
+            machine_station_address=machine_station_address,
+            machine_station_owner_private_key=machine_station_owner_private_key,
+            api=sdk.api,
+            metadata=sdk.metadata
+        )
+        return sdk
+
+    
+    @classmethod
+    def get_real_instance(
+        cls,
+        base_url: str,
+        machine_station_address: str,
+        machine_station_owner_private_key: str,
+        service_url: str,
+        api_key: str,
+        project_api_key: str,
+        ) -> Main:
+        """
+        Creates a new Get Real instance for DePINs in the campaign. Utilizes the user deployed Machine Station Factory and is
+        only EVM compatible.
+
+        Args:
+            base_url (str): The connection URL for the blockchain.
+            machine_station_address (str): The address of the deployed contract for the machine station factory.
+            machine_station_owner_private_key (str): Admin account owner that is responsible for funding and oversight on the machine station factory.
+            service_url (str): URL used to connect to peaq's campaign service.
+            api_key (str): Key used to provide authentication with the peaq service.
+            project_api_key (str): Key used to provide authentication for a specific project.
+
+        Returns:
+            Main: An initialized SDK object ready for executing blockchain operations.
+        """
+        # Initialize SDK with EVM chain type
+        sdk = cls(base_url, ChainType.EVM, machine_station=True)
+        sdk._initialize_signer(machine_station_owner_private_key)
+        
+        # Create GetReal instance with machine station functionality
+        sdk.get_real = GetReal(
+            sdk=sdk,
+            machine_station_address=machine_station_address,
+            machine_station_owner_private_key=machine_station_owner_private_key,
+            service_url=service_url,
+            api_key=api_key,
+            project_api_key=project_api_key,
+            api=sdk.api,
+            metadata=sdk.metadata
+        )
+        return sdk

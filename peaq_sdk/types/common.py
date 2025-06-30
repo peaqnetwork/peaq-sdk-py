@@ -10,34 +10,35 @@ from substrateinterface import SubstrateInterface
 from substrateinterface.keypair import Keypair
 from substrateinterface.base import GenericCall
 from eth_account import Account
+from web3.types import TxParams
 
 
 class ChainType(Enum):
     EVM = "evm"
     SUBSTRATE = "substrate"
 
+# Used for EVM calls
+class PrecompileAddresses(str, Enum):
+    DID = "0x0000000000000000000000000000000000000800"
+    STORAGE = "0x0000000000000000000000000000000000000801"
+    IERC20 = "0x0000000000000000000000000000000000000809"
+
+# Used for Substrate calls
+class CallModule(str, Enum):
+    PEAQ_DID = 'PeaqDid'
+    PEAQ_STORAGE = 'PeaqStorage'
 
 @dataclass
 class SDKMetadata:
     chain_type: Optional[ChainType]
     base_url: str
     pair: Optional[Keypair | Account]
-    
-class PrecompileAddresses(str, Enum):
-    DID = "0x0000000000000000000000000000000000000800"
-    STORAGE = "0x0000000000000000000000000000000000000801"
-    IERC20 = "0x0000000000000000000000000000000000000809"
-    
+    machine_station: bool
 
-# Used for Substrate calls
-class CallModule(str, Enum):
-    PEAQ_DID = 'PeaqDid'
-    PEAQ_STORAGE = 'PeaqStorage'
+
     # Add more modules as needed
 
-class EvmTransaction():
-    to: str
-    data: str
+# EVM Transaction type - using Web3.py native TxParams (equivalent to SubstrateInterface's GenericCall)
 
 @dataclass
 class WrittenTransactionResult():
@@ -47,7 +48,7 @@ class WrittenTransactionResult():
 @dataclass
 class BuiltEvmTransactionResult():
     message: str
-    tx: EvmTransaction
+    tx: TxParams
 
 @dataclass
 class BuiltCallTransactionResult():

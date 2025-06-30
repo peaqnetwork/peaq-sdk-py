@@ -3,9 +3,11 @@ import ast
 import json
 import time
 
-from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, EvmTransaction, SeedError, SDKMetadata
+from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
 
 from web3 import Web3
+from web3.types import TxParams
+from web3.exceptions import TimeExhausted
 from eth_account import Account
 from substrateinterface.base import SubstrateInterface, GenericCall
 from substrateinterface.keypair import Keypair, KeypairType
@@ -96,7 +98,7 @@ class Base:
             """
             # Check chain type
             if self._metadata.chain_type is ChainType.EVM:
-                if self._metadata.pair:
+                if self._metadata.pair and not self._metadata.machine_station:
                     # We have a local EVM account
                     account = self._metadata.pair
                     return account.address
@@ -207,69 +209,84 @@ class Base:
         else:
             raise ExtrinsicExecutionError("Failed to submit extrinsic after multiple attempts due to low priority.")
     
-    def _send_evm_tx(self, tx: dict, max_attempts: int = 5) -> dict:
+    def _send_evm_tx(self, tx: dict, max_attempts: int = 5, timeout: int = 60) -> dict:
         """
-        Sends an EVM transaction with retry logic by increasing gas price on failure.
-        if disconnection occurs attempts to reconnect.
+        Sends an EVM transaction with dynamic EIP-1559 fees, retry logic, and error handling.
 
         Args:
             tx (dict): Transaction dict with at minimum 'to' and 'data'.
-            account (Account): Account object with private key.
-            max_attempts (int): Max retries on failure due to low priority.
+            max_attempts (int): Max retries on failure.
+            timeout (int): Timeout in seconds per attempt.
 
         Returns:
             dict: Transaction receipt
 
         Raises:
-            ExtrinsicExecutionError: If all retries fail or any critical error occurs.
+            ExtrinsicExecutionError: If retries fail or critical errors occur.
         """
         checksum_address = Web3.to_checksum_address(self._metadata.pair.address)
         tx['from'] = checksum_address
         nonce = self._api.eth.get_transaction_count(checksum_address)
         tx['nonce'] = nonce
-        
-        gas_price = None
+        tx['chainId'] = self._api.eth.chain_id
+
+        DEFAULT_PRIORITY_FEE = Web3.to_wei(2, 'gwei') # TODO identify what the default priority fee should be
+
         attempt = 0
 
         while attempt < max_attempts:
+            latest_block = self._api.eth.get_block('latest')
+            supports_eip1559 = 'baseFeePerGas' in latest_block
+
             try:
-                # Check connection before attempt
+                # Check connection
                 self._api.eth.chain_id
-                
-                # Get payment info once
-                if attempt == 0:
-                    gas_price = self._api.eth.gas_price
-                
-                tx['gasPrice'] = gas_price
-                tx['chainId'] = self._api.eth.chain_id
+
+                # Estimate gas limit
                 tx['gas'] = self._api.eth.estimate_gas(tx)
+
+                if supports_eip1559:
+                    base_fee = latest_block['baseFeePerGas']
+
+                    if attempt == 0:
+                        max_fee_per_gas = base_fee * 2 + DEFAULT_PRIORITY_FEE
+                        priority_fee = DEFAULT_PRIORITY_FEE
+                    else:
+                        max_fee_per_gas = int(tx['maxFeePerGas'] * 1.25)
+                        priority_fee = int(tx['maxPriorityFeePerGas'] * 1.25)
+
+                    tx['maxFeePerGas'] = max_fee_per_gas
+                    tx['maxPriorityFeePerGas'] = priority_fee
+
+                    tx.pop('gasPrice', None)
+                else:
+                    if attempt == 0:
+                        gas_price = self._api.eth.gas_price
+                    else:
+                        gas_price = int(tx['gasPrice'] * 1.25)
+
+                    tx['gasPrice'] = gas_price
+                    tx.pop('maxFeePerGas', None)
+                    tx.pop('maxPriorityFeePerGas', None)
 
                 signed_tx = self._metadata.pair.sign_transaction(tx)
                 tx_hash = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
 
                 try:
-                    receipt = self._api.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                    receipt = self._api.eth.wait_for_transaction_receipt(tx_hash, timeout=timeout)
                     return receipt
-                except Exception as wait_error:
-                    print(f"Attempt {attempt + 1}: Tx {tx_hash.hex()} not confirmed within timeout: {wait_error}")
-                    # Check if the tx is still in the mempool (pending) using the same nonce.
-                    try:
-                        pending_tx = self._api.eth.get_transaction(tx_hash)
-                        print(f"Tx {tx_hash.hex()} is still pending. Increasing gas price by 25% and retrying with the same nonce {nonce}...")
-                        gas_price = int(gas_price * 1.25)
-                        attempt += 1
-                        time.sleep(0.5)
-                        continue
-                    except Exception:
-                        raise ExtrinsicExecutionError(
-                            f"Transaction {tx_hash.hex()} not found after timeout. It might have been dropped."
-                        )
+                except TimeExhausted:
+                    print(f"Attempt {attempt + 1}: Transaction {tx_hash.hex()} not confirmed within timeout. Increasing fee and retrying...")
+                    attempt += 1
+                    time.sleep(0.5)
+                    continue
+                except Exception as wait_exc:
+                    raise ExtrinsicExecutionError(f"Unexpected error while waiting for receipt: {str(wait_exc)}")
 
             except Exception as e:
-                error_message = str(e)
+                error_message = str(e).lower()
 
-                # Retry on low gas price errors
-                low_fee_errors = [
+                retry_errors = [
                     "replacement transaction underpriced",
                     "fee too low",
                     "intrinsic gas too low",
@@ -277,19 +294,32 @@ class Base:
                     "already known",
                     "transaction underpriced"
                 ]
-                if any(sub in error_message for sub in low_fee_errors):
-                    print(f"Attempt {attempt + 1}: Low fee (gasPrice={gas_price}). Increasing gas by 25% and retrying...")
-                    gas_price = int(gas_price * 1.25)
+
+                if any(err in error_message for err in retry_errors):
+                    print(f"Attempt {attempt + 1}: Gas fee issue encountered. Increasing fee and retrying...")
                     attempt += 1
                     time.sleep(0.5)
-                elif "connection error" in error_message.lower() or "connection closed" in error_message.lower():
+                    continue
+
+                elif "connection error" in error_message or "connection closed" in error_message:
                     print("Connection lost. Reinitializing Web3 provider and retrying...")
                     self._api = Web3(Web3.HTTPProvider(self._metadata.base_url))
-                    attempt += 1
                     time.sleep(0.5)
+                    continue
+
+                elif "insufficient funds" in error_message:
+                    raise ExtrinsicExecutionError("Insufficient funds for gas and transaction value.")
+
+                elif "nonce too low" in error_message or "already known" in error_message:
+                    try:
+                        receipt = self._api.eth.get_transaction_receipt(tx_hash)
+                        if receipt:
+                            return receipt
+                    except Exception:
+                        pass
+                    raise ExtrinsicExecutionError("Nonce conflict or transaction already known.")
+
                 else:
                     raise ExtrinsicExecutionError(f"EVM transaction failed: {error_message}")
-                
+
         raise ExtrinsicExecutionError("Failed to submit EVM transaction after multiple attempts.")
-        
-        
