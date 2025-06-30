@@ -10,7 +10,6 @@ from peaq_sdk.types.common import (
     SDKMetadata,
     PrecompileAddresses,
     CallModule,
-    EvmTransaction,
     SeedError,
     WrittenTransactionResult,
     BuiltEvmTransactionResult,
@@ -34,6 +33,7 @@ from peaq_sdk.utils.utils import evm_to_address
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface, GenericCall
 from web3 import Web3
+from web3.types import TxParams
 from eth_abi import encode
 
 class Storage(Base):
@@ -92,12 +92,12 @@ class Storage(Base):
                 [bytes.fromhex(item_type_encoded), bytes.fromhex(final_item)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.STORAGE.value,
                 "data": f"0x{add_item_function_selector}{encoded_params}"
             }
             
-            if self.metadata.pair:
+            if self.metadata.pair and not self.metadata.machine_station:
                 account = self.metadata.pair
                 receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
@@ -201,7 +201,7 @@ class Storage(Base):
         """
         if self.metadata.chain_type is ChainType.EVM:
             evm_address = (
-                getattr(self.metadata.pair, 'address', address)
+                getattr(self.metadata.pair and not self.metadata.machine_station, 'address', address)
                 if self.metadata.pair
                 else address
             )
@@ -302,7 +302,7 @@ class Storage(Base):
                 [bytes.fromhex(item_type_encoded), bytes.fromhex(final_item)]
             ).hex()
         
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.STORAGE.value,
                 "data": f"0x{update_item_function_selector}{encoded_params}"
             }
@@ -421,12 +421,12 @@ class Storage(Base):
             ).hex()
             
             payload = "0x" + remove_item_function_selector + encoded_params
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.STORAGE.value,
                 "data": payload
             }
             
-            if self.metadata.pair:
+            if self.metadata.pair and not self.metadata.machine_station:
                 account = self.metadata.pair
                 receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(

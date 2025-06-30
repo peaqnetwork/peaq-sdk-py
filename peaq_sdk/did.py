@@ -6,7 +6,6 @@ from peaq_sdk.types.common import (
     SDKMetadata,
     SeedError,
     CallModule,
-    EvmTransaction,
     PrecompileAddresses,
     WrittenTransactionResult,
     BuiltEvmTransactionResult,
@@ -28,6 +27,7 @@ from peaq_sdk.utils.utils import evm_to_address
 
 from substrateinterface.base import SubstrateInterface
 from web3 import Web3
+from web3.types import TxParams
 from eth_abi import encode
 from google.protobuf.json_format import MessageToDict
 
@@ -93,12 +93,12 @@ class Did(Base):
                 [user_address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.DID.value,
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            if self.metadata.pair:
+            if self.metadata.pair and not self.metadata.machine_station:
                 receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully added the DID under the name {name} for user {user_address}.",
@@ -173,7 +173,7 @@ class Did(Base):
         
         if self.metadata.chain_type is ChainType.EVM:
             evm_address = (
-                getattr(self.metadata.pair, 'address', address)
+                getattr(self.metadata.pair and not self.metadata.machine_station, 'address', address)
                 if self.metadata.pair
                 else address
             )
@@ -268,7 +268,7 @@ class Did(Base):
                 [user_address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.DID.value,
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
@@ -343,12 +343,12 @@ class Did(Base):
                 [user_address, bytes.fromhex(name_encoded)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.DID.value,
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
             
-            if self.metadata.pair:
+            if self.metadata.pair and not self.metadata.machine_station:
                 receipt = self._send_evm_tx(tx)
                 return WrittenTransactionResult(
                     message=f"Successfully removed the DID under the name {name} for user {user_address}.",
@@ -477,7 +477,7 @@ class Did(Base):
             verification_method.public_key_multibase = address
             return verification_method
         
-        if verification.type not in ("Ed25519VerificationKey2020", "Sr25519VerificationKey2020", "EcdsaSecp256k1RecoveryMethod2020"):
+        if verification.type not in ("Sr25519VerificationKey2020", "EcdsaSecp256k1RecoveryMethod2020"):
             raise ValueError(
                 "Substrate verification.type must be "
                 "'Ed25519VerificationKey2020', 'Sr25519VerificationKey2020', or 'EcdsaSecp256k1RecoveryMethod2020'"
@@ -488,6 +488,7 @@ class Did(Base):
         if verification.public_key_multibase:
             verification_method.public_key_multibase = verification.public_key_multibase
         else:
+            # TODO calculate public key multibase from public key
             verification_method.public_key_multibase = address
         
         return verification_method

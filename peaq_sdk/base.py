@@ -1,17 +1,13 @@
-from typing import Optional, Union, List
+from typing import Optional, Union
 import ast
 import json
 import time
-import asyncio
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from peaq_sdk.types.common import (
-    ChainType, ExtrinsicExecutionError, EvmTransaction, SeedError, SDKMetadata,
-    ConfirmationMode, BatchMode, TransactionConfig, BatchConfig, TxReceipt, 
-    BatchReceipt, CallModule, UtilityCallFunction, BatchExecutionError
-)
+from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
 
 from web3 import Web3
+from web3.types import TxParams
+from web3.exceptions import TimeExhausted
 from eth_account import Account
 from substrateinterface.base import SubstrateInterface, GenericCall
 from substrateinterface.keypair import Keypair, KeypairType
@@ -21,8 +17,7 @@ from websocket import WebSocketConnectionClosedException
 class Base:
     """
     Provides shared functionality for both EVM and Substrate SDK operations,
-    including signer generation and transaction submission logic with improved
-    batch processing, retry mechanisms, and confirmation modes.
+    including signer generation and transaction submission logic.
     """
     def __init__(self, api: Web3 | SubstrateInterface, metadata: SDKMetadata) -> None:
         """
@@ -103,7 +98,7 @@ class Base:
             """
             # Check chain type
             if self._metadata.chain_type is ChainType.EVM:
-                if self._metadata.pair:
+                if self._metadata.pair and not self._metadata.machine_station:
                     # We have a local EVM account
                     account = self._metadata.pair
                     return account.address
@@ -129,481 +124,202 @@ class Base:
                             "Unable to sign or construct the transaction properly."
                         )
                     return address
+    
+    def _send_substrate_tx(self, call: GenericCall) -> dict:
+        """
+        Submits and waits for inclusion of a Substrate extrinsic, automatically
+        retrying with increasing tip if needed.
 
-    def send_transaction(
-        self, 
-        call: GenericCall, 
-        config: Optional[TransactionConfig] = None
-    ) -> TxReceipt:
-        """
-        Unified transaction sending with improved retry logic and confirmation modes.
-        
         Args:
-            call (GenericCall): The substrate call to execute
-            config (Optional[TransactionConfig]): Configuration for transaction execution
-            
+            call (GenericCall): A `substrateinterface` call object created via `compose_call`.
+            keypair (Keypair): Used to sign the extrinsic.
+
         Returns:
-            TxReceipt: Unified receipt format
+            dict: Full substrate receipt object.
+
+        Raises:
+            ExtrinsicExecutionError: If the extrinsic fails or is rejected by the chain.
         """
-        if config is None:
-            config = TransactionConfig()
-            
-        if self._metadata.chain_type == ChainType.EVM:
-            return self._send_evm_transaction(call, config)
-        else:
-            return self._send_substrate_transaction(call, config)
+        receipt = self._send_with_tip(call)
+
+        if receipt.error_message is not None:
+            error_type = receipt.error_message['type']
+            error_name = receipt.error_message['name']
+            raise ExtrinsicExecutionError(f"The extrinsic of {call.call_module['name']} threw a {error_type} Error with name {error_name}.")
+
+        return receipt.__dict__
     
-    def send_batch_transactions(
-        self,
-        calls: List[GenericCall],
-        batch_config: Optional[BatchConfig] = None
-    ) -> BatchReceipt:
+    def _send_with_tip(self, call: GenericCall) -> dict:
         """
-        Send multiple transactions with various batching strategies.
-        
+        Attempts to submit a Substrate extrinsic, retrying up to 5 times
+        with an increasing tip if the node rejects due to low priority.
+        If the api disconnects, tries to establish a new connection.
+
         Args:
-            calls (List[GenericCall]): List of calls to execute
-            batch_config (Optional[BatchConfig]): Batch execution configuration
-            
+            call (GenericCall): A `substrateinterface` call object.
+            keypair (Keypair): The `Keypair` for signing.
+
         Returns:
-            BatchReceipt: Receipt containing results of all transactions
+            The extrinsic receipt object upon successful inclusion.
+
+        Raises:
+            ExtrinsicExecutionError: If all retry attempts fail due to low priority.
+            Exception: For other submission errors.
         """
-        if batch_config is None:
-            batch_config = BatchConfig()
-            
-        if len(calls) > batch_config.max_batch_size:
-            raise BatchExecutionError(f"Batch size {len(calls)} exceeds maximum {batch_config.max_batch_size}")
-            
-        if batch_config.batch_mode == BatchMode.ATOMIC:
-            return self._send_atomic_batch(calls, batch_config)
-        elif batch_config.batch_mode == BatchMode.PARALLEL:
-            return self._send_parallel_batch(calls, batch_config)
-        else:  # SEQUENTIAL
-            return self._send_sequential_batch(calls, batch_config)
-    
-    def _send_atomic_batch(self, calls: List[GenericCall], batch_config: BatchConfig) -> BatchReceipt:
-        """
-        Send calls as a single atomic batch using utility.batchAll.
-        If any call fails, the entire batch rolls back.
-        """
-        if self._metadata.chain_type == ChainType.EVM:
-            raise BatchExecutionError("Atomic batch not supported for EVM chains")
-            
-        # Create utility.batchAll call
-        batch_call = self._api.compose_call(
-            call_module=CallModule.UTILITY.value,
-            call_function=UtilityCallFunction.BATCH_ALL.value,
-            call_params={'calls': calls}
-        )
-        
-        try:
-            receipt = self.send_transaction(batch_call, batch_config.transaction_config)
-            return BatchReceipt(
-                batch_hash=receipt.tx_hash,
-                receipts=[receipt],
-                success=receipt.success
-            )
-        except Exception as e:
-            return BatchReceipt(
-                success=False,
-                error=str(e)
-            )
-    
-    def _send_parallel_batch(self, calls: List[GenericCall], batch_config: BatchConfig) -> BatchReceipt:
-        """
-        Send calls concurrently using thread pool.
-        """
-        receipts = []
-        success = True
-        failed_at_index = None
-        
-        with ThreadPoolExecutor(max_workers=min(len(calls), 10)) as executor:
-            # Submit all calls
-            future_to_index = {
-                executor.submit(self.send_transaction, call, batch_config.transaction_config): i
-                for i, call in enumerate(calls)
-            }
-            
-            # Collect results
-            for future in as_completed(future_to_index):
-                index = future_to_index[future]
-                try:
-                    receipt = future.result()
-                    receipts.append((index, receipt))
-                    if not receipt.success:
-                        success = False
-                        if failed_at_index is None:
-                            failed_at_index = index
-                except Exception as e:
-                    success = False
-                    if failed_at_index is None:
-                        failed_at_index = index
-                    receipts.append((index, TxReceipt(
-                        tx_hash="",
-                        success=False,
-                        error=str(e)
-                    )))
-        
-        # Sort receipts by original order
-        receipts.sort(key=lambda x: x[0])
-        
-        return BatchReceipt(
-            receipts=[r[1] for r in receipts],
-            success=success,
-            failed_at_index=failed_at_index
-        )
-    
-    def _send_sequential_batch(self, calls: List[GenericCall], batch_config: BatchConfig) -> BatchReceipt:
-        """
-        Send calls one by one in sequence.
-        """
-        receipts = []
-        success = True
-        failed_at_index = None
-        
-        for i, call in enumerate(calls):
-            try:
-                receipt = self.send_transaction(call, batch_config.transaction_config)
-                receipts.append(receipt)
-                if not receipt.success:
-                    success = False
-                    failed_at_index = i
-                    break  # Stop on first failure for sequential mode
-            except Exception as e:
-                success = False
-                failed_at_index = i
-                receipts.append(TxReceipt(
-                    tx_hash="",
-                    success=False,
-                    error=str(e)
-                ))
-                break
-                
-        return BatchReceipt(
-            receipts=receipts,
-            success=success,
-            failed_at_index=failed_at_index
-        )
-    
-    def _send_substrate_transaction(self, call: GenericCall, config: TransactionConfig) -> TxReceipt:
-        """
-        Enhanced Substrate transaction sending with proper BUILD-SUBMIT-CONFIRM-FORMAT flow.
-        """
-        # BUILD PHASE
-        payment_info = self._api.get_payment_info(call, keypair=self._metadata.pair)
-        base_fee = payment_info['partialFee']
-        tip = int(base_fee * config.fee_multiplier) if config.fee_multiplier > 0 else 0
-        
-        # SUBMIT & RETRY PHASE
+        tip_value = 0
+        max_attempts = 5
         attempt = 0
-        current_tip = tip
         
-        while attempt < config.max_retries:
+        while attempt < max_attempts:
             try:
-                # Sign transaction
-                extrinsic = self._api.create_signed_extrinsic(
-                    call=call,
-                    keypair=self._metadata.pair,
-                    tip=current_tip
-                )
+                # Check connection before attempt
+                self._api.rpc_request(method="system_health", params=[])
+
+                # Get payment info once
+                if attempt == 0:
+                    payment_info = self._api.get_payment_info(call, keypair=self._metadata.pair)
+                    tip_increment = payment_info['partialFee']
+
+                # Build + submit transaction
+                extrinsic = self._api.create_signed_extrinsic(call=call, keypair=self._metadata.pair, tip=tip_value)
+                receipt = self._api.submit_extrinsic(extrinsic, wait_for_inclusion=True)
                 
-                # Submit transaction
-                receipt = self._api.submit_extrinsic(
-                    extrinsic,
-                    wait_for_inclusion=config.mode != ConfirmationMode.FAST,
-                    wait_for_finalization=config.mode == ConfirmationMode.SAFE or config.wait_for_finalization
-                )
-                
-                # CONFIRMATION PHASE
-                if config.mode == ConfirmationMode.FAST:
-                    # Return immediately with tx hash
-                    return self._format_substrate_receipt(receipt, call, finalized=False)
-                else:
-                    # Wait for inclusion and optionally finalization
-                    return self._format_substrate_receipt(receipt, call, finalized=receipt.finalized)
-                    
+                # check receipt
+                if receipt.error_message is not None:
+                    error_type = receipt.error_message['type']
+                    error_name = receipt.error_message['name']
+                    raise ExtrinsicExecutionError(f"The extrinsic of {call.call_module['name']} threw a {error_type} Error with name {error_name}.")
+                return receipt
+
             except WebSocketConnectionClosedException:
-                print(f"Attempt {attempt + 1}: WebSocket closed, reconnecting...")
+                print("WebSocket was closed during submission. Reconnecting and retrying...")
                 self._api = SubstrateInterface(url=self._metadata.base_url, ss58_format=42)
                 attempt += 1
                 time.sleep(0.5)
                 
             except SubstrateRequestException as e:
                 error_message = str(e)
-                print(f"Attempt {attempt + 1}: {error_message}")
-                
-                # Parse error and determine if we should retry with higher tip
-                if self._should_retry_with_higher_tip(error_message):
-                    current_tip = int(current_tip * 1.25)
+                if "Priority is too low" in error_message:
+                    print(f"Attempt {attempt + 1}: Priority too low with tip {tip_value}, incrementing tip based on expected...")
+                    tip_value += int(tip_increment * 1.25)
                     attempt += 1
                     time.sleep(0.5)
                 else:
-                    raise ExtrinsicExecutionError(f"Transaction failed: {error_message}")
-                    
-        raise ExtrinsicExecutionError(f"Failed to submit transaction after {config.max_retries} attempts")
+                    raise Exception(error_message)
+        else:
+            raise ExtrinsicExecutionError("Failed to submit extrinsic after multiple attempts due to low priority.")
     
-    def _should_retry_with_higher_tip(self, error_message: str) -> bool:
+    def _send_evm_tx(self, tx: dict, max_attempts: int = 5, timeout: int = 60) -> dict:
         """
-        Determine if we should retry with a higher tip based on the error message.
-        """
-        low_priority_errors = [
-            "Priority is too low",
-            "Immediately Dropped", 
-            "pool limit",
-            "limit"
-        ]
-        return any(error in error_message for error in low_priority_errors)
-    
-    def _format_substrate_receipt(self, receipt, call: GenericCall, finalized: bool = False) -> TxReceipt:
-        """
-        FORMAT RECEIPT PHASE: Safely extract and format receipt data.
-        """
-        try:
-            events = []
-            if hasattr(receipt, 'triggered_events'):
-                for event in receipt.triggered_events:
-                    try:
-                        events.append({
-                            "module": event.value["event"]["module_id"],
-                            "event": event.value["event"]["event_id"],
-                            "attributes": event.value["event"]["attributes"]
-                        })
-                    except (KeyError, IndexError, AttributeError):
-                        # Skip malformed events
-                        continue
-            
-            return TxReceipt(
-                tx_hash=getattr(receipt, "extrinsic_hash", ""),
-                block_hash=getattr(receipt, "block_hash", None),
-                success=getattr(receipt, "is_success", True) and receipt.error_message is None,
-                finalized=finalized,
-                events=events,
-                fee=getattr(receipt, "total_fee_amount", None),
-                error=str(receipt.error_message) if receipt.error_message else None
-            )
-        except Exception as e:
-            # Fallback for any formatting errors
-            return TxReceipt(
-                tx_hash=getattr(receipt, "extrinsic_hash", ""),
-                success=False,
-                error=f"Receipt formatting error: {str(e)}"
-            )
-    
-    # Keep existing legacy methods for backwards compatibility
-    def _send_substrate_tx(self, call: GenericCall, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> dict:
-        """
-        Legacy method - redirects to new implementation
-        """
-        config = TransactionConfig(
-            fee_multiplier=tip_multiplier,
-            wait_for_finalization=wait_for_finalization,
-            mode=ConfirmationMode.SAFE if wait_for_finalization else ConfirmationMode.BALANCED
-        )
-        receipt = self.send_transaction(call, config)
-        
-        # Convert back to legacy format
-        return self._legacy_format_receipt(receipt, call)
-
-    def _legacy_format_receipt(self, receipt: TxReceipt, call: GenericCall) -> dict:
-        """Convert new receipt format back to legacy format for backwards compatibility"""
-        return {
-            "extrinsic_hash": receipt.tx_hash,
-            "block_hash": receipt.block_hash,
-            "finalized": receipt.finalized,
-            "success": receipt.success,
-            "call": {
-                "module": call.call_module["name"],
-                "function": call.call_function,
-                "args": call.call_args
-            },
-            "events": receipt.events,
-            "fee": receipt.fee
-        }
-        
-    # Keep existing EVM methods unchanged for now - can be updated later
-    def _send_evm_tx(self, tx: dict, max_attempts: int = 5) -> dict:
-        """
-        Sends an EVM transaction with retry logic by increasing gas price on failure.
-        if disconnection occurs attempts to reconnect.
+        Sends an EVM transaction with dynamic EIP-1559 fees, retry logic, and error handling.
 
         Args:
             tx (dict): Transaction dict with at minimum 'to' and 'data'.
-            account (Account): Account object with private key.
-            max_attempts (int): Max retries on failure due to low priority.
+            max_attempts (int): Max retries on failure.
+            timeout (int): Timeout in seconds per attempt.
 
         Returns:
             dict: Transaction receipt
 
         Raises:
-            ExtrinsicExecutionError: If all retries fail or any critical error occurs.
+            ExtrinsicExecutionError: If retries fail or critical errors occur.
         """
         checksum_address = Web3.to_checksum_address(self._metadata.pair.address)
         tx['from'] = checksum_address
         nonce = self._api.eth.get_transaction_count(checksum_address)
         tx['nonce'] = nonce
-        
-        gas_price = None
+        tx['chainId'] = self._api.eth.chain_id
+
+        DEFAULT_PRIORITY_FEE = Web3.to_wei(2, 'gwei') # TODO identify what the default priority fee should be
+
         attempt = 0
 
         while attempt < max_attempts:
+            latest_block = self._api.eth.get_block('latest')
+            supports_eip1559 = 'baseFeePerGas' in latest_block
+
             try:
-                # Check connection before attempt
+                # Check connection
                 self._api.eth.chain_id
-                
-                # Get payment info once
-                if attempt == 0:
-                    gas_price = self._api.eth.gas_price
-                    # Add buffer to initial gas price to reduce base fee conflicts
-                    gas_price = int(gas_price * 1.1)  # 10% buffer
-                
-                # Try to use EIP-1559 style transaction if supported
-                try:
-                    latest_block = self._api.eth.get_block('latest')
-                    if 'baseFeePerGas' in latest_block:
-                        # Network supports EIP-1559, use type 2 transaction
-                        base_fee = latest_block['baseFeePerGas']
-                        max_priority_fee = int(gas_price * 0.1)  # 10% of gas price as priority fee
-                        max_fee = base_fee * 2 + max_priority_fee  # 2x base fee + priority
-                        
-                        tx['maxFeePerGas'] = max_fee
-                        tx['maxPriorityFeePerGas'] = max_priority_fee
-                        tx['type'] = '0x2'  # EIP-1559 transaction type
-                        # Remove legacy gasPrice when using EIP-1559
-                        if 'gasPrice' in tx:
-                            del tx['gasPrice']
-                    else:
-                        # Fallback to legacy transaction
-                        tx['gasPrice'] = gas_price
-                except Exception:
-                    # If EIP-1559 detection fails, use legacy transaction
-                    tx['gasPrice'] = gas_price
-                tx['chainId'] = self._api.eth.chain_id
+
+                # Estimate gas limit
                 tx['gas'] = self._api.eth.estimate_gas(tx)
+
+                if supports_eip1559:
+                    base_fee = latest_block['baseFeePerGas']
+
+                    if attempt == 0:
+                        max_fee_per_gas = base_fee * 2 + DEFAULT_PRIORITY_FEE
+                        priority_fee = DEFAULT_PRIORITY_FEE
+                    else:
+                        max_fee_per_gas = int(tx['maxFeePerGas'] * 1.25)
+                        priority_fee = int(tx['maxPriorityFeePerGas'] * 1.25)
+
+                    tx['maxFeePerGas'] = max_fee_per_gas
+                    tx['maxPriorityFeePerGas'] = priority_fee
+
+                    tx.pop('gasPrice', None)
+                else:
+                    if attempt == 0:
+                        gas_price = self._api.eth.gas_price
+                    else:
+                        gas_price = int(tx['gasPrice'] * 1.25)
+
+                    tx['gasPrice'] = gas_price
+                    tx.pop('maxFeePerGas', None)
+                    tx.pop('maxPriorityFeePerGas', None)
 
                 signed_tx = self._metadata.pair.sign_transaction(tx)
                 tx_hash = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
 
                 try:
-                    receipt = self._api.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                    receipt = self._api.eth.wait_for_transaction_receipt(tx_hash, timeout=timeout)
                     return receipt
-                except Exception as wait_error:
-                    print(f"Attempt {attempt + 1}: Tx {tx_hash.hex()} not confirmed within timeout: {wait_error}")
-                    # Check if the tx is still in the mempool (pending) using the same nonce.
-                    try:
-                        pending_tx = self._api.eth.get_transaction(tx_hash)
-                        print(f"Tx {tx_hash.hex()} is still pending. Increasing gas price by 25% and retrying with the same nonce {nonce}...")
-                        gas_price = int(gas_price * 1.25)
-                        
-                        # Update fees based on transaction type
-                        if 'maxFeePerGas' in tx:
-                            tx['maxFeePerGas'] = int(tx['maxFeePerGas'] * 1.25)
-                            tx['maxPriorityFeePerGas'] = int(tx['maxPriorityFeePerGas'] * 1.25)
-                        else:
-                            tx['gasPrice'] = gas_price
-                            
-                        attempt += 1
-                        time.sleep(0.5)
-                        continue
-                    except Exception:
-                        raise ExtrinsicExecutionError(
-                            f"Transaction {tx_hash.hex()} not found after timeout. It might have been dropped."
-                        )
+                except TimeExhausted:
+                    print(f"Attempt {attempt + 1}: Transaction {tx_hash.hex()} not confirmed within timeout. Increasing fee and retrying...")
+                    attempt += 1
+                    time.sleep(0.5)
+                    continue
+                except Exception as wait_exc:
+                    raise ExtrinsicExecutionError(f"Unexpected error while waiting for receipt: {str(wait_exc)}")
 
             except Exception as e:
-                error_message = str(e)
+                error_message = str(e).lower()
 
-                # Retry on low gas price errors
-                low_fee_errors = [
+                retry_errors = [
                     "replacement transaction underpriced",
                     "fee too low",
                     "intrinsic gas too low",
                     "nonce too low",
                     "already known",
-                    "transaction underpriced",
-                    "gas price less than block base fee"
+                    "transaction underpriced"
                 ]
-                if any(sub in error_message for sub in low_fee_errors):
-                    if "gas price less than block base fee" in error_message:
-                        # For base fee errors, get fresh gas price and increase more aggressively
-                        print(f"Attempt {attempt + 1}: Gas price below base fee. Getting fresh gas price and increasing by 50%...")
-                        fresh_gas_price = self._api.eth.gas_price
-                        gas_price = max(int(fresh_gas_price * 1.5), int(gas_price * 1.5))
-                        
-                        # Update EIP-1559 fees if transaction is using them
-                        if 'maxFeePerGas' in tx:
-                            try:
-                                latest_block = self._api.eth.get_block('latest')
-                                if 'baseFeePerGas' in latest_block:
-                                    base_fee = latest_block['baseFeePerGas']
-                                    max_priority_fee = int(gas_price * 0.1)
-                                    max_fee = base_fee * 3 + max_priority_fee  # More aggressive: 3x base fee
-                                    tx['maxFeePerGas'] = max_fee
-                                    tx['maxPriorityFeePerGas'] = max_priority_fee
-                            except Exception:
-                                # Fallback to legacy transaction on error
-                                if 'maxFeePerGas' in tx:
-                                    del tx['maxFeePerGas']
-                                if 'maxPriorityFeePerGas' in tx:
-                                    del tx['maxPriorityFeePerGas']
-                                if 'type' in tx:
-                                    del tx['type']
-                                tx['gasPrice'] = gas_price
-                    else:
-                        print(f"Attempt {attempt + 1}: Low fee. Increasing gas by 25% and retrying...")
-                        gas_price = int(gas_price * 1.25)
-                        
-                        # Update fees based on transaction type
-                        if 'maxFeePerGas' in tx:
-                            tx['maxFeePerGas'] = int(tx['maxFeePerGas'] * 1.25)
-                            tx['maxPriorityFeePerGas'] = int(tx['maxPriorityFeePerGas'] * 1.25)
-                        else:
-                            tx['gasPrice'] = gas_price
-                    
+
+                if any(err in error_message for err in retry_errors):
+                    print(f"Attempt {attempt + 1}: Gas fee issue encountered. Increasing fee and retrying...")
                     attempt += 1
                     time.sleep(0.5)
-                elif "connection error" in error_message.lower() or "connection closed" in error_message.lower():
+                    continue
+
+                elif "connection error" in error_message or "connection closed" in error_message:
                     print("Connection lost. Reinitializing Web3 provider and retrying...")
                     self._api = Web3(Web3.HTTPProvider(self._metadata.base_url))
-                    attempt += 1
                     time.sleep(0.5)
+                    continue
+
+                elif "insufficient funds" in error_message:
+                    raise ExtrinsicExecutionError("Insufficient funds for gas and transaction value.")
+
+                elif "nonce too low" in error_message or "already known" in error_message:
+                    try:
+                        receipt = self._api.eth.get_transaction_receipt(tx_hash)
+                        if receipt:
+                            return receipt
+                    except Exception:
+                        pass
+                    raise ExtrinsicExecutionError("Nonce conflict or transaction already known.")
+
                 else:
                     raise ExtrinsicExecutionError(f"EVM transaction failed: {error_message}")
-                
-        raise ExtrinsicExecutionError("Failed to submit EVM transaction after multiple attempts.")
-    
-    def _send_evm_transaction(self, call, config: TransactionConfig) -> TxReceipt:
-        """
-        Enhanced EVM transaction sending (placeholder for future implementation)
-        """
-        # For now, convert to legacy format and use existing method
-        # This can be enhanced later with proper EVM BUILD-SUBMIT-CONFIRM-FORMAT flow
-        try:
-            receipt = self._send_evm_tx(call, config.max_retries)
-            return TxReceipt(
-                tx_hash=receipt['transactionHash'].hex(),
-                block_hash=receipt['blockHash'].hex(),
-                block_number=receipt['blockNumber'],
-                success=receipt['status'] == 1,
-                finalized=True,  # EVM transactions are considered finalized once included
-                fee=str(receipt.get('gasUsed', 0))
-            )
-        except Exception as e:
-            return TxReceipt(
-                tx_hash="",
-                success=False,
-                error=str(e)
-            )
 
-    # Keep old method signatures for backwards compatibility
-    def _send_with_tip(self, call: GenericCall, tip_multiplier: float = 0.0, wait_for_finalization: bool = True) -> dict:
-        """Legacy method - use _send_substrate_tx instead"""
-        return self._send_substrate_tx(call, tip_multiplier, wait_for_finalization)
-    
-    def _format_receipt(self, receipt, call: GenericCall) -> dict:
-        """Legacy method for backwards compatibility"""
-        return self._legacy_format_receipt(
-            self._format_substrate_receipt(receipt, call),
-            call
-        )
-        
-        
+        raise ExtrinsicExecutionError("Failed to submit EVM transaction after multiple attempts.")
