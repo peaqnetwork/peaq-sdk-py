@@ -6,7 +6,6 @@ from typing import Optional, Union
 from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
     SDKMetadata,
-    EvmTransaction,
     PrecompileAddresses
 )
 from peaq_sdk.types.did import (
@@ -22,6 +21,7 @@ from peaq_sdk.machine_station import MachineStation
 
 from substrateinterface.base import SubstrateInterface
 from web3 import Web3
+from web3.types import TxParams
 from eth_abi import encode
 from eth_account import Account
 from eth_account.messages import encode_typed_data

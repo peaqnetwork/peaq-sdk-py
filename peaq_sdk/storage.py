@@ -10,7 +10,6 @@ from peaq_sdk.types.common import (
     SDKMetadata,
     PrecompileAddresses,
     CallModule,
-    EvmTransaction,
     SeedError,
     WrittenTransactionResult,
     BuiltEvmTransactionResult,
@@ -28,6 +27,7 @@ from peaq_sdk.utils.utils import evm_to_address
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface
 from web3 import Web3
+from web3.types import TxParams
 from eth_abi import encode
 
 class Storage(Base):
@@ -81,7 +81,7 @@ class Storage(Base):
                 [bytes.fromhex(item_type_encoded), bytes.fromhex(final_item)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.STORAGE.value,
                 "data": f"0x{add_item_function_selector}{encoded_params}"
             }
@@ -219,7 +219,7 @@ class Storage(Base):
                 [bytes.fromhex(item_type_encoded), bytes.fromhex(final_item)]
             ).hex()
         
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.STORAGE.value,
                 "data": f"0x{update_item_function_selector}{encoded_params}"
             }
@@ -292,7 +292,7 @@ class Storage(Base):
             ).hex()
             
             payload = "0x" + remove_item_function_selector + encoded_params
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.STORAGE.value,
                 "data": payload
             }

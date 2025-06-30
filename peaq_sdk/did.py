@@ -6,7 +6,6 @@ from peaq_sdk.types.common import (
     SDKMetadata,
     SeedError,
     CallModule,
-    EvmTransaction,
     PrecompileAddresses,
     WrittenTransactionResult,
     BuiltEvmTransactionResult,
@@ -28,6 +27,7 @@ from peaq_sdk.utils.utils import evm_to_address
 
 from substrateinterface.base import SubstrateInterface
 from web3 import Web3
+from web3.types import TxParams
 from eth_abi import encode
 from google.protobuf.json_format import MessageToDict
 
@@ -93,7 +93,7 @@ class Did(Base):
                 [user_address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.DID.value,
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
@@ -268,7 +268,7 @@ class Did(Base):
                 [user_address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.DID.value,
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
@@ -343,7 +343,7 @@ class Did(Base):
                 [user_address, bytes.fromhex(name_encoded)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.DID.value,
                 "data": f"0x{did_function_selector}{encoded_params}"
             }
