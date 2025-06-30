@@ -21,7 +21,8 @@ class ChainType(Enum):
 class PrecompileAddresses(str, Enum):
     DID = "0x0000000000000000000000000000000000000800"
     STORAGE = "0x0000000000000000000000000000000000000801"
-    
+    IERC20 = "0x0000000000000000000000000000000000000809"
+
 # Used for Substrate calls
 class CallModule(str, Enum):
     PEAQ_DID = 'PeaqDid'
