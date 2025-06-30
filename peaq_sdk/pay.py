@@ -9,8 +9,8 @@ from peaq_sdk.types.common import (
     PrecompileAddresses,
     WrittenTransactionResult
 )
-from peaq_sdk.types.token import (
-    TokenFunctionSignatures
+from peaq_sdk.types.pay import (
+    PayFunctionSignatures
 )
 from peaq_sdk.utils.utils import evm_to_address
 
@@ -19,7 +19,10 @@ from substrateinterface.base import SubstrateInterface
 from substrateinterface.utils.ss58 import is_valid_ss58_address, ss58_decode
 from eth_abi import encode
 
-class Token(Base):
+
+# TODO add option for user to manually send the built tx
+
+class Pay(Base):
     """
     Provides methods to transfer the native token across supported chains (peaq and agung).
 
@@ -57,9 +60,10 @@ class Token(Base):
             return "substrate"
         if is_evm and not is_sub:
             return "evm"
-        raise ValueError(f"Address {addr!r} is neither a valid SS58 nor a valid EVM H160.")
+        raise ValueError(f"Address {addr!r} is neither a valid Substrate SS58 nor a valid EVM H160.")
 
-    def transfer(self, to: str, amount: Union[int, float, str, Decimal]) -> WrittenTransactionResult:
+# native tokens
+    def transfer_native(self, to: str, amount: Union[int, float, str, Decimal]) -> WrittenTransactionResult:
         """
         Transfers the native token from the signer to a target address.
 
@@ -90,8 +94,7 @@ class Token(Base):
         if self.metadata.chain_type == ChainType.EVM:
             addr_type = self._addr_type(to)
             if addr_type == "substrate": # evm->substrate
-                raise SystemError("EVM -> Substrate transfers will be added in the next runtime upgrade.")
-                function_selector = self.api.keccak(text=TokenFunctionSignatures.TRANSFER_TO_ACCOUNT_ID.value)[:4].hex()
+                function_selector = self.api.keccak(text=PayFunctionSignatures.TRANSFER_TO_ACCOUNT_ID.value)[:4].hex()
                 pubkey = bytes.fromhex(ss58_decode(to))
                 encoded_params = encode(
                     ["bytes32", "uint256"], 
@@ -130,6 +133,49 @@ class Token(Base):
                 receipt=receipt
             )
 
+
+    def transfer_erc20(self, erc_20_address: str, recipient_address: str, amount: Union[int, float, str, Decimal], token_decimals: Union[int, float, str, Decimal] = None) -> WrittenTransactionResult:
+        raw = self._to_raw_amount(amount,
+            token_decimals=(
+                18 if token_decimals == None
+                   else token_decimals
+            )
+        )
+        
+        function_selector = self.api.keccak(text=PayFunctionSignatures.ERC_20_TRANSFER.value)[:4].hex()
+        encoded_params = encode(
+            ["address", "uint256"], 
+            [recipient_address, raw]
+        ).hex()
+        tx: EvmTransaction = {
+            "to": erc_20_address,
+            "data": f"0x{function_selector}{encoded_params}"
+        }
+        receipt = self._send_evm_tx(tx)
+        return WrittenTransactionResult(
+            message=f"Transferred the erc-20 at address {erc_20_address} to the new owner of {recipient_address} from the owner {self.metadata.pair.address}.",
+            receipt=receipt
+        )
+        
+        
+    def transfer_erc721(self, erc_721_address: str, recipient_address: str, token_id: int) -> WrittenTransactionResult:
+        function_selector = self.api.keccak(text=PayFunctionSignatures.ERC_721_SAFE_TRANSFER_FROM.value)[:4].hex()
+        encoded_params = encode(
+            ["address", "address", "uint256"], 
+            [self.metadata.pair.address, recipient_address, token_id]
+        ).hex()
+        tx: EvmTransaction = {
+            "to": erc_721_address,
+            "data": f"0x{function_selector}{encoded_params}"
+        }
+        receipt = self._send_evm_tx(tx)
+        return WrittenTransactionResult(
+            message=f"Transferred NFT at address {erc_721_address} to the new owner of {recipient_address} from the owner {self.metadata.pair.address}.",
+            receipt=receipt
+        )
+    
+
+
     def _to_raw_amount(self, human_amount: Union[int, float, str, Decimal], token_decimals) -> int:
         """
         Converts a human-readable token amount to its raw on-chain format.
@@ -146,6 +192,4 @@ class Token(Base):
         return int(d * scale)
     
 
-    # native_transfer
-    # erc20_transfer
-    # asset_transfer
+    # asset_transfer ??

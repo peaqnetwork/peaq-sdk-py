@@ -21,29 +21,28 @@ class ChainType(Enum):
 class PrecompileAddresses(str, Enum):
     DID = "0x0000000000000000000000000000000000000800"
     STORAGE = "0x0000000000000000000000000000000000000801"
+    RBAC = "0x0000000000000000000000000000000000000802"
     IERC20 = "0x0000000000000000000000000000000000000809"
 
 # Used for Substrate calls
 class CallModule(str, Enum):
     PEAQ_DID = 'PeaqDid'
     PEAQ_STORAGE = 'PeaqStorage'
-
+    PEAQ_RBAC = 'PeaqRbac'
+    
+    # Add more modules as needed
 @dataclass
 class SDKMetadata:
     chain_type: Optional[ChainType]
     base_url: str
     pair: Optional[Keypair | Account]
     machine_station: bool
-
-
-    # Add more modules as needed
-
 # EVM Transaction type - using Web3.py native TxParams (equivalent to SubstrateInterface's GenericCall)
 
 @dataclass
 class WrittenTransactionResult():
     message: str
-    receipt: dict
+    receipt: dict  # Backwards compatibility with dict
 
 @dataclass
 class BuiltEvmTransactionResult():
