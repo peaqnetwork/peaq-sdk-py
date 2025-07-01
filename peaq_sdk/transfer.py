@@ -5,16 +5,16 @@ from peaq_sdk.base import Base
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
-    EvmTransaction,
     PrecompileAddresses,
     WrittenTransactionResult
 )
-from peaq_sdk.types.pay import (
+from peaq_sdk.types.transfer import (
     PayFunctionSignatures
 )
 from peaq_sdk.utils.utils import evm_to_address
 
 from web3 import Web3
+from web3.types import TxParams
 from substrateinterface.base import SubstrateInterface
 from substrateinterface.utils.ss58 import is_valid_ss58_address, ss58_decode
 from eth_abi import encode
@@ -22,7 +22,7 @@ from eth_abi import encode
 
 # TODO add option for user to manually send the built tx
 
-class Pay(Base):
+class Transfer(Base):
     """
     Provides methods to transfer the native token across supported chains (peaq and agung).
 
@@ -63,7 +63,7 @@ class Pay(Base):
         raise ValueError(f"Address {addr!r} is neither a valid Substrate SS58 nor a valid EVM H160.")
 
 # native tokens
-    def transfer_native(self, to: str, amount: Union[int, float, str, Decimal]) -> WrittenTransactionResult:
+    def native(self, to: str, amount: Union[int, float, str, Decimal]) -> WrittenTransactionResult:
         """
         Transfers the native token from the signer to a target address.
 
@@ -100,7 +100,7 @@ class Pay(Base):
                     ["bytes32", "uint256"], 
                     [pubkey, raw]
                 ).hex()
-                tx: EvmTransaction = {
+                tx: TxParams = {
                     "to": PrecompileAddresses.IERC20.value,
                     "data": f"0x{function_selector}{encoded_params}"
                 }
@@ -134,7 +134,7 @@ class Pay(Base):
             )
 
 
-    def transfer_erc20(self, erc_20_address: str, recipient_address: str, amount: Union[int, float, str, Decimal], token_decimals: Union[int, float, str, Decimal] = None) -> WrittenTransactionResult:
+    def erc20(self, erc_20_address: str, recipient_address: str, amount: Union[int, float, str, Decimal], token_decimals: Union[int, float, str, Decimal] = None) -> WrittenTransactionResult:
         raw = self._to_raw_amount(amount,
             token_decimals=(
                 18 if token_decimals == None
@@ -147,25 +147,27 @@ class Pay(Base):
             ["address", "uint256"], 
             [recipient_address, raw]
         ).hex()
-        tx: EvmTransaction = {
-            "to": erc_20_address,
+        erc_20_checksum = Web3.to_checksum_address(erc_20_address)
+        tx: TxParams = {
+            "to": erc_20_checksum,
             "data": f"0x{function_selector}{encoded_params}"
         }
         receipt = self._send_evm_tx(tx)
         return WrittenTransactionResult(
-            message=f"Transferred the erc-20 at address {erc_20_address} to the new owner of {recipient_address} from the owner {self.metadata.pair.address}.",
+            message=f"Transferred {amount} of the erc-20 at address {erc_20_address} to the new owner of {recipient_address} from the owner {self.metadata.pair.address}.",
             receipt=receipt
         )
         
         
-    def transfer_erc721(self, erc_721_address: str, recipient_address: str, token_id: int) -> WrittenTransactionResult:
+    def erc721(self, erc_721_address: str, recipient_address: str, token_id: int) -> WrittenTransactionResult:
         function_selector = self.api.keccak(text=PayFunctionSignatures.ERC_721_SAFE_TRANSFER_FROM.value)[:4].hex()
         encoded_params = encode(
             ["address", "address", "uint256"], 
             [self.metadata.pair.address, recipient_address, token_id]
         ).hex()
-        tx: EvmTransaction = {
-            "to": erc_721_address,
+        erc_721_checksum = Web3.to_checksum_address(erc_721_address)
+        tx: TxParams = {
+            "to": erc_721_checksum,
             "data": f"0x{function_selector}{encoded_params}"
         }
         receipt = self._send_evm_tx(tx)

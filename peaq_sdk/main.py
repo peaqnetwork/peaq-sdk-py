@@ -10,10 +10,10 @@ from peaq_sdk.did import Did
 from peaq_sdk.storage import Storage
 from peaq_sdk.rbac import Rbac
 
-from peaq_sdk.pay import Pay
-
+from peaq_sdk.transfer import Transfer
 from peaq_sdk.get_real import GetReal
 from peaq_sdk.machine_station import MachineStation
+
 from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
 from peaq_sdk.types.main import CreateInstanceOptions
 
@@ -52,7 +52,7 @@ class Main(Base):
         self.did: Did = Did(api, metadata)
         self.storage: Storage = Storage(api, metadata)
         self.rbac: Rbac = Rbac(api, metadata)
-        self.pay: Pay = Pay(self._api, self._metadata)
+        self.transfer: Transfer = Transfer(self._api, self._metadata)
     
     @classmethod
     def create_instance(cls,

@@ -26,10 +26,13 @@ from peaq_sdk.utils import peaq_proto
 from peaq_sdk.utils.utils import evm_to_address
 
 from substrateinterface.base import SubstrateInterface
+from substrateinterface.utils.ss58 import ss58_decode
 from web3 import Web3
 from web3.types import TxParams
 from eth_abi import encode
 from google.protobuf.json_format import MessageToDict
+import varint
+import base58
 
 class Did(Base):
     """
@@ -136,14 +139,14 @@ class Did(Base):
             
             
             
-    def read(self, name: str, address: Optional[str] = None, wss_base_url: Optional[str] = None) -> ReadDidResult:
+    def read(self, name: str, address: Optional[str] = None) -> ReadDidResult:
         """
         Reads (fetches) an on-chain DID identified by `name`. This method locates
         the DID document stored at `name` for the given user address.
 
         - EVM: Uses the EVM address (either from a local signer if present, or the
             passed `address` parameter). Because DID data is actually stored in the
-            Substrate-based registry, a valid `wss_base_url` must be provided to
+            Substrate-based registry, an evm wallet must be converted to a substrate wallet to
             temporarily connect and query the Substrate chain.
         - Substrate: Queries the DID registry directly via the existing Substrate connection
             (`self.api`). The address defaults to the local keypair's SS58 address
@@ -154,8 +157,7 @@ class Did(Base):
             address (Optional[str]): The address owning the DID. On EVM, this should
                 be a H160 address; on Substrate, an SS58 address. If not provided,
                 falls back to the local signer's address (if any).
-            wss_base_url (Optional[str]): A Substrate WebSocket URL required only
-                when reading DIDs on an EVM chain.
+
 
         Returns:
             ReadDidResult:
@@ -165,24 +167,20 @@ class Did(Base):
         Raises:
             TypeError:
                 If no valid address can be determined (no local signer and no `address`).
-            BaseUrlError:
-                If reading from an EVM chain but no `wss_base_url` is provided.
             GetDidError:
                 If the DID specified by `name` does not exist on-chain for `address`.
         """
         
         if self.metadata.chain_type is ChainType.EVM:
             evm_address = (
-                getattr(self.metadata.pair and not self.metadata.machine_station, 'address', address)
-                if self.metadata.pair
+                getattr(self.metadata.pair, 'address', address)
+                if self.metadata.pair and not self.metadata.machine_station
                 else address
             )
             if not evm_address:
                 raise TypeError(f"Address is set to {evm_address}. Please either set seed at instance creation or pass an address.")
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(evm_address)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
             display_address = evm_address
         else:
             owner_address = (
@@ -474,13 +472,22 @@ class Did(Base):
                 )
             verification_method.type = verification.type
             verification_method.controller = f"did:peaq:{address}"
-            verification_method.public_key_multibase = address
+            
+            # Use provided multibase or generate from signer
+            if verification.public_key_multibase:
+                verification_method.public_key_multibase = verification.public_key_multibase
+            else:
+                verification_method.public_key_multibase = address
+                # TODO: figure out when public key multibase in btc base58 is required
+                # verification_method.public_key_multibase = self._generate_multibase_for_verification(
+                #     address, verification.type
+                # )
             return verification_method
         
-        if verification.type not in ("Sr25519VerificationKey2020", "EcdsaSecp256k1RecoveryMethod2020"):
+        if verification.type not in ("Sr25519VerificationKey2020", "Ed25519VerificationKey2020"):
             raise ValueError(
                 "Substrate verification.type must be "
-                "'Ed25519VerificationKey2020', 'Sr25519VerificationKey2020', or 'EcdsaSecp256k1RecoveryMethod2020'"
+                "'Ed25519VerificationKey2020', or 'Sr25519VerificationKey2020'"
             )
         verification_method.type = verification.type
         verification_method.controller = f"did:peaq:{address}"
@@ -488,8 +495,10 @@ class Did(Base):
         if verification.public_key_multibase:
             verification_method.public_key_multibase = verification.public_key_multibase
         else:
-            # TODO calculate public key multibase from public key
-            verification_method.public_key_multibase = address
+            # Generate multibase from address and verification type
+            verification_method.public_key_multibase = self._generate_multibase_for_verification(
+                address, verification.type
+            )
         
         return verification_method
     
@@ -571,6 +580,120 @@ class Did(Base):
             proto_service.data = service.data
 
         return proto_service
+    
+    def _generate_sr25519_multibase(self, address: str) -> str:
+        """
+        Generates Sr25519 publicKeyMultibase from a Substrate SS58 address.
+        
+        Args:
+            address (str): SS58 address
+            
+        Returns:
+            str: publicKeyMultibase with 'z' prefix
+        """
+        # Decode SS58 address to get raw 32-byte public key
+        decoded_hex = ss58_decode(address)
+        public_key = bytes.fromhex(decoded_hex)
+        
+        # Varint-encode the multicodec prefix for sr25519 (0xef)
+        prefix = varint.encode(0xef)
+        
+        # Concatenate prefix + public key
+        prefixed_key = prefix + public_key
+        
+        # Base58-btc encode + 'z' prefix
+        multibase = 'z' + base58.b58encode(prefixed_key).decode()
+        return multibase
+    
+    def _generate_ed25519_multibase(self, address: str) -> str:
+        """
+        Generates Ed25519 publicKeyMultibase from a Substrate SS58 address.
+        
+        Args:
+            address (str): SS58 address
+            
+        Returns:
+            str: publicKeyMultibase with 'z' prefix
+        """
+        # Decode SS58 address to get raw 32-byte public key
+        decoded_hex = ss58_decode(address)
+        public_key = bytes.fromhex(decoded_hex)
+        
+        # Varint-encode the multicodec prefix for ed25519 (0xed)
+        prefix = varint.encode(0xed)
+        
+        # Concatenate prefix + public key
+        prefixed_key = prefix + public_key
+        
+        # Base58-btc encode + 'z' prefix
+        multibase = 'z' + base58.b58encode(prefixed_key).decode()
+        return multibase
+    
+    def _generate_ecdsa_multibase(self, address: str) -> str:
+        """
+        Generates ECDSA publicKeyMultibase from an EVM address using the connected signer.
+        
+        Args:
+            address (str): EVM address (used for validation, actual key comes from signer)
+            
+        Returns:
+            str: publicKeyMultibase with 'z' prefix
+            
+        Raises:
+            ValueError: If no EVM signer is available or signer doesn't match address
+        """
+        if not self.metadata.pair or not hasattr(self.metadata.pair, '_key_obj'):
+            raise ValueError(
+                "EVM signer required for ECDSA multibase generation. "
+                "Please provide a seed when creating the SDK instance."
+            )
+        
+        # Get compressed public key from the signer
+        compressed_pub_key = self.metadata.pair._key_obj.public_key.to_compressed_bytes()
+        
+        # Multicodec prefix for secp256k1-pub ([0xe7, 0x01])
+        prefix = bytes([0xE7, 0x01])
+        
+        # Concatenate prefix + key bytes
+        full = prefix + compressed_pub_key
+        
+        # Base58-btc encode and prepend 'z'
+        multibase = "z" + base58.b58encode(full).decode()
+        return multibase
+    
+    def _generate_multibase_for_verification(self, address: str, verification_type: str) -> str:
+        """
+        Generates the appropriate publicKeyMultibase based on verification type and chain.
+        
+        Args:
+            address (str): The address (EVM or SS58)
+            verification_type (str): The verification method type
+            
+        Returns:
+            str: Generated publicKeyMultibase
+            
+        Raises:
+            ValueError: If verification type is unsupported or required signer is missing
+        """
+        if verification_type == "EcdsaSecp256k1RecoveryMethod2020":
+            if self.metadata.chain_type == ChainType.EVM:
+                return self._generate_ecdsa_multibase(address)
+            else:
+                # For Substrate chains with ECDSA, we still need the actual public key
+                # For now, fall back to address until we have proper key extraction
+                return address
+        elif verification_type == "Ed25519VerificationKey2020":
+            if self.metadata.chain_type == ChainType.SUBSTRATE:
+                return self._generate_ed25519_multibase(address)
+            else:
+                raise ValueError("Ed25519VerificationKey2020 is only supported on Substrate chains")
+        elif verification_type == "Sr25519VerificationKey2020":
+            if self.metadata.chain_type == ChainType.SUBSTRATE:
+                return self._generate_sr25519_multibase(address)
+            else:
+                raise ValueError("Sr25519VerificationKey2020 is only supported on Substrate chains")
+        else:
+            raise ValueError(f"Unsupported verification type: {verification_type}")
     
     def _deserialize_did(self, data):
         """

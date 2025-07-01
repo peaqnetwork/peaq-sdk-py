@@ -7,13 +7,13 @@ from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
     PrecompileAddresses,
-    EvmTransaction,
     BuiltEvmTransactionResult,
     CallModule,
     WrittenTransactionResult,
     BuiltCallTransactionResult,
     BaseUrlError
 )
+from web3.types import TxParams
 from peaq_sdk.types.rbac import (
     RbacCallFunction,
     RbacFunctionSignatures,
@@ -66,7 +66,7 @@ class Rbac(Base):
                 [bytes.fromhex(role_id_bytes.hex()), bytes.fromhex(role_name_encoded)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -120,7 +120,7 @@ class Rbac(Base):
                 [bytes.fromhex(group_id_bytes.hex()), bytes.fromhex(group_name_encoded)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -174,7 +174,7 @@ class Rbac(Base):
                 [bytes.fromhex(permission_id_bytes.hex()), bytes.fromhex(permission_name_encoded)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -228,7 +228,7 @@ class Rbac(Base):
                 [bytes.fromhex(permission_id_bytes.hex()), bytes.fromhex(role_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -282,7 +282,7 @@ class Rbac(Base):
                 [bytes.fromhex(role_id_bytes.hex()), bytes.fromhex(group_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -336,7 +336,7 @@ class Rbac(Base):
                 [bytes.fromhex(role_id_bytes.hex()), bytes.fromhex(user_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -390,7 +390,7 @@ class Rbac(Base):
                 [bytes.fromhex(user_id_bytes.hex()), bytes.fromhex(group_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -427,12 +427,10 @@ class Rbac(Base):
                     call=call
                 )
                 
-    def fetch_role(self, owner: str, role_id: str, wss_base_url: Optional[str] = None) -> FetchResponseData:
+    def fetch_role(self, owner: str, role_id: str) -> FetchResponseData:
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -459,13 +457,11 @@ class Rbac(Base):
             enabled=ok['enabled']
         )
 
-    def fetch_group(self, owner: str, group_id: str, wss_base_url: Optional[str] = None) -> FetchResponseData:
+    def fetch_group(self, owner: str, group_id: str) -> FetchResponseData:
         """Fetches a group by owner and group id."""
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -492,13 +488,11 @@ class Rbac(Base):
             enabled=ok['enabled']
         )
 
-    def fetch_permission(self, owner: str, permission_id: str, wss_base_url: Optional[str] = None) -> FetchResponseData:
+    def fetch_permission(self, owner: str, permission_id: str) -> FetchResponseData:
         """Fetches a permission by owner and permission id."""
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -525,13 +519,11 @@ class Rbac(Base):
             enabled=ok['enabled']
         )
 
-    def fetch_roles(self, owner: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+    def fetch_roles(self, owner: str) -> List[FetchResponseData]:
         """Fetches all roles for the given owner."""
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -559,13 +551,11 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_groups(self, owner: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+    def fetch_groups(self, owner: str) -> List[FetchResponseData]:
         """Fetches all groups for the given owner."""
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -593,13 +583,11 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_permissions(self, owner: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+    def fetch_permissions(self, owner: str) -> List[FetchResponseData]:
         """Fetches all permissions for the given owner."""
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -627,16 +615,14 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_user_roles(self, owner: str, user_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseRole2User]:
+    def fetch_user_roles(self, owner: str, user_id: str) -> List[FetchResponseRole2User]:
         """Fetches all roles assigned to a user."""
         if len(user_id) != 32:
             raise GetRbacError("User Id length should be 32 char only")
             
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -664,16 +650,14 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_group_roles(self, owner: str, group_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseRole2Group]:
+    def fetch_group_roles(self, owner: str, group_id: str) -> List[FetchResponseRole2Group]:
         """Fetches all roles assigned to a group."""
         if len(group_id) != 32:
             raise GetRbacError("Group Id length should be 32 char only")
             
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -701,16 +685,14 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_user_groups(self, owner: str, user_id: str, wss_base_url: Optional[str] = None) -> List[ResponseFetchUserGroups]:
+    def fetch_user_groups(self, owner: str, user_id: str) -> List[ResponseFetchUserGroups]:
         """Fetches all groups assigned to a user."""
         if len(user_id) != 32:
             raise GetRbacError("User Id length should be 32 char only")
             
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -738,16 +720,14 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_role_permissions(self, owner: str, role_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseRole2Permission]:
+    def fetch_role_permissions(self, owner: str, role_id: str) -> List[FetchResponseRole2Permission]:
         """Fetches all permissions assigned to a role."""
         if len(role_id) != 32:
             raise GetRbacError("Role Id length should be 32 char only")
             
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -775,16 +755,14 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_user_permissions(self, owner: str, user_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+    def fetch_user_permissions(self, owner: str, user_id: str) -> List[FetchResponseData]:
         """Fetches all permissions available to a user (through direct role assignments and group memberships)."""
         if len(user_id) != 32:
             raise GetRbacError("User Id length should be 32 char only")
             
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -813,16 +791,14 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_group_permissions(self, owner: str, group_id: str, wss_base_url: Optional[str] = None) -> List[FetchResponseData]:
+    def fetch_group_permissions(self, owner: str, group_id: str) -> List[FetchResponseData]:
         """Fetches all permissions available to a group (through role assignments)."""
         if len(group_id) != 32:
             raise GetRbacError("Group Id length should be 32 char only")
             
         if self.metadata.chain_type is ChainType.EVM:
-            if not wss_base_url:
-                raise BaseUrlError(f"Must pass a wss base url when reading from EVM.")
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=wss_base_url, ss58_format=42)
+            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
         else:
             api = self.api
             owner_address = owner
@@ -865,7 +841,7 @@ class Rbac(Base):
                 [bytes.fromhex(role_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -913,7 +889,7 @@ class Rbac(Base):
                 [bytes.fromhex(group_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -961,7 +937,7 @@ class Rbac(Base):
                 [bytes.fromhex(permission_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -1010,7 +986,7 @@ class Rbac(Base):
                 [bytes.fromhex(role_id_bytes.hex()), bytes.fromhex(role_name_encoded)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -1062,7 +1038,7 @@ class Rbac(Base):
                 [bytes.fromhex(group_id_bytes.hex()), bytes.fromhex(group_name_encoded)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -1114,7 +1090,7 @@ class Rbac(Base):
                 [bytes.fromhex(permission_id_bytes.hex()), bytes.fromhex(permission_name_encoded)]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -1168,7 +1144,7 @@ class Rbac(Base):
                 [bytes.fromhex(permission_id_bytes.hex()), bytes.fromhex(role_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -1222,7 +1198,7 @@ class Rbac(Base):
                 [bytes.fromhex(role_id_bytes.hex()), bytes.fromhex(group_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -1276,7 +1252,7 @@ class Rbac(Base):
                 [bytes.fromhex(role_id_bytes.hex()), bytes.fromhex(user_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
@@ -1330,7 +1306,7 @@ class Rbac(Base):
                 [bytes.fromhex(user_id_bytes.hex()), bytes.fromhex(group_id_bytes.hex())]
             ).hex()
             
-            tx: EvmTransaction = {
+            tx: TxParams = {
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }

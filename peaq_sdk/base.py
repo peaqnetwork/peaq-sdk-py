@@ -209,12 +209,12 @@ class Base:
         else:
             raise ExtrinsicExecutionError("Failed to submit extrinsic after multiple attempts due to low priority.")
     
-    def _send_evm_tx(self, tx: dict, max_attempts: int = 5, timeout: int = 60) -> dict:
+    def _send_evm_tx(self, tx: TxParams, max_attempts: int = 5, timeout: int = 60) -> dict:
         """
         Sends an EVM transaction with dynamic EIP-1559 fees, retry logic, and error handling.
 
         Args:
-            tx (dict): Transaction dict with at minimum 'to' and 'data'.
+            tx (TxParams): Transaction parameters with at minimum 'to' and 'data'.
             max_attempts (int): Max retries on failure.
             timeout (int): Timeout in seconds per attempt.
 
