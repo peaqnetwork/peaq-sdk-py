@@ -6,3 +6,5 @@ protobuf==5.28.2
 python-dotenv==1.1.0
 build==1.2.2.post1
 pytest==8.3.4
+varint==1.0.2
+base58==2.1.1

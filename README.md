@@ -5,7 +5,8 @@ A robust Python SDK for seamless interaction with the peaq blockchain, supportin
 ## Features
 - DID creation and management
 - On-chain storage utilization
-- RBAC capabilities (coming soon)
+- RBAC (Role-Based Access Control) capabilities
+- Token transfer functionality
 - Universal Machine Time (coming soon)
 
 ## Installation
@@ -93,10 +94,7 @@ receipt = sdk.did.create(name="myDid", custom_document_fields=custom_fields)
 ```
 #### Read a DID
 ```python
-# EVM
-result = sdk.did.read(name="myDid", wss_base_url="wss://peaq.api.onfinality.io/public-ws")
-
-# Substrate
+# Works on both EVM and Substrate
 result = sdk.did.read(name="myDid")
 ```
 #### Update a DID
@@ -136,6 +134,71 @@ sdk.storage.update_item(item_type='key', item='new_value')
 #### Remove Item
 ```python
 sdk.storage.remove_item(item_type='key')
+```
+
+### Role-Based Access Control (RBAC)
+#### Create a Role
+```python
+# Create a role with auto-generated ID
+result = sdk.rbac.create_role(role_name="Admin")
+
+# Create a role with custom ID (must be 32 characters)
+custom_role_id = "admin_role_123456789012345678901"
+result = sdk.rbac.create_role(role_name="Admin", role_id=custom_role_id)
+```
+
+#### Fetch a Role
+```python
+# Read a role by owner address and role ID
+owner_address = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"  # Substrate address
+role_id = "admin_role_123456789012345678901"
+result = sdk.rbac.fetch_role(owner=owner_address, role_id=role_id)
+```
+
+#### Assign Role to User
+```python
+role_id = "admin_role_123456789012345678901"
+user_id = "user_id_12345678901234567890123"  # 32-character user ID
+result = sdk.rbac.assign_role_to_user(role_id=role_id, user_id=user_id)
+```
+
+### Token Transfer
+#### Native Token Transfer
+```python
+# Transfer native tokens to another address
+recipient = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"  # Can be Substrate or EVM address
+amount = 1.5  # Human-readable amount (e.g., 1.5 PEAQ)
+result = sdk.transfer.native(to=recipient, amount=amount)
+```
+
+#### ERC-20 Token Transfer
+```python
+# Transfer ERC-20 tokens (EVM only)
+erc20_contract = "0x1234567890123456789012345678901234567890"
+recipient = "0x9876543210987654321098765432109876543210"
+amount = 100.0  # Amount in human-readable format
+token_decimals = 18  # Token decimals (default: 18)
+
+result = sdk.transfer.erc20(
+    erc_20_address=erc20_contract,
+    recipient_address=recipient,
+    amount=amount,
+    token_decimals=token_decimals
+)
+```
+
+#### ERC-721 (NFT) Transfer
+```python
+# Transfer NFT tokens (EVM only)
+nft_contract = "0x1234567890123456789012345678901234567890"
+recipient = "0x9876543210987654321098765432109876543210"
+token_id = 42  # NFT token ID
+
+result = sdk.transfer.erc721(
+    erc_721_address=nft_contract,
+    recipient_address=recipient,
+    token_id=token_id
+)
 ```
 
 ## Security and Private Keys
