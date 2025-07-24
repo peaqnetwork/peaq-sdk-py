@@ -380,6 +380,7 @@ class Base:
 
         elif opts.mode == ConfirmationMode.CUSTOM:
             # Wait for user's target confirmations
+            CUSTOM_POLL_INTERVAL_MS = 1000
             starting_finalized = self._api.eth.get_block("finalized")
             if not starting_finalized:
                 raise Exception("Could not fetch finalized head")
@@ -398,7 +399,18 @@ class Base:
                     if confirmations_seen >= opts.confirmations:
                         break
                     
-                    time.sleep(1)  # Wait 1 second between checks
+                    # # Only emit status update if finalized head > inclusion block
+                    # if current_finalized['number'] > inclusion_block and on_status:
+                    #     status_update = self._create_status_update(
+                    #         status=TransactionStatus.IN_BLOCK,
+                    #         confirmation_mode=opts.mode,
+                    #         total_confirmations=confirmations_seen,
+                    #         tx_hash=tx_hash.hex(),
+                    #         receipt=dict(receipt)
+                    #     )
+                    #     self._emit_status_callback(on_status, False, status_update)
+                    
+                    time.sleep(CUSTOM_POLL_INTERVAL_MS / 1000)
                     
                 except Exception as e:
                     raise Exception(f"Error waiting for confirmations: {str(e)}")
@@ -434,33 +446,44 @@ class Base:
             return dict(canonical_receipt)
 
         elif opts.mode == ConfirmationMode.FINAL:
-            # Wait for finality
-            finality_blocks = 10  # Simple proxy for finality
-            for i in range(2, finality_blocks + 1):
-                time.sleep(1)
-                
-                if on_status:
-                    status_update = self._create_status_update(
-                        status=TransactionStatus.IN_BLOCK,
-                        confirmation_mode=opts.mode,
-                        total_confirmations=i,
-                        tx_hash=tx_hash.hex(),
-                        receipt=dict(receipt)
-                    )
-                    self._emit_status_callback(on_status, False, status_update)
+            # Poll until the finalized head >= inclusion block
+            FINALITY_POLL_INTERVAL_MS = 1000
+            starting_block = self._api.eth.get_block("finalized")
+            if not starting_block:
+                raise Exception('Could not get finalized block')
             
-            # Emit FINALIZED status
+            inclusion_block = receipt['blockNumber']
+            
+            # Wait until finalized head reaches inclusion block
+            while True:
+                finalized_head_final = self._api.eth.get_block("finalized")
+                if not finalized_head_final:
+                    raise Exception('Could not get finalized block')
+                
+                if finalized_head_final['number'] >= inclusion_block:
+                    break
+                    
+                time.sleep(FINALITY_POLL_INTERVAL_MS / 1000)  # Convert to seconds
+            
+            # Fetch new receipt after finalized head has passed inclusion block
+            final_receipt = self._api.eth.get_transaction_receipt(tx_hash)
+            if not final_receipt:
+                raise Exception("Could not fetch final receipt")
+            
+            final_confirmations = final_receipt['blockNumber'] - starting_block['number']
+            
+            # Emit finalized status callback
             if on_status:
                 status_update = self._create_status_update(
                     status=TransactionStatus.FINALIZED,
                     confirmation_mode=opts.mode,
-                    total_confirmations=finality_blocks,
+                    total_confirmations=final_confirmations,
                     tx_hash=tx_hash.hex(),
-                    receipt=dict(receipt)
+                    receipt=dict(final_receipt)
                 )
                 self._emit_status_callback(on_status, False, status_update)
             
-            return dict(receipt)
+            return dict(final_receipt)
 
         else:
             raise ValueError(f"Unknown confirmation mode: {opts.mode}")
