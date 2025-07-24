@@ -4,6 +4,7 @@ from .machine_station import MachineStationConfigKeys
 from .base import (
     TransactionStatus,
     ConfirmationMode,
+    TransactionOptions
 )
 
 
@@ -16,5 +17,6 @@ __all__ = [
     "Service", 
     "MachineStationConfigKeys",
     "TransactionStatus",
-    "ConfirmationMode"
+    "ConfirmationMode",
+    "TransactionOptions"
 ]

@@ -54,15 +54,15 @@ class TransactionOptions:
     """
     Options for customizing transaction behavior and gas parameters.
     
-    Gas & Fee Overrides:
-    - gasLimit: Manual gas limit (in wei). If omitted, SDK estimates gas.
+    Custom gas and fee parameters:
+    - gasLimit: Manual gas limit. If omitted, SDK estimates gas.
     - maxFeePerGas: Cap on total fee per gas unit (baseFee + priorityFee) 
     - maxPriorityFeePerGas: Miner tip per gas unit
     
     WARNING: Overriding gas parameters is for advanced users only.
     Improper values may cause transactions to fail, overpay, or stall.
     """
-    mode: ConfirmationMode = ConfirmationMode.FAST
+    mode: Optional[ConfirmationMode] = None
     confirmations: Optional[int] = None
     gas_limit: Optional[int] = None
     max_fee_per_gas: Optional[int] = None  
@@ -70,6 +70,10 @@ class TransactionOptions:
     
     def __post_init__(self):
         """Validate transaction options after initialization."""
+        # Set default mode if not provided
+        if self.mode is None:
+            self.mode = ConfirmationMode.FAST
+            
         if self.mode == ConfirmationMode.CUSTOM and self.confirmations is None:
             raise ValueError("confirmations must be set when using ConfirmationMode.CUSTOM")
         

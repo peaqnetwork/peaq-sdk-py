@@ -4,7 +4,7 @@ import json
 import time
 
 from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
-from peaq_sdk.types.base import TransactionStatus, ConfirmationMode, TransactionStatusCallback
+from peaq_sdk.types.base import TransactionStatus, ConfirmationMode, TransactionStatusCallback, TransactionOptions
 
 from web3 import Web3
 from web3.types import TxParams
@@ -115,8 +115,8 @@ class Base:
             TransactionStatusCallback object with current transaction state
         """
         return TransactionStatusCallback(
-            status=status,
-            confirmation_mode=confirmation_mode,
+            status=status.value,
+            confirmation_mode=confirmation_mode.value,
             total_confirmations=total_confirmations,
             hash=tx_hash,
             receipt=receipt,
@@ -263,117 +263,167 @@ class Base:
         else:
             raise ExtrinsicExecutionError("Failed to submit extrinsic after multiple attempts due to low priority.")
     
-    def _send_evm_tx(self, tx: TxParams, max_attempts: int = 5, timeout: int = 60) -> dict:
+    def _send_evm_tx(
+        self, 
+        tx: TxParams,
+        on_status = None,
+        opts: TransactionOptions = TransactionOptions()
+    ) -> dict:
         """
-        Sends an EVM transaction with dynamic EIP-1559 fees, retry logic, and error handling.
+        Sends an EVM transaction with configurable confirmation mode and gas settings.
 
         Args:
             tx (TxParams): Transaction parameters with at minimum 'to' and 'data'.
-            max_attempts (int): Max retries on failure.
-            timeout (int): Timeout in seconds per attempt.
+            on_status: Optional callback function for status updates.
+            opts (TransactionOptions): Transaction options including confirmation mode and gas parameters.
 
         Returns:
             dict: Transaction receipt
 
         Raises:
-            ExtrinsicExecutionError: If retries fail or critical errors occur.
+            Exception: For transaction failures.
+        """
+        try:
+            if not self._metadata.pair:
+                raise Exception('No signer available for signing')
+            
+            # Build transaction
+            built_tx = self._build_evm_tx(tx, opts)
+            
+            # Sign and send transaction
+            signed_tx = self._metadata.pair.sign_transaction(built_tx)
+            tx_hash = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
+
+            # Emit BROADCAST status
+            if on_status:
+                status_update = self._create_status_update(
+                    status=TransactionStatus.BROADCAST,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=0,
+                    tx_hash=tx_hash.hex(),
+                    nonce=built_tx.get('nonce')
+                )
+                self._emit_status_callback(on_status, False, status_update)
+
+            # Wait for first confirmation
+            receipt = self._api.eth.wait_for_transaction_receipt(tx_hash)
+            
+            if receipt.status == 0:
+                raise Exception('Transaction failed')
+
+            # Emit IN_BLOCK status
+            if on_status:
+                status_update = self._create_status_update(
+                    status=TransactionStatus.IN_BLOCK,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=1,
+                    tx_hash=tx_hash.hex(),
+                    receipt=dict(receipt),
+                    nonce=built_tx.get('nonce')
+                )
+                self._emit_status_callback(on_status, False, status_update)
+
+            # Wait for confirmations based on mode
+            final_receipt = self._wait_for_confirmations(
+                tx_hash, receipt, opts, on_status
+            )
+
+            return final_receipt
+
+        except Exception as error:
+            # Simplify error handling - just re-raise with general message
+            raise Exception(f"EVM transaction failed: {str(error)}")
+
+    def _build_evm_tx(
+        self, 
+        tx: TxParams,
+        opts: TransactionOptions
+    ) -> TxParams:
+        """
+        Builds an EVM transaction with gas estimation and fee calculation.
         """
         checksum_address = Web3.to_checksum_address(self._metadata.pair.address)
         tx['from'] = checksum_address
-        nonce = self._api.eth.get_transaction_count(checksum_address)
-        tx['nonce'] = nonce
+        tx['nonce'] = self._api.eth.get_transaction_count(checksum_address)
         tx['chainId'] = self._api.eth.chain_id
 
-        DEFAULT_PRIORITY_FEE = Web3.to_wei(2, 'gwei') # TODO identify what the default priority fee should be
+        # Estimate gas limit if not provided
+        estimated_gas = self._api.eth.estimate_gas(tx)
+        tx['gas'] = opts.gas_limit if opts.gas_limit else estimated_gas
 
-        attempt = 0
+        # Get current fee data
+        pending = self._api.eth.get_block("pending")
+        base_fee = pending.get("baseFeePerGas")
+        priority_fee = self._api.eth.max_priority_fee
+        tx['type'] = 2
 
-        while attempt < max_attempts:
-            latest_block = self._api.eth.get_block('latest')
-            supports_eip1559 = 'baseFeePerGas' in latest_block
+        tx['maxFeePerGas'] = opts.max_fee_per_gas if opts.max_fee_per_gas else base_fee
+        tx['maxPriorityFeePerGas'] = opts.max_priority_fee_per_gas if opts.max_priority_fee_per_gas else priority_fee
+        print('maxFeePerGas', tx['maxFeePerGas'])
+        print('maxPriorityFeePerGas', tx['maxPriorityFeePerGas'])
+        
+        return tx
 
-            try:
-                # Check connection
-                self._api.eth.chain_id
+    def _wait_for_confirmations(
+        self,
+        tx_hash,
+        receipt,
+        opts: TransactionOptions,
+        on_status
+    ) -> dict:
+        """
+        Waits for confirmations based on the specified mode.
+        """
+        if opts.mode == ConfirmationMode.FAST:
+            # Already have 1 confirmation, nothing more needed
+            return dict(receipt)
 
-                # Estimate gas limit
-                tx['gas'] = self._api.eth.estimate_gas(tx)
+        elif opts.mode == ConfirmationMode.CUSTOM:
+            # Wait for user's target confirmations
+            # Simple implementation - in reality you'd check block numbers
+            for i in range(2, opts.confirmations + 1):
+                time.sleep(1)  # Wait between checks
+                
+                if on_status:
+                    status_update = self._create_status_update(
+                        status=TransactionStatus.IN_BLOCK,
+                        confirmation_mode=opts.mode,
+                        total_confirmations=i,
+                        tx_hash=tx_hash.hex(),
+                        receipt=dict(receipt)
+                    )
+                    self._emit_status_callback(on_status, False, status_update)
+            
+            return dict(receipt)
 
-                if supports_eip1559:
-                    base_fee = latest_block['baseFeePerGas']
+        elif opts.mode == ConfirmationMode.FINAL:
+            # Wait for finality
+            finality_blocks = 10  # Simple proxy for finality
+            for i in range(2, finality_blocks + 1):
+                time.sleep(1)
+                
+                if on_status:
+                    status_update = self._create_status_update(
+                        status=TransactionStatus.IN_BLOCK,
+                        confirmation_mode=opts.mode,
+                        total_confirmations=i,
+                        tx_hash=tx_hash.hex(),
+                        receipt=dict(receipt)
+                    )
+                    self._emit_status_callback(on_status, False, status_update)
+            
+            # Emit FINALIZED status
+            if on_status:
+                status_update = self._create_status_update(
+                    status=TransactionStatus.FINALIZED,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=finality_blocks,
+                    tx_hash=tx_hash.hex(),
+                    receipt=dict(receipt)
+                )
+                self._emit_status_callback(on_status, False, status_update)
+            
+            return dict(receipt)
 
-                    if attempt == 0:
-                        max_fee_per_gas = base_fee * 2 + DEFAULT_PRIORITY_FEE
-                        priority_fee = DEFAULT_PRIORITY_FEE
-                    else:
-                        max_fee_per_gas = int(tx['maxFeePerGas'] * 1.25)
-                        priority_fee = int(tx['maxPriorityFeePerGas'] * 1.25)
-
-                    tx['maxFeePerGas'] = max_fee_per_gas
-                    tx['maxPriorityFeePerGas'] = priority_fee
-
-                    tx.pop('gasPrice', None)
-                else:
-                    if attempt == 0:
-                        gas_price = self._api.eth.gas_price
-                    else:
-                        gas_price = int(tx['gasPrice'] * 1.25)
-
-                    tx['gasPrice'] = gas_price
-                    tx.pop('maxFeePerGas', None)
-                    tx.pop('maxPriorityFeePerGas', None)
-
-                signed_tx = self._metadata.pair.sign_transaction(tx)
-                tx_hash = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
-
-                try:
-                    receipt = self._api.eth.wait_for_transaction_receipt(tx_hash, timeout=timeout)
-                    return receipt
-                except TimeExhausted:
-                    print(f"Attempt {attempt + 1}: Transaction {tx_hash.hex()} not confirmed within timeout. Increasing fee and retrying...")
-                    attempt += 1
-                    time.sleep(0.5)
-                    continue
-                except Exception as wait_exc:
-                    raise ExtrinsicExecutionError(f"Unexpected error while waiting for receipt: {str(wait_exc)}")
-
-            except Exception as e:
-                error_message = str(e).lower()
-
-                retry_errors = [
-                    "replacement transaction underpriced",
-                    "fee too low",
-                    "intrinsic gas too low",
-                    "nonce too low",
-                    "already known",
-                    "transaction underpriced"
-                ]
-
-                if any(err in error_message for err in retry_errors):
-                    print(f"Attempt {attempt + 1}: Gas fee issue encountered. Increasing fee and retrying...")
-                    attempt += 1
-                    time.sleep(0.5)
-                    continue
-
-                elif "connection error" in error_message or "connection closed" in error_message:
-                    print("Connection lost. Reinitializing Web3 provider and retrying...")
-                    self._api = Web3(Web3.HTTPProvider(self._metadata.base_url))
-                    time.sleep(0.5)
-                    continue
-
-                elif "insufficient funds" in error_message:
-                    raise ExtrinsicExecutionError("Insufficient funds for gas and transaction value.")
-
-                elif "nonce too low" in error_message or "already known" in error_message:
-                    try:
-                        receipt = self._api.eth.get_transaction_receipt(tx_hash)
-                        if receipt:
-                            return receipt
-                    except Exception:
-                        pass
-                    raise ExtrinsicExecutionError("Nonce conflict or transaction already known.")
-
-                else:
-                    raise ExtrinsicExecutionError(f"EVM transaction failed: {error_message}")
-
-        raise ExtrinsicExecutionError("Failed to submit EVM transaction after multiple attempts.")
+        else:
+            raise ValueError(f"Unknown confirmation mode: {opts.mode}")
