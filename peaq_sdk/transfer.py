@@ -2,6 +2,7 @@ from typing import Optional, Union
 from decimal import Decimal
 
 from peaq_sdk.base import Base
+from peaq_sdk.types.base import TransactionOptions
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
@@ -63,7 +64,13 @@ class Transfer(Base):
         raise ValueError(f"Address {addr!r} is neither a valid Substrate SS58 nor a valid EVM H160.")
 
 # native tokens
-    def native(self, to: str, amount: Union[int, float, str, Decimal]) -> WrittenTransactionResult:
+    def native(
+        self, 
+        to: str, 
+        amount: Union[int, float, str, Decimal],
+        status_callback = None,
+        tx_options = None
+    ) -> WrittenTransactionResult:
         """
         Transfers the native token from the signer to a target address.
 
@@ -77,6 +84,8 @@ class Transfer(Base):
         Args:
             to (str): The recipient address (either SS58 or EVM H160).
             amount (int | float | str | Decimal): Human-readable token amount (e.g., 1.5).
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
 
         Returns:
             WrittenTransactionResult: A message and transaction receipt object.
@@ -109,7 +118,8 @@ class Transfer(Base):
                     "to": Web3.to_checksum_address(to),
                     "value": raw,
                 }
-            receipt = self._send_evm_tx(tx)
+            opts = tx_options if tx_options else TransactionOptions()
+            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             return WrittenTransactionResult(
                 message=f"Sent {amount} native-token from {self.metadata.pair.address} to {to}.",
                 receipt=receipt
@@ -134,7 +144,15 @@ class Transfer(Base):
             )
 
 
-    def erc20(self, erc_20_address: str, recipient_address: str, amount: Union[int, float, str, Decimal], token_decimals: Union[int, float, str, Decimal] = None) -> WrittenTransactionResult:
+    def erc20(
+        self, 
+        erc_20_address: str, 
+        recipient_address: str, 
+        amount: Union[int, float, str, Decimal], 
+        token_decimals: Union[int, float, str, Decimal] = None,
+        status_callback = None,
+        tx_options = None
+    ) -> WrittenTransactionResult:
         raw = self._to_raw_amount(amount,
             token_decimals=(
                 18 if token_decimals == None
@@ -152,14 +170,22 @@ class Transfer(Base):
             "to": erc_20_checksum,
             "data": f"0x{function_selector}{encoded_params}"
         }
-        receipt = self._send_evm_tx(tx)
+        opts = tx_options if tx_options else TransactionOptions()
+        receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
         return WrittenTransactionResult(
             message=f"Transferred {amount} of the erc-20 at address {erc_20_address} to the new owner of {recipient_address} from the owner {self.metadata.pair.address}.",
             receipt=receipt
         )
         
         
-    def erc721(self, erc_721_address: str, recipient_address: str, token_id: int) -> WrittenTransactionResult:
+    def erc721(
+        self, 
+        erc_721_address: str, 
+        recipient_address: str, 
+        token_id: int,
+        status_callback = None,
+        tx_options = None
+    ) -> WrittenTransactionResult:
         function_selector = self.api.keccak(text=PayFunctionSignatures.ERC_721_SAFE_TRANSFER_FROM.value)[:4].hex()
         encoded_params = encode(
             ["address", "address", "uint256"], 
@@ -170,7 +196,8 @@ class Transfer(Base):
             "to": erc_721_checksum,
             "data": f"0x{function_selector}{encoded_params}"
         }
-        receipt = self._send_evm_tx(tx)
+        opts = tx_options if tx_options else TransactionOptions()
+        receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
         return WrittenTransactionResult(
             message=f"Transferred NFT at address {erc_721_address} to the new owner of {recipient_address} from the owner {self.metadata.pair.address}.",
             receipt=receipt

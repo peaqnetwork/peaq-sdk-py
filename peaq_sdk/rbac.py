@@ -3,6 +3,7 @@ import uuid
 import binascii
 
 from peaq_sdk.base import Base
+from peaq_sdk.types.base import TransactionOptions
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
@@ -50,7 +51,13 @@ class Rbac(Base):
         """
         super().__init__(api, metadata)
         
-    def create_role(self, role_name: str, role_id: Optional[str] = None) -> None:
+    def create_role(
+        self, 
+        role_name: str, 
+        role_id: Optional[str] = None,
+        status_callback = None,
+        tx_options = None
+    ):
         if role_id is None:
             role_id = str(uuid.uuid4())[:32]
         elif len(role_id) != 32:
@@ -71,7 +78,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully added the RBAC role under the role name of {role_name} with the role id of {role_id}.",
                     receipt=receipt
@@ -103,7 +111,13 @@ class Rbac(Base):
                     call=call
                 )
 
-    def create_group(self, group_name: str, group_id: Optional[str] = None):
+    def create_group(
+        self, 
+        group_name: str, 
+        group_id: Optional[str] = None,
+        status_callback = None,
+        tx_options = None
+    ):
         """Creates a new group of the given name at the group id."""
         if group_id is None:
             group_id = str(uuid.uuid4())[:32]
@@ -125,7 +139,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully added the RBAC group under the group name of {group_name} with the group id of {group_id}.",
                     receipt=receipt
@@ -157,7 +172,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def create_permission(self, permission_name: str, permission_id: Optional[str] = None):
+    def create_permission(self, permission_name: str, permission_id: Optional[str] = None,
+        status_callback = None,
+        tx_options = None
+    ):
         """Creates a new permission of the given name at the permission id."""
         if permission_id is None:
             permission_id = str(uuid.uuid4())[:32]
@@ -179,7 +197,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully added the RBAC permission under the permission name of {permission_name} with the permission id of {permission_id}.",
                     receipt=receipt
@@ -211,7 +230,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def assign_permission_to_role(self, permission_id: str, role_id: str):
+    def assign_permission_to_role(self, permission_id: str, role_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Assigns a permission to a role."""
         if len(permission_id) != 32:
             raise ValueError("Permission Id length should be 32 char only")
@@ -233,7 +255,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully assigned permission {permission_id} to role {role_id}.",
                     receipt=receipt
@@ -265,7 +288,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def assign_role_to_group(self, role_id: str, group_id: str):
+    def assign_role_to_group(self, role_id: str, group_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Assigns a role to a group."""
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
@@ -287,7 +313,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully assigned role {role_id} to group {group_id}.",
                     receipt=receipt
@@ -319,7 +346,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def assign_role_to_user(self, role_id: str, user_id: str):
+    def assign_role_to_user(self, role_id: str, user_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Assigns a role to a user."""
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
@@ -341,7 +371,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully assigned role {role_id} to user {user_id}.",
                     receipt=receipt
@@ -373,7 +404,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def assign_user_to_group(self, user_id: str, group_id: str):
+    def assign_user_to_group(self, user_id: str, group_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Assigns a user to a group."""
         if len(user_id) != 32:
             raise ValueError("User Id length should be 32 char only")
@@ -395,7 +429,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully assigned user {user_id} to group {group_id}.",
                     receipt=receipt
@@ -827,7 +862,10 @@ class Rbac(Base):
         
         return response_data
 
-    def disable_role(self, role_id: str):
+    def disable_role(self, role_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Disables a role."""
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
@@ -846,7 +884,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully disabled role {role_id}.",
                     receipt=receipt
@@ -875,7 +914,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def disable_group(self, group_id: str):
+    def disable_group(self, group_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Disables a group."""
         if len(group_id) != 32:
             raise ValueError("Group Id length should be 32 char only")
@@ -894,7 +936,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully disabled group {group_id}.",
                     receipt=receipt
@@ -923,7 +966,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def disable_permission(self, permission_id: str):
+    def disable_permission(self, permission_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Disables a permission."""
         if len(permission_id) != 32:
             raise ValueError("Permission Id length should be 32 char only")
@@ -942,7 +988,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully disabled permission {permission_id}.",
                     receipt=receipt
@@ -971,7 +1018,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def update_role(self, role_id: str, role_name: str):
+    def update_role(self, role_id: str, role_name: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Updates a role name."""
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
@@ -991,7 +1041,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully updated role {role_id} with name {role_name}.",
                     receipt=receipt
@@ -1023,7 +1074,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def update_group(self, group_id: str, group_name: str):
+    def update_group(self, group_id: str, group_name: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Updates a group name."""
         if len(group_id) != 32:
             raise ValueError("Group Id length should be 32 char only")
@@ -1043,7 +1097,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully updated group {group_id} with name {group_name}.",
                     receipt=receipt
@@ -1075,7 +1130,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def update_permission(self, permission_id: str, permission_name: str):
+    def update_permission(self, permission_id: str, permission_name: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Updates a permission name."""
         if len(permission_id) != 32:
             raise ValueError("Permission Id length should be 32 char only")
@@ -1095,7 +1153,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully updated permission {permission_id} with name {permission_name}.",
                     receipt=receipt
@@ -1127,7 +1186,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def unassign_permission_to_role(self, permission_id: str, role_id: str):
+    def unassign_permission_to_role(self, permission_id: str, role_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Unassigns a permission from a role."""
         if len(permission_id) != 32:
             raise ValueError("Permission Id length should be 32 char only")
@@ -1149,7 +1211,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully unassigned permission {permission_id} from role {role_id}.",
                     receipt=receipt
@@ -1181,7 +1244,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def unassign_role_to_group(self, role_id: str, group_id: str):
+    def unassign_role_to_group(self, role_id: str, group_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Unassigns a role from a group."""
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
@@ -1203,7 +1269,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully unassigned role {role_id} from group {group_id}.",
                     receipt=receipt
@@ -1235,7 +1302,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def unassign_role_to_user(self, role_id: str, user_id: str):
+    def unassign_role_to_user(self, role_id: str, user_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Unassigns a role from a user."""
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
@@ -1257,7 +1327,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully unassigned role {role_id} from user {user_id}.",
                     receipt=receipt
@@ -1289,7 +1360,10 @@ class Rbac(Base):
                     call=call
                 )
 
-    def unassign_user_to_group(self, user_id: str, group_id: str):
+    def unassign_user_to_group(self, user_id: str, group_id: str,
+        status_callback = None,
+        tx_options = None
+    ):
         """Unassigns a user from a group."""
         if len(user_id) != 32:
             raise ValueError("User Id length should be 32 char only")
@@ -1311,7 +1385,8 @@ class Rbac(Base):
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully unassigned user {user_id} from group {group_id}.",
                     receipt=receipt

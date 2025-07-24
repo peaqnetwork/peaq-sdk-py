@@ -198,7 +198,12 @@ class Storage(Base):
 
 
         
-    def update_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def update_item(
+        self, 
+        options: dict,
+        status_callback = None,
+        tx_options = None
+    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Updates an existing item under `item_type` in on-chain storage by
         replacing its value with `item`.
@@ -208,8 +213,9 @@ class Storage(Base):
             pallet.
 
         Args:
-            item_type (str): The key used for the on-chain item.
-            item (object): The new value for that key (JSON-stringified if not a str).
+            options (dict): Dictionary containing 'item_type' and 'item' keys.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -218,6 +224,10 @@ class Storage(Base):
                 - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
                     but not signed (no local signer). Returned with message and tx/call.
         """        
+        # Extract values from options
+        item_type = options['item_type']
+        item = options['item']
+        
         item_string = item if isinstance(item, str) else json.dumps(item)
         
         if self.metadata.chain_type is ChainType.EVM:
@@ -237,7 +247,8 @@ class Storage(Base):
             
             if self.metadata.pair:
                 account = self.metadata.pair
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully updated the storage item type {item_type} with item {item} for the address {account.address}.",
                     receipt=receipt
