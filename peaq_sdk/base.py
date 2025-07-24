@@ -1,9 +1,10 @@
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
 import ast
 import json
 import time
 
 from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
+from peaq_sdk.types.base import TransactionStatus, ConfirmationMode, TransactionStatusCallback
 
 from web3 import Web3
 from web3.types import TxParams
@@ -73,34 +74,55 @@ class Base:
         else:
             raise ValueError('Invalid chain type')
 
-    def _create_key_pair(self, seed: str):
+    def _emit_status_callback(
+        self,
+        on_status,
+        cancelled: bool,
+        status_update: TransactionStatusCallback
+    ) -> None:
         """
-        Generates a blockchain key pair from a seed string.
-
-        For EVM chains, interprets `seed` as a hex private key and returns an
-        `eth_account.Account`. For Substrate chains, treats `seed` as a BIP39
-        mnemonic (12 or 24 words) and returns a `substrateinterface.Keypair`.
-
+        Emit status callback if provided and not cancelled.
+        
         Args:
-            chain_type (ChainType): The target chain type (EVM or SUBSTRATE).
-            seed (str): Hex private key (EVM) or mnemonic phrase (Substrate).
-
-        Returns:
-            Account | Keypair: A signing key pair for transactions.
-
-        Raises:
-            ValueError: If `seed` is empty or None.
+            on_status: Optional callback function
+            cancelled: Whether callbacks are cancelled
+            status_update: Status update data
         """
-        if not seed:
-            raise ValueError('Seed is required')
-        if self._metadata.chain_type is ChainType.EVM:
-            self._metadata.pair = Account.from_key(seed)
-        else:
-            self._metadata.pair = Keypair.create_from_mnemonic(
-                seed,
-                ss58_format=42,
-                crypto_type=KeypairType.SR25519
-            )
+        if on_status and not cancelled:
+            on_status(status_update)
+    
+    def _create_status_update(
+        self,
+        status: TransactionStatus,
+        confirmation_mode: ConfirmationMode,
+        total_confirmations: int,
+        tx_hash: str,
+        receipt: Optional[Dict[str, Any]] = None,
+        nonce: Optional[int] = None
+    ) -> TransactionStatusCallback:
+        """
+        Create a status update object for callbacks.
+        
+        Args:
+            status: Current transaction status
+            confirmation_mode: Transaction confirmation mode
+            total_confirmations: Number of confirmations seen
+            tx_hash: Transaction hash
+            receipt: Optional transaction receipt
+            nonce: Optional transaction nonce
+            
+        Returns:
+            TransactionStatusCallback object with current transaction state
+        """
+        return TransactionStatusCallback(
+            status=status,
+            confirmation_mode=confirmation_mode,
+            total_confirmations=total_confirmations,
+            hash=tx_hash,
+            receipt=receipt,
+            nonce=nonce
+        )
+
             
     def _resolve_address(self, address: Optional[str] = None) -> str:
             """
