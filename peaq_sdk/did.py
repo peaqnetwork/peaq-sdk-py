@@ -1,6 +1,7 @@
 from typing import Optional, Union
 
 from peaq_sdk.base import Base
+from peaq_sdk.types.base import TransactionOptions
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
@@ -51,7 +52,14 @@ class Did(Base):
         """
         super().__init__(api, metadata)
         
-    def create(self, name: str, custom_document_fields: CustomDocumentFields, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def create(
+        self, 
+        name: str, 
+        custom_document_fields: CustomDocumentFields, 
+        address: Optional[str] = None,
+        status_callback = None,
+        tx_options = None
+    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Creates a new Decentralized Identifier (DID) on-chain with the specified `name`
         and `custom_document_fields`.
@@ -66,6 +74,8 @@ class Did(Base):
                 in the DID document.
             address (Optional[str]): An optional address if no local keypair is present.
                 On EVM, this should be an H160 address. On Substrate, a SS58 address.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -102,7 +112,8 @@ class Did(Base):
             }
             
             if self.metadata.pair and not self.metadata.machine_station:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully added the DID under the name {name} for user {user_address}.",
                     receipt=receipt
@@ -218,7 +229,14 @@ class Did(Base):
         )
 
 
-    def update(self, name: str, custom_document_fields: CustomDocumentFields, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def update(
+        self, 
+        name: str, 
+        custom_document_fields: CustomDocumentFields, 
+        address: Optional[str] = None,
+        status_callback = None,
+        tx_options = None
+    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Updates an existing DID identified by `name`, overwriting the entire DID
         document with new `custom_document_fields`. Use caution, as all existing
@@ -234,6 +252,8 @@ class Did(Base):
                 embed in the DID document. These fully replace the prior document.
             address (Optional[str]): An optional address if no local keypair is present.
                 On EVM, this should be an H160 address. On Substrate, a SS58 address.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -272,7 +292,8 @@ class Did(Base):
             }
             
             if self.metadata.pair:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully updated the DID under the name {name} for user {user_address}.",
                     receipt=receipt
@@ -309,7 +330,13 @@ class Did(Base):
 
 
     
-    def remove(self, name: str, address: Optional[str] = None) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def remove(
+        self, 
+        name: str, 
+        address: Optional[str] = None,
+        status_callback = None,
+        tx_options = None
+    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Removes an existing on-chain DID identified by `name`. Once removed,
         the DID data is no longer accessible via subsequent reads.
@@ -322,6 +349,8 @@ class Did(Base):
             name (str): The DID name or alias to remove from the chain.
             address (Optional[str]): An optional address if no local keypair is present.
                 On EVM, this should be an H160 address. On Substrate, a SS58 address.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -347,7 +376,8 @@ class Did(Base):
             }
             
             if self.metadata.pair and not self.metadata.machine_station:
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully removed the DID under the name {name} for user {user_address}.",
                     receipt=receipt
