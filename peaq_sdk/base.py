@@ -359,8 +359,6 @@ class Base:
 
         tx['maxFeePerGas'] = opts.max_fee_per_gas if opts.max_fee_per_gas else base_fee
         tx['maxPriorityFeePerGas'] = opts.max_priority_fee_per_gas if opts.max_priority_fee_per_gas else priority_fee
-        print('maxFeePerGas', tx['maxFeePerGas'])
-        print('maxPriorityFeePerGas', tx['maxPriorityFeePerGas'])
         
         return tx
 
