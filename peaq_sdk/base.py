@@ -380,21 +380,58 @@ class Base:
 
         elif opts.mode == ConfirmationMode.CUSTOM:
             # Wait for user's target confirmations
-            # Simple implementation - in reality you'd check block numbers
-            for i in range(2, opts.confirmations + 1):
-                time.sleep(1)  # Wait between checks
-                
-                if on_status:
-                    status_update = self._create_status_update(
-                        status=TransactionStatus.IN_BLOCK,
-                        confirmation_mode=opts.mode,
-                        total_confirmations=i,
-                        tx_hash=tx_hash.hex(),
-                        receipt=dict(receipt)
-                    )
-                    self._emit_status_callback(on_status, False, status_update)
+            starting_finalized = self._api.eth.get_block("finalized")
+            if not starting_finalized:
+                raise Exception("Could not fetch finalized head")
             
-            return dict(receipt)
+            inclusion_block = receipt['blockNumber']
+            
+            # Wait for the finalized head to advance by the required confirmations
+            while True:
+                try:
+                    current_finalized = self._api.eth.get_block("finalized")
+                    if not current_finalized:
+                        raise Exception("Could not fetch current finalized head")
+                    
+                    confirmations_seen = current_finalized['number'] - starting_finalized['number'] + 1
+                    
+                    if confirmations_seen >= opts.confirmations:
+                        break
+                    
+                    time.sleep(1)  # Wait 1 second between checks
+                    
+                except Exception as e:
+                    raise Exception(f"Error waiting for confirmations: {str(e)}")
+            
+            # Validate the receipt is still canonical to guard against chain reorgs
+            try:
+                canonical_receipt = self._api.eth.get_transaction_receipt(tx_hash)
+                if not canonical_receipt:
+                    raise Exception('Could not fetch canonical transaction receipt')
+            except Exception:
+                canonical_receipt = receipt
+            
+            # Final finalized head check
+            finalized_head = self._api.eth.get_block("finalized")
+            if not finalized_head:
+                raise Exception("Could not fetch finalized head")
+            
+            # Check if finalized head is at or ahead of inclusion block
+            confirmations_seen = finalized_head['number'] - starting_finalized['number'] + 1
+            status = TransactionStatus.FINALIZED if finalized_head['number'] >= inclusion_block else TransactionStatus.IN_BLOCK
+            
+            # Emit final custom confirmations callback
+            if on_status:
+                status_update = self._create_status_update(
+                    status=status,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=confirmations_seen,
+                    tx_hash=tx_hash.hex(),
+                    receipt=dict(canonical_receipt)
+                )
+                self._emit_status_callback(on_status, False, status_update)
+            
+            return dict(canonical_receipt)
 
         elif opts.mode == ConfirmationMode.FINAL:
             # Wait for finality
