@@ -29,6 +29,7 @@ class MachineStationConfigKeys(str, Enum):
 class DeployedSmartAccountResult(WrittenTransactionResult):
     """Result object for smart account deployment containing both transaction info and the deployed address"""
     deployed_address: str
+    success: bool
 
 # Base dataclass for transaction data objects
 @dataclass

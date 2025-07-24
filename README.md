@@ -72,7 +72,7 @@ Read operations are able to perform without a seed/private key being set.
 They query the item and return it to the user.
 
 Below are quick examples how to use the sdk assuming the seed is set. For a more detailed
-tutorial please checkout our Python SDK Reference.
+tutorial please checkout our [Python SDK Reference](https://docs.peaq.xyz/sdk-reference/home).
 
 ### Decentralized Identifiers (DID)
 #### Create a DID

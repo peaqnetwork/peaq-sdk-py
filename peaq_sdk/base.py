@@ -9,6 +9,7 @@ from web3 import Web3
 from web3.types import TxParams
 from web3.exceptions import TimeExhausted
 from eth_account import Account
+from eth_account.signers.base import BaseAccount
 from substrateinterface.base import SubstrateInterface, GenericCall
 from substrateinterface.keypair import Keypair, KeypairType
 from substrateinterface.exceptions import SubstrateRequestException
@@ -41,6 +42,37 @@ class Base:
         """Allows access to the same metadata object across the sdk using self.metadata"""
         return self._metadata
     
+    def _set_signer(self, auth: Union[BaseAccount, Keypair]):
+        """
+        Sets the signer from auth input - handles BaseAccount or Keypair.
+        
+        Args:
+            auth: BaseAccount instance (EVM) or Keypair instance (Substrate)
+            
+        Returns:
+            BaseAccount | Keypair: The configured signer
+            
+        Raises:
+            ValueError: If auth is invalid or incompatible with chain type
+        """
+        if not auth:
+            raise ValueError('Authorization method is required')
+
+        if self._metadata.chain_type is ChainType.EVM:
+            if isinstance(auth, BaseAccount):
+                self._metadata.pair = auth
+                return auth
+            else:
+                raise ValueError('Invalid signer type for EVM chain. Expected BaseAccount.')
+        elif self._metadata.chain_type is ChainType.SUBSTRATE:
+            if isinstance(auth, Keypair):
+                self._metadata.pair = auth
+                return auth
+            else:
+                raise ValueError('Invalid signer type for Substrate chain. Expected Keypair.')
+        else:
+            raise ValueError('Invalid chain type')
+
     def _create_key_pair(self, seed: str):
         """
         Generates a blockchain key pair from a seed string.
