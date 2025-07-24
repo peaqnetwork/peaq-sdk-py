@@ -16,6 +16,10 @@ from peaq_sdk.machine_station import MachineStation
 
 from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
 from peaq_sdk.types.main import CreateInstanceOptions
+from peaq_sdk.types.base import (
+    TransactionStatus, 
+    ConfirmationMode
+)
 
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface, GenericCall
@@ -33,6 +37,12 @@ class Main(Base):
     It inherits from Base, which contains common logic for both EVM and Substrate operations
     with enhanced batch processing and transaction control.
     """
+    
+    # Expose enums and types at class level for easy access
+    TransactionStatus = TransactionStatus
+    ConfirmationMode = ConfirmationMode
+    ChainType = ChainType
+    
     def __init__(self, base_url: str, chain_type: Optional[ChainType], machine_station: Optional[ChainType] = False) -> None:
         """
         Initializes the Main class, representing the primary interface for the SDK.
