@@ -1,11 +1,10 @@
 """
-Transaction-related types and enums for the PEAQ SDK.
-Defines confirmation modes, transaction status, callback types, and transaction options.
+Base types for transaction status and callbacks
 """
 
-from enum import Enum
-from typing import Optional, Union, Protocol, runtime_checkable
 from dataclasses import dataclass, asdict
+from typing import Optional, runtime_checkable, Protocol
+from enum import Enum
 
 class TransactionStatus(Enum):
     """
@@ -108,4 +107,4 @@ class SubstrateTransactionResult:
     total_confirmations: int
 
 # Type alias for transaction results
-TransactionResult = Union[EvmTransactionResult, SubstrateTransactionResult] 
+# TransactionResult = Union[EvmTransactionResult, SubstrateTransactionResult] 

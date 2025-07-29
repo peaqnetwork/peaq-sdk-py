@@ -198,8 +198,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Development
 ### Virtual Environment
 ```
-python3 -m venv working_env
-source working_env/bin/activate
+python3 -m venv working_env_msf
+source working_env_msf/bin/activate
+```
+```
+python3 -m venv working_env_sdk
+source working_env_sdk/bin/activate
 ```
 ### Build Package
 ```

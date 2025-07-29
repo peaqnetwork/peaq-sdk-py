@@ -1,9 +1,10 @@
 """TODO"""
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from enum import Enum
-from peaq_msf.types.common import WrittenTransactionResult
+from .common import WrittenTransactionResult, TxOptions, EvmSendResult
+from .base import TransactionStatusCallback
 from web3.types import TxParams
 from eth_utils import keccak
 
@@ -25,11 +26,11 @@ class MachineStationConfigKeys(str, Enum):
     MIN_BALANCE_KEY = keccak(text="MIN_BALANCE").hex() 
     FUNDING_AMOUNT_KEY = keccak(text="FUNDING_AMOUNT").hex()
 
-@dataclass
-class DeployedSmartAccountResult(WrittenTransactionResult):
+@dataclass(kw_only=True)
+class DeployedSmartAccountResult(EvmSendResult):
     """Result object for smart account deployment containing both transaction info and the deployed address"""
+    message: str
     deployed_address: str
-    success: bool
 
 # Base dataclass for transaction data objects
 @dataclass
@@ -97,3 +98,77 @@ class EIP712SignableMessage:
     types: Dict[str, Any]
     message: Dict[str, Any]
     primaryType: str
+
+# Result types
+@dataclass(kw_only=True)
+class MachineStationWriteResult(WrittenTransactionResult):
+    """Result for machine station write operations"""
+    pass
+
+
+# Admin signature options
+@dataclass
+class AdminSignDeployMachineSmartAccountOptions:
+    """Options for admin signing machine smart account deployment"""
+    machine_account_owner_address: str
+    nonce: int
+    note: Optional[str] = None
+
+@dataclass
+class AdminSignTransferMachineStationBalanceOptions:
+    """Options for admin signing machine station balance transfer"""
+    new_machine_station_address: str
+    nonce: int
+
+@dataclass
+class AdminSignTransactionOptions:
+    """Options for admin signing transaction execution"""
+    target: str
+    calldata: str
+    value: int
+    nonce: int
+
+@dataclass
+class AdminSignMachineTransactionOptions:
+    """Options for admin signing machine transaction"""
+    machine_account_address: str
+    target: str
+    calldata: str
+    value: int
+    nonce: int
+    refund_amount: Optional[int] = 0
+
+@dataclass
+class AdminSignMachineBatchTransactionsOptions:
+    """Options for admin signing batch machine transactions"""
+    machine_account_addresses: List[str]
+    targets: List[str]
+    calldata_list: List[str]
+    values: List[int]
+    nonce: int
+
+@dataclass
+class AdminSignTransferMachineBalanceOptions:
+    """Options for admin signing machine balance transfer"""
+    machine_account_address: str
+    recipient_address: str
+    amount: int
+    nonce: int
+
+# Machine signature options
+@dataclass
+class MachineSignMachineTransactionOptions:
+    """Options for machine owner signing machine transaction"""
+    machine_account_address: str
+    target: str
+    calldata: str
+    value: int
+    nonce: int
+
+@dataclass
+class MachineSignTransferMachineBalanceOptions:
+    """Options for machine owner signing balance transfer"""
+    machine_account_address: str
+    recipient_address: str
+    amount: int
+    nonce: int

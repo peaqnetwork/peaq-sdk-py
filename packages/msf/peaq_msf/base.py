@@ -4,8 +4,8 @@ import json
 import time
 from hexbytes import HexBytes
 
-from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
-from peaq_sdk.types.base import TransactionStatus, ConfirmationMode, TransactionStatusCallback, TransactionOptions
+from .types.common import ChainType, SDKMetadata
+from .types.base import TransactionStatus, ConfirmationMode, TransactionStatusCallback, TransactionOptions
 
 from web3 import Web3
 from web3.types import TxParams

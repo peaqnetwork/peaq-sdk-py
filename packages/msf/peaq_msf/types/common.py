@@ -1,59 +1,60 @@
-"""commonly shared objects across the sdk"""
-# python native imports
+"""
+Common types and enums for the MSF SDK
+"""
+
 from enum import Enum
-from typing import Optional
 from dataclasses import dataclass
+from typing import Optional, Dict, Any
+from eth_account.signers.base import BaseAccount
 
+from .base import ConfirmationMode
 
-# 3rd party imports
-from eth_account import Account
-from web3.types import TxParams
-
-
-class ChainType(Enum):
+class ChainType(str, Enum):
+    """Supported blockchain types"""
     EVM = "evm"
     SUBSTRATE = "substrate"
 
-# Used for EVM calls
-class PrecompileAddresses(str, Enum):
-    DID = "0x0000000000000000000000000000000000000800"
-    STORAGE = "0x0000000000000000000000000000000000000801"
-    RBAC = "0x0000000000000000000000000000000000000802"
-    IERC20 = "0x0000000000000000000000000000000000000809"
-
-# Used for Substrate calls
-class CallModule(str, Enum):
-    PEAQ_DID = 'PeaqDid'
-    PEAQ_STORAGE = 'PeaqStorage'
-    PEAQ_RBAC = 'PeaqRbac'
-    
-    # Add more modules as needed
 @dataclass
 class SDKMetadata:
-    chain_type: Optional[ChainType]
+    """Metadata for SDK configuration"""
     base_url: str
-    pair: Optional[Account]
-    machine_station: bool
-# EVM Transaction type - using Web3.py native TxParams (equivalent to SubstrateInterface's GenericCall)
+    chain_type: ChainType
+    pair: Optional[BaseAccount] = None
+    machine_station: bool = False
+
 
 @dataclass
-class WrittenTransactionResult():
-    message: str
-    receipt: dict  # Backwards compatibility with dict
+class CreateInstanceOptions:
+    """Options for creating an MSF SDK instance"""
+    base_url: str
+    machine_station_address: str
+    station_admin: BaseAccount
+    station_manager: Optional[BaseAccount] = None
+
 
 @dataclass
-class BuiltEvmTransactionResult():
+class TxOptions:
+    """Transaction options for EVM transactions"""
+    mode: Optional[ConfirmationMode] = None
+    confirmations: Optional[int] = None
+    gas_limit: Optional[int] = None
+    max_fee_per_gas: Optional[int] = None
+    max_priority_fee_per_gas: Optional[int] = None
+
+
+@dataclass(kw_only=True)
+class EvmSendResult:
+    """Base result for EVM transaction sends"""
+    tx_hash: str
+    receipt: Optional[Dict[str, Any]] = None
+    unsubscribe: Optional[callable] = None
+
+
+@dataclass
+class WrittenTransactionResult:
+    """Base result for written transactions"""
     message: str
-    tx: TxParams
-    
-class ExtrinsicExecutionError(Exception):
-    """Raised when an extrinsic fails to execute successfully on the blockchain."""
-    pass
-
-class SeedError(Exception):
-    """Raised when there is no seed set for the write operation."""
-    pass
-
-class BaseUrlError(Exception):
-    """Raised when an incorrect Base Url is set."""
-    pass
+    success: bool
+    transaction_hash: Optional[str] = None
+    block_number: Optional[int] = None
+    gas_used: Optional[int] = None

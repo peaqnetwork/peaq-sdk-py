@@ -1,7 +1,8 @@
 __pycache__
 .pytest_cache
 
-working_env
+working_env_sdk
+working_env_msf
 .env
 venv/
 .venv/
