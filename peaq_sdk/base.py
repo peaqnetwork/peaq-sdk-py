@@ -2,6 +2,7 @@ from typing import Optional, Union, Dict, Any
 import ast
 import json
 import time
+from hexbytes import HexBytes
 
 from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
 from peaq_sdk.types.base import TransactionStatus, ConfirmationMode, TransactionStatusCallback, TransactionOptions
@@ -46,13 +47,13 @@ class Base:
     def _set_signer(self, auth: Union[BaseAccount, Keypair]):
         """
         Sets the signer from auth input - handles BaseAccount or Keypair.
-        
+
         Args:
             auth: BaseAccount instance (EVM) or Keypair instance (Substrate)
-            
+
         Returns:
             BaseAccount | Keypair: The configured signer
-            
+
         Raises:
             ValueError: If auth is invalid or incompatible with chain type
         """
@@ -89,7 +90,7 @@ class Base:
             status_update: Status update data
         """
         if on_status and not cancelled:
-            on_status(status_update)
+            on_status(status_update.to_dict(self._clean_callback_data))
     
     def _create_status_update(
         self,
@@ -122,6 +123,29 @@ class Base:
             receipt=receipt,
             nonce=nonce
         )
+
+    def _clean_callback_data(self, obj: Any) -> Any:
+        """
+        Recursively clean callback data by converting HexBytes to hex strings,
+        AttributeDict to dict, etc. for JSON serialization.
+        
+        Args:
+            obj: Object to clean (can be dict, list, HexBytes, AttributeDict, etc.)
+            
+        Returns:
+            Cleaned object suitable for JSON serialization
+        """
+        if isinstance(obj, HexBytes):
+            return obj.hex()
+        if hasattr(obj, '__dict__') and not isinstance(obj, (str, int, float, bool)):
+            # Handle AttributeDict and similar objects
+            return self._clean_callback_data(dict(obj))
+        if isinstance(obj, dict):
+            return {k: self._clean_callback_data(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self._clean_callback_data(v) for v in obj]
+        return obj
+
 
             
     def _resolve_address(self, address: Optional[str] = None) -> str:

@@ -11,7 +11,6 @@ from peaq_sdk.storage import Storage
 from peaq_sdk.rbac import Rbac
 
 from peaq_sdk.transfer import Transfer
-from peaq_sdk.get_real import GetReal
 from peaq_sdk.machine_station import MachineStation
 
 from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
@@ -166,49 +165,6 @@ class Main(Base):
             sdk=sdk,
             machine_station_address=machine_station_address,
             machine_station_owner_private_key=auth.key.hex(),
-            api=sdk.api,
-            metadata=sdk.metadata
-        )
-        return sdk
-
-    
-    @classmethod
-    def get_real_instance(
-        cls,
-        base_url: str,
-        machine_station_address: str,
-        auth: BaseAccount,
-        service_url: str,
-        api_key: str,
-        project_api_key: str,
-        ) -> Main:
-        """
-        Creates a new Get Real instance for DePINs in the campaign. Utilizes the user deployed Machine Station Factory and is
-        only EVM compatible.
-
-        Args:
-            base_url (str): The connection URL for the blockchain.
-            machine_station_address (str): The address of the deployed contract for the machine station factory.
-            auth (BaseAccount): Web3 account object for the admin account.
-            service_url (str): URL used to connect to peaq's campaign service.
-            api_key (str): Key used to provide authentication with the peaq service.
-            project_api_key (str): Key used to provide authentication for a specific project.
-
-        Returns:
-            Main: An initialized SDK object ready for executing blockchain operations.
-        """
-        # Initialize SDK with EVM chain type
-        sdk = cls(base_url, ChainType.EVM, machine_station=True)
-        sdk._initialize_signer(auth)
-        
-        # Create GetReal instance with machine station functionality
-        sdk.get_real = GetReal(
-            sdk=sdk,
-            machine_station_address=machine_station_address,
-            machine_station_owner_private_key=auth.key.hex(),
-            service_url=service_url,
-            api_key=api_key,
-            project_api_key=project_api_key,
             api=sdk.api,
             metadata=sdk.metadata
         )

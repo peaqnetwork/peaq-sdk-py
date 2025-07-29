@@ -5,7 +5,7 @@ Defines confirmation modes, transaction status, callback types, and transaction 
 
 from enum import Enum
 from typing import Optional, Union, Protocol, runtime_checkable
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 class TransactionStatus(Enum):
     """
@@ -34,6 +34,13 @@ class TransactionStatusCallback:
     hash: str
     receipt: Optional[dict] = None
     nonce: Optional[int] = None
+    
+    def to_dict(self, clean_fn=None) -> dict:
+        """
+        Convert to a dictionary. Optionally clean with a provided function.
+        """
+        raw_dict = asdict(self)
+        return clean_fn(raw_dict) if clean_fn else raw_dict
 
 @runtime_checkable
 class StatusCallback(Protocol):
