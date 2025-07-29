@@ -1,6 +1,5 @@
 from typing import Optional, List
 import uuid
-import binascii
 
 from peaq_sdk.base import Base
 from peaq_sdk.types.base import TransactionOptions
@@ -14,7 +13,6 @@ from peaq_sdk.types.common import (
     BuiltCallTransactionResult,
     BaseUrlError
 )
-from web3.types import TxParams
 from peaq_sdk.types.rbac import (
     RbacCallFunction,
     RbacFunctionSignatures,
@@ -31,6 +29,7 @@ from peaq_sdk.utils.utils import evm_to_address
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface
 from web3 import Web3
+from web3.types import TxParams
 from eth_abi import encode
 
 

@@ -1,96 +1,92 @@
-# Peaq SDK (Python)
+# Peaq Network SDK Monorepo
 
-A robust Python SDK for seamless interaction with the peaq blockchain, supporting both EVM and Substrate-based operations. It provides tools to manage Decentralized Identifiers (DIDs), interact with on-chain storage, and perform blockchain transactions with or without local signing capabilities.
+This repository contains the Python SDKs for interacting with the peaq Network blockchain.
 
-## Features
-- DID creation and management
-- On-chain storage utilization
-- RBAC (Role-Based Access Control) capabilities
-- Token transfer functionality
-- Universal Machine Time (coming soon)
+## Packages
 
-## Installation
-Install via pip:
-```
+### Core SDK (`packages/sdk/`)
+The main SDK providing comprehensive blockchain interaction capabilities:
+
+- **DID Operations**: Create, update, and manage decentralized identifiers
+- **Storage**: On-chain storage management
+- **RBAC**: Role-based access control operations
+- **Transfer**: Native and token transfers
+
+```bash
+pip install ./packages/sdk
+# or when published:
 pip install peaq-sdk
 ```
 
+### MSF SDK (`packages/msf/`)
+Specialized SDK for Machine Station Factory operations with a flattened API:
+
+- **Flattened API**: Direct access to machine station methods
+- **Machine Management**: Deploy and manage machine smart accounts
+- **Transaction Execution**: Execute transactions through machine stations
+- **EIP-712 Signatures**: Generate off-chain signatures
+
+```bash
+pip install ./packages/msf
+# or when published:
+pip install peaq-msf
+```
+
 ## Quick Start
-Initialize the SDK for interaction:
-### EVM Connection
+
+### Core SDK Usage
 ```python
-from peaq_sdk import Sdk
-from peaq_sdk.types import ChainType
+from peaq_sdk import Main
+from peaq_sdk.types import ChainType, TransactionOptions, ConfirmationMode
+from eth_account import Account
 
-# Without signing capabilities (read-only and transaction creation)
-sdk = Sdk.create_instance(
-    base_url="https://peaq.api.onfinality.io/public",
+# Create account
+account = Account.from_key("your_private_key")
+
+# Initialize SDK
+sdk = Main.create_instance(
+    base_url="https://peaq-rpc-url",
     chain_type=ChainType.EVM,
+    auth=account
 )
 
-# With signing capabilities
-sdk = Sdk.create_instance(
-    base_url="https://peaq.api.onfinality.io/public",
-    chain_type=ChainType.EVM,
-    seed=my_private_key_or_mnemonic,
-)
-```
-### Substrate Connection
-```python
-from peaq_sdk import Sdk
-from peaq_sdk.types import ChainType
-
-# Without signing capabilities (read-only and transaction creation)
-sdk = Sdk.create_instance(
-    base_url="wss://peaq.api.onfinality.io/public-ws",
-    chain_type=ChainType.SUBSTRATE,
+# Use nested API
+result = sdk.storage.add_item(
+    {"item_type": "test", "item": "data"},
+    tx_options=TransactionOptions(mode=ConfirmationMode.FAST)
 )
 
-# With signing capabilities
-sdk = Sdk.create_instance(
-    base_url="wss://peaq.api.onfinality.io/public-ws",
-    chain_type=ChainType.SUBSTRATE,
-    seed=my_private_key_or_mnemonic,
-)
+# Machine station operations (nested)
+result = sdk.machine_station.deploy_machine_smart_account("0x1234...")
 ```
 
-## SDK Operations
-All return objects are either:
-
-**Unsent Transaction/Call (seed not in create_instance)**
-- Message indicating what tx or call was built.
-- Transaction/Call to send:
-    - For EVM instance it will return an EVM Transaction the user can send themselves.
-    - The Substrate instance returns a Call object that must be sent using the `substrate-interface` [package](https://pypi.org/project/substrate-interface/).
-    - You can see how these calls are sent in the sdk under the `_send_evm_tx()` and `_send_substrate_tx()` functions in the `peaq_sdk/base.py` file.
-
-**Sent Transaction (seed in create_instance)**
-- Message indicating the operation performed.
-- Receipt of the EVM/Substrate transaction.
-
-Read operations are able to perform without a seed/private key being set.
-They query the item and return it to the user.
-
-Below are quick examples how to use the sdk assuming the seed is set. For a more detailed
-tutorial please checkout our [Python SDK Reference](https://docs.peaq.xyz/sdk-reference/home).
-
-### Decentralized Identifiers (DID)
-#### Create a DID
+### MSF SDK Usage
 ```python
-# example that uses all of the custom fields
-from peaq_sdk.types import CustomDocumentFields, Verification, Service, Signature
+from peaq_msf import Main
+from peaq_msf import ChainType, TransactionOptions, ConfirmationMode
+from eth_account import Account
 
-custom_fields = CustomDocumentFields(
-    verifications=[
-        Verification(type='EcdsaSecp256k1RecoveryMethod2020')
-        ],
-    signature=Signature(type='EcdsaSecp256k1RecoveryMethod2020', issuer='0x9Eeab1aCcb1A701aEfAB00F3b8a275a39646641E', hash='0xGENERATED_HASH'),
-    services=[
-        Service(id='#cid', type='peaqStorage', data='CID_VALUE')
-        ]
-    )
+# Create account
+account = Account.from_key("your_private_key")
 
-receipt = sdk.did.create(name="myDid", custom_document_fields=custom_fields)
+# Initialize MSF SDK
+msf = Main.create_instance(
+    base_url="https://peaq-rpc-url",
+    chain_type=ChainType.EVM,
+    auth=account
+)
+
+# Use flattened API - direct access to machine station methods
+result = msf.deploy_machine_smart_account("0x1234...")  # No nesting!
+signature = msf.admin_sign_machine_transaction(...)     # Direct access
+```
+
+
+### Installing for Development
+
+Install core SDK in development mode:
+```bash
+pip install -e ./packages/sdk
 ```
 #### Read a DID
 ```python
@@ -101,21 +97,10 @@ result = sdk.did.read(name="myDid")
 ```python
 from peaq_sdk.types import CustomDocumentFields, Verification, Service, Signature
 
-custom_fields = CustomDocumentFields(
-    verifications=[
-        Verification(type='EcdsaSecp256k1RecoveryMethod2020')
-        ],
-    signature=Signature(type='EcdsaSecp256k1RecoveryMethod2020', issuer='0x9Eeab1aCcb1A701aEfAB00F3b8a275a39646641C', hash='0xGENERATED_HASH'),
-    services=[
-        Service(id='#cid', type='peaqStorage', data='CID_VALUE')
-        ]
-    )
-
-result = sdk.did.update(name="myDid", custom_document_fields=custom_fields)
-```
-#### Delete a DID
-```python
-result = sdk.did.delete(name="myDid")
+Install MSF SDK in development mode (requires core SDK):
+```bash
+pip install -e ./packages/sdk  # Install core SDK first
+pip install -e ./packages/msf  # Then install MSF SDK
 ```
 
 ### On-chain Storage
@@ -136,76 +121,79 @@ sdk.storage.update_item(item_type='key', item='new_value')
 sdk.storage.remove_item(item_type='key')
 ```
 
-### Role-Based Access Control (RBAC)
-#### Create a Role
-```python
-# Create a role with auto-generated ID
-result = sdk.rbac.create_role(role_name="Admin")
 
 # Create a role with custom ID (must be 32 characters)
 custom_role_id = "admin_role_123456789012345678901"
 result = sdk.rbac.create_role(role_name="Admin", role_id=custom_role_id)
 ```
 
-#### Fetch a Role
-```python
-# Read a role by owner address and role ID
-owner_address = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"  # Substrate address
-role_id = "admin_role_123456789012345678901"
-result = sdk.rbac.fetch_role(owner=owner_address, role_id=role_id)
+## 🔧 Package Architecture
+
+```
+peaq-sdk-py/
+├── packages/
+│   ├── sdk/                 # Core SDK
+│   │   ├── src/
+│   │   ├── pyproject.toml
+│   │   └── README.md
+│   └── msf/                 # MSF SDK
+│       ├── src/
+│       ├── pyproject.toml
+│       └── README.md
+├── pyproject.toml          # Monorepo config
+└── README.md
 ```
 
-#### Assign Role to User
-```python
-role_id = "admin_role_123456789012345678901"
-user_id = "user_id_12345678901234567890123"  # 32-character user ID
-result = sdk.rbac.assign_role_to_user(role_id=role_id, user_id=user_id)
-```
+## API Documentation
 
-### Token Transfer
-#### Native Token Transfer
-```python
-# Transfer native tokens to another address
-recipient = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"  # Can be Substrate or EVM address
-amount = 1.5  # Human-readable amount (e.g., 1.5 PEAQ)
-result = sdk.transfer.native(to=recipient, amount=amount)
-```
+### Transaction Options
+Both SDKs support the same transaction configuration:
 
-#### ERC-20 Token Transfer
 ```python
-# Transfer ERC-20 tokens (EVM only)
-erc20_contract = "0x1234567890123456789012345678901234567890"
-recipient = "0x9876543210987654321098765432109876543210"
-amount = 100.0  # Amount in human-readable format
-token_decimals = 18  # Token decimals (default: 18)
+from peaq_sdk.types import TransactionOptions, ConfirmationMode
 
-result = sdk.transfer.erc20(
-    erc_20_address=erc20_contract,
-    recipient_address=recipient,
-    amount=amount,
-    token_decimals=token_decimals
+tx_options = TransactionOptions(
+    mode=ConfirmationMode.FAST,      # FAST | CUSTOM | FINAL
+    gas_limit=100_000,               # Optional gas limit
+    max_fee_per_gas=2000,           # Optional EIP-1559 fee
+    max_priority_fee_per_gas=1000,  # Optional priority fee
+    confirmations=3                  # For CUSTOM mode
 )
 ```
 
-#### ERC-721 (NFT) Transfer
-```python
-# Transfer NFT tokens (EVM only)
-nft_contract = "0x1234567890123456789012345678901234567890"
-recipient = "0x9876543210987654321098765432109876543210"
-token_id = 42  # NFT token ID
+### Status Callbacks
+Both SDKs provide real-time transaction status updates:
 
-result = sdk.transfer.erc721(
-    erc_721_address=nft_contract,
-    recipient_address=recipient,
-    token_id=token_id
+```python
+def status_callback(status_data):
+    print(f"Status: {status_data['status']}")          # BROADCAST | IN_BLOCK | FINALIZED
+    print(f"Hash: {status_data['hash']}")              # Transaction hash
+    print(f"Confirmations: {status_data['total_confirmations']}")
+
+# Use with any transaction
+result = sdk.storage.add_item(
+    data, 
+    status_callback=status_callback,
+    tx_options=tx_options
 )
 ```
 
-## Security and Private Keys
-- Private keys are never **stored**, **sent**, or **logged** by the SDK.
-    - Used solely to generate an Account or Keypair.
-- Signing occurs locally only.
-- Ensure your local environment securely manages and protects private keys. **Never share your private keys.**
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Make changes in the appropriate package (`packages/sdk/` or `packages/msf/`)
+4. Test your changes (`pytest packages/*/tests/`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+
+
 
 ## Development
 ### Virtual Environment
@@ -226,6 +214,3 @@ deactivate
 ```
 rm -rf working_env
 ```
-
-## Testing
-Checkout the `README.md` file in `/tests` directory for more information.

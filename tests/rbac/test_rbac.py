@@ -1,6 +1,6 @@
 import pytest
-from peaq_sdk.types.rbac import GetRbacError, FetchResponseData
-from peaq_sdk.types.common import WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult
+from peaq_sdk_py_old.types.rbac import GetRbacError, FetchResponseData
+from peaq_sdk_py_old.types.common import WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult
 
 class TestRBACCreateOperations:
     """Test creation of roles, groups, and permissions."""

@@ -1,12 +1,13 @@
 from typing import Optional, Union
 
-from peaq_sdk.base import Base
-from peaq_sdk.types.base import TransactionOptions
-from peaq_sdk.types.common import (
+# Import from the core SDK package
+from peaq_msf.base import Base
+from peaq_msf.types.base import TransactionOptions
+from peaq_msf.types.common import (
     SDKMetadata,
     WrittenTransactionResult
 )
-from peaq_sdk.types.machine_station import (
+from peaq_msf.types.machine_station import (
     MachineStationFactoryFunctionSignatures,
     MachineStationConfigKeys,
     DeployedSmartAccountResult,
@@ -20,7 +21,6 @@ from peaq_sdk.types.machine_station import (
     EIP712SignableMessage
 )
 
-from substrateinterface.base import SubstrateInterface
 from web3 import Web3
 from web3.types import TxParams
 from eth_abi import encode
@@ -40,7 +40,7 @@ class MachineStation(Base):
         sdk, 
         machine_station_address: str, 
         machine_station_owner_private_key: str, 
-        api: Web3 | SubstrateInterface, 
+        api: Web3, 
         metadata: SDKMetadata) -> None:
         """
         Initializes the MachineStation class for interacting with peaq's Machine Station Factory contract.
