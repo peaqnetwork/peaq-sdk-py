@@ -104,7 +104,7 @@ class Main(Base):
         if metadata.chain_type == ChainType.EVM:
             expected_prefix: str = "https://"
             self._validate_base_url(base_url, expected_prefix, ChainType.EVM)
-            api = Web3(Web3.HTTPProvider(base_url))
+            api = AsyncWeb3(AsyncHTTPProvider(base_url))
             return api
         elif metadata.chain_type == ChainType.SUBSTRATE:
             expected_prefix: str = "wss://"

@@ -5,7 +5,6 @@ Defines confirmation modes, transaction status, callback types, and transaction 
 
 from enum import Enum
 from typing import Optional, Union, Protocol, runtime_checkable, Callable, Awaitable, Any
-from dataclasses import dataclass, asdict
 from pydantic import BaseModel, Field, ConfigDict
 
 class TransactionStatus(Enum):
@@ -34,13 +33,6 @@ class TransactionStatusCallback(BaseModel):
     hash: str
     receipt: Optional[dict] = None
     nonce: Optional[int] = None
-    
-    # def to_dict(self, clean_fn=None) -> dict:
-    #     """
-    #     Convert to a dictionary. Optionally clean with a provided function.
-    #     """
-    #     raw_dict = asdict(self)
-    #     return clean_fn(raw_dict) if clean_fn else raw_dict
 
 @runtime_checkable
 class StatusCallback(Protocol):
@@ -75,10 +67,6 @@ class TxOptions(BaseModel):
     max_fee_per_gas: Optional[int] = Field(None, alias="maxFeePerGas", description="Maximum fee per gas unit")
     max_priority_fee_per_gas: Optional[int] = Field(None, alias="maxPriorityFeePerGas", description="Maximum priority fee per gas unit")
     
-    # model_config = ConfigDict(
-    #     populate_by_name=True,  # Allow both snake_case and camelCase
-    #     validate_default=True
-    # )
     
     def model_post_init(self, __context) -> None:
         """Validate transaction options after initialization."""
@@ -143,27 +131,27 @@ class BuiltCallTransactionResult(BaseModel):
     #     arbitrary_types_allowed=True
     # )
 
-@dataclass
-class EvmTransactionResult:
-    """
-    Result returned from EVM transaction execution.
-    """
-    tx_hash: str
-    receipt: dict
-    confirmation_mode: ConfirmationMode
-    total_confirmations: int
+# @dataclass
+# class EvmTransactionResult:
+#     """
+#     Result returned from EVM transaction execution.
+#     """
+#     tx_hash: str
+#     receipt: dict
+#     confirmation_mode: ConfirmationMode
+#     total_confirmations: int
     
-@dataclass  
-class SubstrateTransactionResult:
-    """
-    Result returned from Substrate transaction execution.
-    """
-    tx_hash: str
-    receipt: dict
-    confirmation_mode: ConfirmationMode
-    total_confirmations: int
+# @dataclass  
+# class SubstrateTransactionResult:
+#     """
+#     Result returned from Substrate transaction execution.
+#     """
+#     tx_hash: str
+#     receipt: dict
+#     confirmation_mode: ConfirmationMode
+#     total_confirmations: int
 
-# Type alias for transaction results
-TransactionResult = Union[EvmTransactionResult, SubstrateTransactionResult]
+# # Type alias for transaction results
+# TransactionResult = Union[EvmTransactionResult, SubstrateTransactionResult]
 
 # Type alias matching TypeScript DidWriteResult 

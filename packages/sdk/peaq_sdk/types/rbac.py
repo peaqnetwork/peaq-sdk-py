@@ -1,6 +1,6 @@
 from enum import Enum
-from dataclasses import dataclass
 from typing import List
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class RbacFunctionSignatures(str, Enum):
@@ -53,31 +53,31 @@ class RbacCallFunction(str, Enum):
     GET_GROUP_ROLES = 'peaqrbac_fetchGroupRoles'
     GET_GROUP_PERMISSIONS = 'peaqrbac_fetchGroupPermissions'
     
-@dataclass
-class FetchResponseData:
-    id: str
-    name: str
-    enabled: bool
+class FetchResponseData(BaseModel):
+    """Response data for RBAC fetch operations (roles, groups, permissions)"""
+    id: str = Field(..., description="Unique identifier for the entity")
+    name: str = Field(..., description="Human-readable name of the entity")
+    enabled: bool = Field(..., description="Whether the entity is currently enabled")
 
-@dataclass
-class FetchResponseRole2Permission:
-    permission: str
-    role: str
+class FetchResponseRole2Permission(BaseModel):
+    """Response data for role-to-permission relationship queries"""
+    permission: str = Field(..., description="Permission identifier")
+    role: str = Field(..., description="Role identifier")
 
-@dataclass
-class FetchResponseRole2Group:
-    role: str
-    group: str
+class FetchResponseRole2Group(BaseModel):
+    """Response data for role-to-group relationship queries"""
+    role: str = Field(..., description="Role identifier")
+    group: str = Field(..., description="Group identifier")
 
-@dataclass
-class FetchResponseRole2User:
-    role: str
-    user: str
+class FetchResponseRole2User(BaseModel):
+    """Response data for role-to-user relationship queries"""
+    role: str = Field(..., description="Role identifier")
+    user: str = Field(..., description="User identifier")
 
-@dataclass
-class ResponseFetchUserGroups:
-    user: str
-    group: str
+class ResponseFetchUserGroups(BaseModel):
+    """Response data for user-to-group relationship queries"""
+    user: str = Field(..., description="User identifier")
+    group: str = Field(..., description="Group identifier")
     
 class GetRbacError(Exception):
     """Raised when there is a failure to one of the RBAC get item functions."""

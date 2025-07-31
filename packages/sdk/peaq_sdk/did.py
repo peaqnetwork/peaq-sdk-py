@@ -8,7 +8,6 @@ from peaq_sdk.types.common import (
     SDKMetadata,
     CallModule,
     PrecompileAddresses,
-    BaseUrlError
 )
 from peaq_sdk.types.did import (
     CreateDIDOptions,
