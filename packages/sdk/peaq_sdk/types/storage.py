@@ -1,8 +1,47 @@
 """objects used in storage class"""
 # python native imports
-from typing import Optional
+from typing import Optional, Union, Any
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
+
+# Import the structured return types
+from peaq_sdk.types.base import (
+    SubstrateSendResult,
+    EvmSendResult,
+    BuiltEvmTransactionResult,
+    BuiltCallTransactionResult
+)
+
+# Storage operation option types
+class AddItemOptions(BaseModel):
+    """Options for adding an item to storage"""
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+    
+    item_type: str = Field(..., alias="itemType", description="The key under which to store the item")
+    item: Any = Field(..., description="The value to store (string or any serializable object)")
+
+class RemoveItemOptions(BaseModel):
+    """Options for removing an item from storage"""
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+    
+    item_type: str = Field(..., alias="itemType", description="The key of the item to remove")
+
+class UpdateItemOptions(BaseModel):
+    """Options for updating an item in storage"""
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+    
+    item_type: str = Field(..., alias="itemType", description="The key of the item to update")
+    item: Any = Field(..., description="The new value to replace the existing stored value")
+
+class GetItemOptions(BaseModel):
+    """Options for retrieving an item from storage"""
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+    
+    item_type: str = Field(..., alias="itemType", description="The key under which the item was stored")
+    address: Optional[str] = Field(None, description="Optional address whose data is being queried. If not provided, the address from the local signer (if any) is used")
+
+# Storage result types
+StorageWriteResult = Union[SubstrateSendResult, EvmSendResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]
 
 class GetItemResult(BaseModel):
     """Result object for storage item retrieval operations"""

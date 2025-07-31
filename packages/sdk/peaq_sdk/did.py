@@ -699,7 +699,7 @@ class Did(Base):
         signature = extra.get('signature')
         if signature:
             sig = peaq_proto.Signature()
-            sig.type = signature.type
+            sig.type = signature.type.value
             sig.issuer = signature.issuer
             sig.hash = signature.hash
             doc.signature.CopyFrom(sig)
