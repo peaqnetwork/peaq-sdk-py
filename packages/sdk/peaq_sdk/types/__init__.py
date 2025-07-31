@@ -1,9 +1,10 @@
-from .did import CustomDocumentFields, Verification, Signature, Service
+from .did import CustomDocumentFields, Verification, Signature, Service, VerificationMethodType
 from .common import ChainType, PrecompileAddresses
 from .base import (
     TransactionStatus,
     ConfirmationMode,
-    TransactionOptions
+    TransactionOptions,
+    TxOptions
 )
 
 
@@ -14,8 +15,10 @@ __all__ = [
     "Verification", 
     "Signature", 
     "Service", 
+    "VerificationMethodType",
     "MachineStationConfigKeys",
     "TransactionStatus",
     "ConfirmationMode",
-    "TransactionOptions"
+    "TransactionOptions",
+    "TxOptions"
 ]

@@ -95,7 +95,7 @@ class Storage(Base):
                 "data": f"0x{add_item_function_selector}{encoded_params}"
             }
             
-            if self.metadata.pair and not self.metadata.machine_station:
+            if self.metadata.pair:
                 account = self.metadata.pair
                 opts = tx_options if tx_options else TransactionOptions()
                 receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
@@ -160,7 +160,7 @@ class Storage(Base):
         if self.metadata.chain_type is ChainType.EVM:
             evm_address = (
                 getattr(self.metadata.pair, 'address', address)
-                if self.metadata.pair and not self.metadata.machine_station
+                if self.metadata.pair
                 else address
             )
             if not evm_address:
@@ -325,7 +325,7 @@ class Storage(Base):
                 "data": payload
             }
             
-            if self.metadata.pair and not self.metadata.machine_station:
+            if self.metadata.pair:
                 account = self.metadata.pair
                 opts = tx_options if tx_options else TransactionOptions()
                 receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)

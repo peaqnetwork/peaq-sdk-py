@@ -4,8 +4,9 @@ Defines confirmation modes, transaction status, callback types, and transaction 
 """
 
 from enum import Enum
-from typing import Optional, Union, Protocol, runtime_checkable
+from typing import Optional, Union, Protocol, runtime_checkable, Callable, Awaitable, Any
 from dataclasses import dataclass, asdict
+from pydantic import BaseModel, Field, ConfigDict
 
 class TransactionStatus(Enum):
     """
@@ -23,8 +24,7 @@ class ConfirmationMode(Enum):
     CUSTOM = 'CUSTOM'    # Waits for user-defined number of confirmations
     FINAL = 'FINAL'      # Waits until Polkadot-style GRANDPA finality
 
-@dataclass
-class TransactionStatusCallback:
+class TransactionStatusCallback(BaseModel):
     """
     Status update data sent to callback functions during transaction processing.
     """
@@ -35,12 +35,12 @@ class TransactionStatusCallback:
     receipt: Optional[dict] = None
     nonce: Optional[int] = None
     
-    def to_dict(self, clean_fn=None) -> dict:
-        """
-        Convert to a dictionary. Optionally clean with a provided function.
-        """
-        raw_dict = asdict(self)
-        return clean_fn(raw_dict) if clean_fn else raw_dict
+    # def to_dict(self, clean_fn=None) -> dict:
+    #     """
+    #     Convert to a dictionary. Optionally clean with a provided function.
+    #     """
+    #     raw_dict = asdict(self)
+    #     return clean_fn(raw_dict) if clean_fn else raw_dict
 
 @runtime_checkable
 class StatusCallback(Protocol):
@@ -56,10 +56,10 @@ class StatusCallback(Protocol):
         """
         ...
 
-@dataclass 
-class TransactionOptions:
+class TxOptions(BaseModel):
     """
-    Options for customizing transaction behavior and gas parameters.
+    Transaction options for customizing transaction behavior and gas parameters.
+    Matches TypeScript txOptions interface exactly.
     
     Custom gas and fee parameters:
     - gasLimit: Manual gas limit. If omitted, SDK estimates gas.
@@ -69,13 +69,18 @@ class TransactionOptions:
     WARNING: Overriding gas parameters is for advanced users only.
     Improper values may cause transactions to fail, overpay, or stall.
     """
-    mode: Optional[ConfirmationMode] = None
-    confirmations: Optional[int] = None
-    gas_limit: Optional[int] = None
-    max_fee_per_gas: Optional[int] = None  
-    max_priority_fee_per_gas: Optional[int] = None
+    mode: Optional[ConfirmationMode] = Field(None, description="Confirmation mode for transaction")
+    confirmations: Optional[int] = Field(None, description="Number of confirmations required (for CUSTOM mode)")
+    gas_limit: Optional[int] = Field(None, alias="gasLimit", description="Manual gas limit override")
+    max_fee_per_gas: Optional[int] = Field(None, alias="maxFeePerGas", description="Maximum fee per gas unit")
+    max_priority_fee_per_gas: Optional[int] = Field(None, alias="maxPriorityFeePerGas", description="Maximum priority fee per gas unit")
     
-    def __post_init__(self):
+    # model_config = ConfigDict(
+    #     populate_by_name=True,  # Allow both snake_case and camelCase
+    #     validate_default=True
+    # )
+    
+    def model_post_init(self, __context) -> None:
         """Validate transaction options after initialization."""
         # Set default mode if not provided
         if self.mode is None:
@@ -86,6 +91,57 @@ class TransactionOptions:
         
         if self.mode == ConfirmationMode.CUSTOM and (self.confirmations is None or self.confirmations < 1):
             raise ValueError("confirmations must be a positive integer for CUSTOM mode")
+
+# Keep backward compatibility alias
+TransactionOptions = TxOptions
+
+class SubstrateSendResult(BaseModel):
+    """
+    Result returned from Substrate transaction sending, matching TypeScript SubstrateSendResult interface.
+    """
+    tx_hash: str = Field(..., alias="txHash", description="Transaction hash")
+    unsubscribe: Callable[[], None] = Field(..., description="Function to unsubscribe from transaction events")
+    finalize: Awaitable[Any] = Field(..., description="Promise that resolves when transaction is finalized")
+    
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True
+    )
+
+class EvmSendResult(BaseModel):
+    """
+    Result returned from EVM transaction sending, matching TypeScript EvmSendResult interface.
+    """
+    tx_hash: str = Field(..., alias="txHash", description="Transaction hash")
+    unsubscribe: Optional[Callable[[], None]] = Field(None, description="Optional function to unsubscribe from transaction events")
+    receipt: Awaitable[Any] = Field(..., description="Promise that resolves to transaction receipt")
+    
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True
+    )
+
+class BuiltEvmTransactionResult(BaseModel):
+    """
+    Result returned for unsigned EVM transactions, matching TypeScript BuiltEvmTransactionResult interface.
+    """
+    message: str = Field(..., description="Informational message about the constructed transaction")
+    tx: Any = Field(..., description="EVM transaction object")
+    
+    # model_config = ConfigDict(
+    #     arbitrary_types_allowed=True
+    # )
+
+class BuiltCallTransactionResult(BaseModel):
+    """
+    Result returned for unsigned Substrate calls, matching TypeScript BuiltCallTransactionResult interface.
+    """
+    message: str = Field(..., description="Informational message about the constructed call")
+    extrinsic: Any = Field(..., description="Substrate extrinsic object")
+    
+    # model_config = ConfigDict(
+    #     arbitrary_types_allowed=True
+    # )
 
 @dataclass
 class EvmTransactionResult:
@@ -108,4 +164,6 @@ class SubstrateTransactionResult:
     total_confirmations: int
 
 # Type alias for transaction results
-TransactionResult = Union[EvmTransactionResult, SubstrateTransactionResult] 
+TransactionResult = Union[EvmTransactionResult, SubstrateTransactionResult]
+
+# Type alias matching TypeScript DidWriteResult 

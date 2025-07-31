@@ -36,7 +36,6 @@ class SDKMetadata:
     chain_type: Optional[ChainType]
     base_url: str
     pair: Optional[Keypair | Account]
-    machine_station: bool
 # EVM Transaction type - using Web3.py native TxParams (equivalent to SubstrateInterface's GenericCall)
 
 @dataclass
