@@ -1,8 +1,6 @@
 from typing import Optional, Union, Dict, Any
 from enum import Enum
-import ast
 import asyncio
-import json
 import time
 from hexbytes import HexBytes
 from peaq_sdk.utils.utils import parse_options
@@ -14,7 +12,7 @@ from peaq_sdk.types.base import (
     TransactionStatusCallback, 
     TxOptions,
     EvmSendResult,
-    SubstrateSendResult
+    StatusCallback
 )
 
 from web3 import Web3
@@ -295,8 +293,8 @@ class Base:
     async def _send_evm_tx(
         self, 
         tx: TxParams,
-        on_status = None,
-        opts: TxOptions = TxOptions()
+        on_status: StatusCallback = None,
+        opts: TxOptions = {}
     ) -> EvmSendResult:
         """
         Sends an EVM transaction and returns a structured EvmSendResult.
