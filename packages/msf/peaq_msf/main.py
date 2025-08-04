@@ -24,6 +24,18 @@ from .types.machine_station import (
     UpdateConfigsOptions,
     DeployMachineSmartAccountOptions,
     AdminSignDeployMachineSmartAccountOptions,
+    TransferMachineStationBalanceOptions,
+    AdminSignTransferMachineStationBalanceOptions,
+    ExecuteTransactionOptions,
+    AdminSignExecuteTransactionOptions,
+    ExecuteMachineTransactionOptions,
+    AdminSignMachineTransactionOptions,
+    MachineSignMachineTransactionOptions,
+    ExecuteMachineBatchTransactionsOptions,
+    AdminSignMachineBatchTransactionsOptions,
+    ExecuteMachineTransferBalanceOptions,
+    AdminSignTransferMachineBalanceOptions,
+    MachineSignTransferMachineBalanceOptions,
     DeployMachineSmartAccountTransactionData,
     TransferMachineStationBalanceTransactionData,
     ExecuteTransactionData,
@@ -158,11 +170,11 @@ class Main(Base):
     # BALANCE TRANSFER METHODS
     # =====================================================================
 
-    def transfer_machine_station_balance(
+    async def transfer_machine_station_balance(
         self,
-        options: dict,
-        status_callback: Optional[Callable[[TransactionStatusCallback], Union[None, Awaitable[None]]]] = None,
-        tx_options: Optional[TxOptions] = None
+        options: TransferMachineStationBalanceOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> Union[MachineStationWriteResult, TransferMachineStationBalanceTransactionData]:
         """
         Transfers the machine station balance to a new machine station address.
@@ -171,24 +183,24 @@ class Main(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The transfer options including new address and signature
+            options: TransferMachineStationBalanceOptions object containing new address, nonce, signature and optional send_transaction
             status_callback: Optional callback for monitoring transaction status
             tx_options: Optional transaction confirmation mode settings
             
         Returns:
-            Promise resolving to transaction result or transaction data
+            Promise resolving to transfer result or transaction data
         """
-        return self._machine_station.transfer_machine_station_balance(options, status_callback, tx_options)
+        return await self._machine_station.transfer_machine_station_balance(options, status_callback, tx_options)
 
     # =====================================================================
     # TRANSACTION EXECUTION METHODS
     # =====================================================================
 
-    def execute_transaction(
+    async def execute_transaction(
         self,
-        options: dict,
-        status_callback: Optional[Callable[[TransactionStatusCallback], Union[None, Awaitable[None]]]] = None,
-        tx_options: Optional[TxOptions] = None
+        options: ExecuteTransactionOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> Union[MachineStationWriteResult, ExecuteTransactionData]:
         """
         Executes a transaction through the machine station factory.
@@ -197,20 +209,20 @@ class Main(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The transaction execution options
+            options: ExecuteTransactionOptions object containing target, calldata, nonce, refund_amount, machine_station_owner_signature and optional send_transaction
             status_callback: Optional callback for monitoring transaction status
             tx_options: Optional transaction confirmation mode settings
             
         Returns:
             Promise resolving to transaction result or transaction data
         """
-        return self._machine_station.execute_transaction(options, status_callback, tx_options)
+        return await self._machine_station.execute_transaction(options, status_callback, tx_options)
 
-    def execute_machine_transaction(
+    async def execute_machine_transaction(
         self,
-        options: dict,
-        status_callback: Optional[Callable[[TransactionStatusCallback], Union[None, Awaitable[None]]]] = None,
-        tx_options: Optional[TxOptions] = None
+        options: ExecuteMachineTransactionOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> Union[MachineStationWriteResult, ExecuteMachineTransactionData]:
         """
         Executes a transaction on behalf of a machine smart account.
@@ -220,20 +232,20 @@ class Main(Base):
         **Signature Generation Admin**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The machine transaction execution options
+            options: ExecuteMachineTransactionOptions object containing machine_address, target, calldata, nonce, refund_amount, signatures and optional send_transaction
             status_callback: Optional callback for monitoring transaction status
             tx_options: Optional transaction confirmation mode settings
             
         Returns:
-            Promise resolving to transaction result or transaction data
+            Promise resolving to MachineStationWriteResult if sent, or ExecuteMachineTransactionData if send_transaction=False
         """
-        return self._machine_station.execute_machine_transaction(options, status_callback, tx_options)
+        return await self._machine_station.execute_machine_transaction(options, status_callback, tx_options)
 
-    def execute_machine_batch_transactions(
+    async def execute_machine_batch_transactions(
         self,
-        options: dict,
-        status_callback: Optional[Callable[[TransactionStatusCallback], Union[None, Awaitable[None]]]] = None,
-        tx_options: Optional[TxOptions] = None
+        options: ExecuteMachineBatchTransactionsOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> Union[MachineStationWriteResult, ExecuteMachineBatchTransactionsData]:
         """
         Executes multiple transactions in a batch on behalf of machine smart accounts.
@@ -243,20 +255,20 @@ class Main(Base):
         **Signature Generation Admin**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The batch transaction execution options
+            options: ExecuteMachineBatchTransactionsOptions object containing machine_addresses, targets, calldata_list, nonce, refund_amount, machine_nonces, signatures and optional send_transaction
             status_callback: Optional callback for monitoring transaction status
             tx_options: Optional transaction confirmation mode settings
             
         Returns:
-            Promise resolving to transaction result or transaction data
+            Promise resolving to MachineStationWriteResult if sent, or ExecuteMachineBatchTransactionsData if send_transaction=False
         """
-        return self._machine_station.execute_machine_batch_transactions(options, status_callback, tx_options)
+        return await self._machine_station.execute_machine_batch_transactions(options, status_callback, tx_options)
 
-    def execute_machine_transfer_balance(
+    async def execute_machine_transfer_balance(
         self,
-        options: dict,
-        status_callback: Optional[Callable[[TransactionStatusCallback], Union[None, Awaitable[None]]]] = None,
-        tx_options: Optional[TxOptions] = None
+        options: ExecuteMachineTransferBalanceOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> Union[MachineStationWriteResult, ExecuteTransferMachineBalanceData]:
         """
         Transfers balance from a machine smart account to a recipient.
@@ -266,14 +278,14 @@ class Main(Base):
         **Signature Generation Admin**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The balance transfer options
+            options: ExecuteMachineTransferBalanceOptions object containing machine_address, recipient_address, nonce, signatures and optional send_transaction
             status_callback: Optional callback for monitoring transaction status
             tx_options: Optional transaction confirmation mode settings
             
         Returns:
-            Promise resolving to transaction result or transaction data
+            Promise resolving to MachineStationWriteResult if sent, or ExecuteTransferMachineBalanceData if send_transaction=False
         """
-        return self._machine_station.execute_machine_transfer_balance(options, status_callback, tx_options)
+        return await self._machine_station.execute_machine_transfer_balance(options, status_callback, tx_options)
 
     # =====================================================================
     # EIP-712 SIGNATURE GENERATION METHODS (ADMIN)
@@ -298,7 +310,7 @@ class Main(Base):
 
     async def admin_sign_transfer_machine_station_balance(
         self,
-        options: dict
+        options: AdminSignTransferMachineStationBalanceOptions
     ) -> str:
         """
         Generates a signature for transferring machine station balance.
@@ -306,7 +318,7 @@ class Main(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The signature options
+            options: AdminSignTransferMachineStationBalanceOptions object containing new address and nonce
             
         Returns:
             The EIP-712 signature string
@@ -315,7 +327,7 @@ class Main(Base):
 
     async def admin_sign_transaction(
         self,
-        options: dict
+        options: AdminSignExecuteTransactionOptions
     ) -> str:
         """
         Generates a signature for executing a transaction.
@@ -323,7 +335,7 @@ class Main(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The signature options
+            options: AdminSignExecuteTransactionOptions object containing target, calldata, nonce and refund_amount
             
         Returns:
             The EIP-712 signature string
@@ -332,7 +344,7 @@ class Main(Base):
 
     async def admin_sign_machine_transaction(
         self,
-        options: dict
+        options: AdminSignMachineTransactionOptions
     ) -> str:
         """
         Generates a signature for executing a machine transaction.
@@ -340,7 +352,7 @@ class Main(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The signature options
+            options: AdminSignMachineTransactionOptions object containing machine_address, target, calldata, nonce and refund_amount
             
         Returns:
             The EIP-712 signature string
@@ -349,7 +361,7 @@ class Main(Base):
 
     async def admin_sign_machine_batch_transactions(
         self,
-        options: dict
+        options: AdminSignMachineBatchTransactionsOptions
     ) -> str:
         """
         Generates a signature for executing batch transactions.
@@ -357,7 +369,7 @@ class Main(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The signature options
+            options: AdminSignMachineBatchTransactionsOptions object containing machine_addresses, targets, calldata_list, nonce, refund_amount and machine_nonces
             
         Returns:
             The EIP-712 signature string
@@ -366,7 +378,7 @@ class Main(Base):
 
     async def admin_sign_transfer_machine_balance(
         self,
-        options: dict
+        options: AdminSignTransferMachineBalanceOptions
     ) -> str:
         """
         Generates a signature for transferring machine balance.
@@ -374,7 +386,7 @@ class Main(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The signature options
+            options: AdminSignTransferMachineBalanceOptions object containing machine_address, recipient_address and nonce
             
         Returns:
             The EIP-712 signature string
@@ -387,7 +399,7 @@ class Main(Base):
 
     async def machine_sign_machine_transaction(
         self,
-        options: dict,
+        options: MachineSignMachineTransactionOptions,
         machine_owner_signer: Optional[BaseAccount] = None
     ) -> Union[str, EIP712SignableMessage]:
         """
@@ -396,17 +408,17 @@ class Main(Base):
         Otherwise, returns the message structure for frontend wallet signing.
         
         Args:
-            options: The signature options
+            options: MachineSignMachineTransactionOptions object containing machine_address, target, calldata, nonce
             machine_owner_signer: Optional signer to sign the message directly
             
         Returns:
             Either the signature string or EIP-712 signable message object
         """
-        return await self._machine_station.machine_sign_machine_transaction(options)
+        return await self._machine_station.machine_sign_machine_transaction(options, machine_owner_signer)
 
     async def machine_sign_transfer_machine_balance(
         self,
-        options: dict,
+        options: MachineSignTransferMachineBalanceOptions,
         machine_owner_signer: Optional[BaseAccount] = None
     ) -> Union[str, EIP712SignableMessage]:
         """
@@ -415,10 +427,10 @@ class Main(Base):
         Otherwise, returns the message structure for frontend wallet signing.
         
         Args:
-            options: The signature options
+            options: MachineSignTransferMachineBalanceOptions object containing machine_address, recipient_address, nonce
             machine_owner_signer: Optional signer to sign the message directly
             
         Returns:
             Either the signature string or EIP-712 signable message object
         """
-        return await self._machine_station.machine_sign_transfer_machine_balance(options)
+        return await self._machine_station.machine_sign_transfer_machine_balance(options, machine_owner_signer)

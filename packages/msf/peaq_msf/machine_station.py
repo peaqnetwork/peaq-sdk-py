@@ -14,6 +14,18 @@ from peaq_msf.types.machine_station import (
     UpdateConfigsOptions,
     DeployMachineSmartAccountOptions,
     AdminSignDeployMachineSmartAccountOptions,
+    TransferMachineStationBalanceOptions,
+    AdminSignTransferMachineStationBalanceOptions,
+    ExecuteTransactionOptions,
+    AdminSignExecuteTransactionOptions,
+    ExecuteMachineTransactionOptions,
+    AdminSignMachineTransactionOptions,
+    MachineSignMachineTransactionOptions,
+    ExecuteMachineBatchTransactionsOptions,
+    AdminSignMachineBatchTransactionsOptions,
+    ExecuteMachineTransferBalanceOptions,
+    AdminSignTransferMachineBalanceOptions,
+    MachineSignTransferMachineBalanceOptions,
     MachineStationWriteResult,
     DeployMachineSmartAccountTransactionData,
     TransferMachineStationBalanceTransactionData,
@@ -271,11 +283,11 @@ class MachineStation(Base):
     # BALANCE TRANSFER METHODS
     # =====================================================================
 
-    def transfer_machine_station_balance(
+    async def transfer_machine_station_balance(
         self,
-        options: dict,
-        status_callback = None,
-        tx_options = None
+        options: TransferMachineStationBalanceOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {},
     ) -> Union[MachineStationWriteResult, TransferMachineStationBalanceTransactionData]:
         """
         Transfers the machine station balance to a new machine station address.
@@ -284,7 +296,7 @@ class MachineStation(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'newMachineStationAddress', 'nonce', 'stationAdminSignature', and optional 'sendTransaction'
+            options: TransferMachineStationBalanceOptions object containing new address, nonce, signature and optional send_transaction
             status_callback: Optional callback function for transaction status updates.
             tx_options: Optional TransactionOptions for EVM transactions.
             
@@ -295,10 +307,11 @@ class MachineStation(Base):
             ValueError: If transfer fails
         """
         try:
-            send_transaction = options.get('sendTransaction', True)
-            new_machine_station_address = options['newMachineStationAddress']
-            nonce = options['nonce']
-            station_admin_signature = options['stationAdminSignature']
+            ops = parse_options(TransferMachineStationBalanceOptions, options, caller="transfer_machine_station_balance()")
+            new_machine_station_address = ops.new_machine_station_address
+            nonce = ops.nonce
+            station_admin_signature = ops.station_admin_signature
+            send_transaction = ops.send_transaction
             
             payload = self.iface.encode_abi(
                 "transferMachineStationBalance",
@@ -321,15 +334,13 @@ class MachineStation(Base):
                     required_role="DEFAULT_ADMIN_ROLE"
                 )
             
-            opts = tx_options if tx_options else TransactionOptions()
-            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-            
-            return MachineStationWriteResult(
-                message=f"Successfully transferred balance from {self.machine_station_address} to {new_machine_station_address}.",
-                success=True,
-                transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
-                block_number=receipt.get('blockNumber') if isinstance(receipt, dict) else None,
-                gas_used=receipt.get('gasUsed') if isinstance(receipt, dict) else None
+            # Use the new helper method with station admin signer
+            return await self._handle_evm_tx(
+                tx=tx,
+                action=f"transfer machine station balance to {new_machine_station_address}",
+                status_callback=status_callback,
+                tx_options=tx_options,
+                signer=self.station_admin_signer
             )
         except Exception as e:
             raise ValueError(f"Failed to transfer machine station balance: {str(e)}")
@@ -338,11 +349,11 @@ class MachineStation(Base):
     # TRANSACTION EXECUTION METHODS
     # =====================================================================
 
-    def execute_transaction(
+    async def execute_transaction(
         self,
-        options: dict,
-        status_callback = None,
-        tx_options = None
+        options: ExecuteTransactionOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {},
     ) -> Union[MachineStationWriteResult, ExecuteTransactionData]:
         """
         Executes a transaction through the machine station factory.
@@ -351,24 +362,25 @@ class MachineStation(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'target', 'calldata', 'nonce', optional 'refundAmount', 'machineStationOwnerSignature', and 'sendTransaction'
+            options: ExecuteTransactionOptions object containing target, calldata, nonce, refund_amount, machine_station_owner_signature and optional send_transaction
             status_callback: Optional callback function for transaction status updates.
             tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
-            Union[MachineStationWriteResult, ExecuteTransactionData]: Transaction result if sent, or transaction data if send_transaction=False
+            Union[MachineStationWriteResult, ExecuteTransactionData]: Execution result if sent, or transaction data if send_transaction=False
             
         Raises:
-            ValueError: If transaction execution fails
+            ValueError: If execution fails
         """
-
         try:
-            send_transaction = options.get('sendTransaction', False)
-            target = options['target']
-            calldata = options['calldata']
-            nonce = options['nonce']
-            refund_amount = options.get('refundAmount', 0)
-            machine_station_owner_signature = options.get('machineStationOwnerSignature')
+            ops = parse_options(ExecuteTransactionOptions, options, caller="execute_transaction()")
+            target = ops.target
+            calldata = ops.calldata
+            nonce = ops.nonce
+            refund_amount = ops.refund_amount
+            machine_station_owner_signature = ops.machine_station_owner_signature
+            send_transaction = ops.send_transaction
+            
             payload = self.iface.encode_abi(
                 "executeTransaction",
                 [target, calldata, nonce, refund_amount, machine_station_owner_signature]
@@ -382,32 +394,30 @@ class MachineStation(Base):
             if not send_transaction:
                 return ExecuteTransactionData(
                     transaction_data=tx,
-                    message="Transaction data ready for frontend wallet submission",
+                    message="Transaction data ready for manual submission",
                     machine_station_address=self.machine_station_address,
                     function="execute_transaction",
                     target=target,
-                    access_control=self.ACCESS_CONTROL_ANYONE
+                    access_control="Anyone can call with proper signatures"
                 )
             
-            opts = tx_options if tx_options else TransactionOptions()
-            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-            
-            return MachineStationWriteResult(
-                message=f"Successfully executed transaction on target {target} through machine station {self.machine_station_address}.",
-                success=True,
-                transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
-                block_number=receipt.get('blockNumber') if isinstance(receipt, dict) else None,
-                gas_used=receipt.get('gasUsed') if isinstance(receipt, dict) else None
+            # Use the new helper method with station admin signer
+            return await self._handle_evm_tx(
+                tx=tx,
+                action=f"execute transaction to {target}",
+                status_callback=status_callback,
+                tx_options=tx_options,
+                signer=self.station_admin_signer
             )
         except Exception as e:
             raise ValueError(f"Failed to execute transaction: {str(e)}")
 
-    def execute_machine_transaction(
+    async def execute_machine_transaction(
         self,
-        options: dict,
-        status_callback = None,
-        tx_options = None
-    ) -> Union[MachineStationWriteResult, ExecuteMachineTransactionData]:
+        options: ExecuteMachineTransactionOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {},
+    ) -> Union[EvmSendResult, ExecuteMachineTransactionData]:
         """
         Executes a transaction on behalf of a machine smart account.
         
@@ -416,25 +426,26 @@ class MachineStation(Base):
         **Signature Generation Admin**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'machineAddress', 'target', 'calldata', 'nonce', optional 'refundAmount', 'machineStationOwnerSignature', 'machineOwnerSignature', and 'sendTransaction'
+            options: ExecuteMachineTransactionOptions object containing machine_address, target, calldata, nonce, refund_amount, signatures and optional send_transaction
             status_callback: Optional callback function for transaction status updates.
             tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
-            Union[MachineStationWriteResult, ExecuteMachineTransactionData]: Transaction result if sent, or transaction data if send_transaction=False
+            Union[EvmSendResult, ExecuteMachineTransactionData]: Transaction result if sent, or transaction data if send_transaction=False
             
         Raises:
             ValueError: If the transaction execution fails
         """
         try:
-            send_transaction = options.get('sendTransaction', False)
-            machine_address = options['machineAddress']
-            target = options['target']
-            calldata = options['calldata']
-            nonce = options['nonce']
-            refund_amount = options.get('refundAmount', 0)
-            machine_station_owner_signature = options.get('machineStationOwnerSignature')
-            machine_owner_signature = options.get('machineOwnerSignature')
+            ops = parse_options(ExecuteMachineTransactionOptions, options, caller="execute_machine_transaction()")
+            machine_address = ops.machine_address
+            target = ops.target
+            calldata = ops.calldata
+            nonce = ops.nonce
+            refund_amount = ops.refund_amount
+            machine_station_owner_signature = ops.machine_station_owner_signature
+            machine_owner_signature = ops.machine_owner_signature
+            send_transaction = ops.send_transaction
             
             payload = self.iface.encode_abi(
                 "executeMachineTransaction",
@@ -449,33 +460,31 @@ class MachineStation(Base):
             if not send_transaction:
                 return ExecuteMachineTransactionData(
                     transaction_data=tx,
-                    message="Transaction data ready for frontend wallet submission",
+                    message="Transaction data ready for manual submission",
                     machine_station_address=self.machine_station_address,
                     function="execute_machine_transaction",
                     machine_account_address=machine_address,
                     target=target,
-                    access_control=self.ACCESS_CONTROL_ANYONE
+                    access_control="Anyone can call with proper signatures"
                 )
             
-            opts = tx_options if tx_options else TransactionOptions()
-            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-            
-            return MachineStationWriteResult(
-                message=f"Successfully executed machine transaction from {machine_address} on target {target} through machine station {self.machine_station_address}.",
-                success=True,
-                transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
-                block_number=receipt.get('blockNumber') if isinstance(receipt, dict) else None,
-                gas_used=receipt.get('gasUsed') if isinstance(receipt, dict) else None
+            # Use the new helper method with station admin signer
+            return await self._handle_evm_tx(
+                tx=tx,
+                action=f"execute machine transaction to {target}",
+                status_callback=status_callback,
+                tx_options=tx_options,
+                signer=self.station_manager_signer
             )
         except Exception as e:
             raise ValueError(f"Failed to execute machine transaction: {str(e)}")
 
-    def execute_machine_batch_transactions(
+    async def execute_machine_batch_transactions(
         self,
-        options: dict,
-        status_callback = None,
-        tx_options = None
-    ) -> Union[MachineStationWriteResult, ExecuteMachineBatchTransactionsData]:
+        options: ExecuteMachineBatchTransactionsOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {},
+    ) -> Union[EvmSendResult, ExecuteMachineBatchTransactionsData]:
         """
         Executes multiple transactions in a batch on behalf of machine smart accounts.
         
@@ -484,7 +493,7 @@ class MachineStation(Base):
         **Signature Generation Admin**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'machineAddresses', 'targets', 'calldataList', 'nonce', optional 'refundAmount', optional 'machineNonces', optional 'machineStationOwnerSignature', optional 'machineOwnerSignatures', and optional 'sendTransaction'
+            options: ExecuteMachineBatchTransactionsOptions object containing machine_addresses, targets, calldata_list, nonce, refund_amount, machine_nonces, signatures and optional send_transaction
             status_callback: Optional callback function for transaction status updates.
             tx_options: Optional TransactionOptions for EVM transactions.
             
@@ -495,15 +504,16 @@ class MachineStation(Base):
             ValueError: If the batch transaction execution fails
         """
         try:
-            machine_addresses = options['machineAddresses']
-            targets = options['targets']
-            calldata_list = options['calldataList']
-            nonce = options['nonce']
-            refund_amount = options.get('refundAmount', 0)
-            machine_nonces = options.get('machineNonces', [])
-            machine_station_owner_signature = options.get('machineStationOwnerSignature')
-            machine_owner_signatures = options.get('machineOwnerSignatures', [])
-            send_transaction = options.get('sendTransaction', False)
+            ops = parse_options(ExecuteMachineBatchTransactionsOptions, options, caller="execute_machine_batch_transactions()")
+            machine_addresses = ops.machine_addresses
+            targets = ops.targets
+            calldata_list = ops.calldata_list
+            nonce = ops.nonce
+            refund_amount = ops.refund_amount
+            machine_nonces = ops.machine_nonces
+            machine_station_owner_signature = ops.machine_station_owner_signature
+            machine_owner_signatures = ops.machine_owner_signatures
+            send_transaction = ops.send_transaction
             
             payload = self.iface.encode_abi(
                 "executeMachineBatchTransactions",
@@ -520,36 +530,31 @@ class MachineStation(Base):
                 targets_str = ", ".join(targets)
                 return ExecuteMachineBatchTransactionsData(
                     transaction_data=tx,
-                    message="Transaction data ready for frontend wallet submission",
+                    message="Transaction data ready for manual submission",
                     machine_station_address=self.machine_station_address,
                     function="execute_machine_batch_transactions",
                     machine_account_addresses=machine_addresses,
                     targets=targets,
                     description=f"Batch transactions from accounts [{accounts_str}] on targets [{targets_str}]",
-                    access_control=self.ACCESS_CONTROL_ANYONE
+                    access_control="Anyone can call with proper signatures"
                 )
             
-            opts = tx_options if tx_options else TransactionOptions()
-            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-            
-            # Create a descriptive message for the batch operation
-            accounts_str = ", ".join(machine_addresses)
-            targets_str = ", ".join(targets)
-            return MachineStationWriteResult(
-                message=f"Successfully executed batch transactions from accounts [{accounts_str}] on targets [{targets_str}] through machine station {self.machine_station_address}.",
-                success=True,
-                transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
-                block_number=receipt.get('blockNumber') if isinstance(receipt, dict) else None,
-                gas_used=receipt.get('gasUsed') if isinstance(receipt, dict) else None
+            # Use the new helper method with station manager signer
+            return await self._handle_evm_tx(
+                tx=tx,
+                action=f"execute batch transaction for {len(machine_addresses)} machines",
+                status_callback=status_callback,
+                tx_options=tx_options,
+                signer=self.station_manager_signer
             )
         except Exception as e:
-            raise ValueError(f"Failed to execute machine batch transaction: {str(e)}")
+            raise ValueError(f"Failed to execute machine batch transactions: {str(e)}")
 
-    def execute_machine_transfer_balance(
+    async def execute_machine_transfer_balance(
         self,
-        options: dict,
-        status_callback = None,
-        tx_options = None
+        options: ExecuteMachineTransferBalanceOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {},
     ) -> Union[MachineStationWriteResult, ExecuteTransferMachineBalanceData]:
         """
         Transfers balance from a machine smart account to a recipient.
@@ -559,7 +564,7 @@ class MachineStation(Base):
         **Signature Generation Admin**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'machineAddress', 'recipientAddress', 'nonce', 'stationManagerSignature', 'machineOwnerSignature', and optional 'sendTransaction'
+            options: ExecuteMachineTransferBalanceOptions object containing machine_address, recipient_address, nonce, signatures and optional send_transaction
             status_callback: Optional callback function for transaction status updates.
             tx_options: Optional TransactionOptions for EVM transactions.
             
@@ -571,12 +576,13 @@ class MachineStation(Base):
             ValueError: If the balance transfer execution fails
         """
         try:
-            machine_address = options['machineAddress']
-            recipient_address = options['recipientAddress']
-            nonce = options['nonce']
-            station_manager_signature = options['stationManagerSignature']
-            machine_owner_signature = options['machineOwnerSignature']
-            send_transaction = options.get('sendTransaction', False)
+            ops = parse_options(ExecuteMachineTransferBalanceOptions, options, caller="execute_machine_transfer_balance()")
+            machine_address = ops.machine_address
+            recipient_address = ops.recipient_address
+            nonce = ops.nonce
+            station_manager_signature = ops.station_manager_signature
+            machine_owner_signature = ops.machine_owner_signature
+            send_transaction = ops.send_transaction
             
             payload = self.iface.encode_abi(
                 "executeMachineTransferBalance",
@@ -593,21 +599,19 @@ class MachineStation(Base):
                     transaction_data=tx,
                     message="Transaction data ready for manual submission",
                     machine_station_address=self.machine_station_address,
-                    function="execute_transfer_machine_balance",
+                    function="execute_machine_transfer_balance",
                     machine_account_address=machine_address,
                     recipient_address=recipient_address,
                     required_role="STATION_MANAGER_ROLE"
                 )
             
-            opts = tx_options if tx_options else TransactionOptions()
-            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-            
-            return MachineStationWriteResult(
-                message=f"Successfully transferred balance from {machine_address} to {recipient_address} through machine station {self.machine_station_address}.",
-                success=True,
-                transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
-                block_number=receipt.get('blockNumber') if isinstance(receipt, dict) else None,
-                gas_used=receipt.get('gasUsed') if isinstance(receipt, dict) else None
+            # Use the new helper method with station manager signer
+            return await self._handle_evm_tx(
+                tx=tx,
+                action=f"transfer balance from machine {machine_address} to {recipient_address}",
+                status_callback=status_callback,
+                tx_options=tx_options,
+                signer=self.station_manager_signer
             )
         except Exception as e:
             raise ValueError(f"Failed to execute machine transfer balance: {str(e)}")
@@ -659,7 +663,7 @@ class MachineStation(Base):
 
     async def admin_sign_transfer_machine_station_balance(
         self,
-        options: dict
+        options: AdminSignTransferMachineStationBalanceOptions
     ) -> str:
         """
         Generates a signature for transferring machine station balance.
@@ -667,7 +671,7 @@ class MachineStation(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'newMachineStationAddress' and 'nonce'
+            options: AdminSignTransferMachineStationBalanceOptions object containing new address and nonce
             
         Returns:
             str: Hex-encoded signature (0x prefixed) from the station admin or manager
@@ -676,8 +680,9 @@ class MachineStation(Base):
             Exception: If signature generation fails
         """
         try:
-            new_machine_station_address = options['newMachineStationAddress']
-            nonce = options['nonce']
+            ops = parse_options(AdminSignTransferMachineStationBalanceOptions, options, caller="admin_sign_transfer_machine_station_balance()")
+            new_machine_station_address = ops.new_machine_station_address
+            nonce = ops.nonce
             
             domain = await self._get_machine_station_domain("MachineStationFactory")
             types = {
@@ -699,7 +704,7 @@ class MachineStation(Base):
 
     async def admin_sign_transaction(
         self,
-        options: dict
+        options: AdminSignExecuteTransactionOptions
     ) -> str:
         """
         Generates a signature for executing a transaction.
@@ -707,7 +712,7 @@ class MachineStation(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'target', 'calldata', 'nonce', and optional 'refundAmount'
+            options: AdminSignExecuteTransactionOptions object containing target, calldata, nonce and refund_amount
             
         Returns:
             str: Hex-encoded signature (0x prefixed) from the station admin or manager
@@ -715,8 +720,13 @@ class MachineStation(Base):
         Raises:
             Exception: If signature generation fails
         """
-            
         try:
+            ops = parse_options(AdminSignExecuteTransactionOptions, options, caller="admin_sign_transaction()")
+            target = ops.target
+            calldata = ops.calldata
+            nonce = ops.nonce
+            refund_amount = ops.refund_amount
+            
             domain = await self._get_machine_station_domain("MachineStationFactory")
             types = {
                 "ExecuteTransaction": [
@@ -727,21 +737,21 @@ class MachineStation(Base):
                 ],
             }
             message = {
-                "target": options['target'],
-                "data": options['calldata'],
-                "nonce": options['nonce'],
-                "refundAmount": options.get('refundAmount', 0)
+                "target": target,
+                "data": calldata,
+                "nonce": nonce,
+                "refundAmount": refund_amount
             }
             
             signable_message = encode_typed_data(domain, types, message)
             signature = self.station_admin_signer.sign_message(signable_message).signature.hex()
             return "0x" + signature
         except Exception as e:
-            raise ValueError(f"Failed to sign transaction: {str(e)}")
+            raise ValueError(f"Failed to sign execute transaction: {str(e)}")
 
     async def admin_sign_machine_transaction(
         self,
-        options: dict
+        options: AdminSignMachineTransactionOptions
     ) -> str:
         """
         Generates a signature for executing a machine transaction.
@@ -749,7 +759,7 @@ class MachineStation(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'machineAddress', 'target', 'calldata', 'nonce', and optional 'refundAmount'
+            options: AdminSignMachineTransactionOptions object containing machine_address, target, calldata, nonce and refund_amount
             
         Returns:
             str: Hex-encoded signature (0x prefixed) from the station admin or manager
@@ -757,8 +767,14 @@ class MachineStation(Base):
         Raises:
             Exception: If signature generation fails
         """
-            
         try:
+            ops = parse_options(AdminSignMachineTransactionOptions, options, caller="admin_sign_machine_transaction()")
+            machine_address = ops.machine_address
+            target = ops.target
+            calldata = ops.calldata
+            nonce = ops.nonce
+            refund_amount = ops.refund_amount
+            
             domain = await self._get_machine_station_domain("MachineStationFactory")  
             types = {
                 "ExecuteMachineTransaction": [
@@ -770,11 +786,11 @@ class MachineStation(Base):
                 ],
             }
             message = {
-                "machineAddress": options['machineAddress'],
-                "target": options['target'],
-                "data": options['calldata'],
-                "nonce": options['nonce'],
-                "refundAmount": options.get('refundAmount', 0)
+                "machineAddress": machine_address,
+                "target": target,
+                "data": calldata,
+                "nonce": nonce,
+                "refundAmount": refund_amount
             }
             
             signable_message = encode_typed_data(domain, types, message)
@@ -785,7 +801,7 @@ class MachineStation(Base):
 
     async def admin_sign_machine_batch_transactions(
         self,
-        options: dict
+        options: AdminSignMachineBatchTransactionsOptions
     ) -> str:
         """
         Generates a signature for executing batch transactions.
@@ -793,7 +809,7 @@ class MachineStation(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'machineAddresses', 'targets', 'calldataList', 'nonce', optional 'refundAmount', and optional 'machineNonces'
+            options: AdminSignMachineBatchTransactionsOptions object containing machine_addresses, targets, calldata_list, nonce, refund_amount and machine_nonces
             
         Returns:
             str: Hex-encoded signature (0x prefixed) from the station admin or manager
@@ -802,12 +818,13 @@ class MachineStation(Base):
             Exception: If signature generation fails
         """
         try:
-            machine_addresses = options['machineAddresses']
-            targets = options['targets']
-            calldata_list = options['calldataList']
-            nonce = options['nonce']
-            refund_amount = options.get('refundAmount', 0)
-            machine_nonces = options.get('machineNonces', [])
+            ops = parse_options(AdminSignMachineBatchTransactionsOptions, options, caller="admin_sign_machine_batch_transactions()")
+            machine_addresses = ops.machine_addresses
+            targets = ops.targets
+            calldata_list = ops.calldata_list
+            nonce = ops.nonce
+            refund_amount = ops.refund_amount
+            machine_nonces = ops.machine_nonces
             
             domain = await self._get_machine_station_domain("MachineStationFactory")
             types = {
@@ -837,7 +854,7 @@ class MachineStation(Base):
 
     async def admin_sign_transfer_machine_balance(
         self,
-        options: dict
+        options: AdminSignTransferMachineBalanceOptions
     ) -> str:
         """
         Generates a signature for transferring machine balance.
@@ -845,7 +862,7 @@ class MachineStation(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'machineAddress', 'recipientAddress', and 'nonce'
+            options: AdminSignTransferMachineBalanceOptions object containing machine_address, recipient_address and nonce
             
         Returns:
             str: Hex-encoded signature (0x prefixed) from the station admin or manager
@@ -854,9 +871,10 @@ class MachineStation(Base):
             Exception: If signature generation fails
         """
         try:
-            machine_address = options['machineAddress']
-            recipient_address = options['recipientAddress']
-            nonce = options['nonce']
+            ops = parse_options(AdminSignTransferMachineBalanceOptions, options, caller="admin_sign_transfer_machine_balance()")
+            machine_address = ops.machine_address
+            recipient_address = ops.recipient_address
+            nonce = ops.nonce
             
             domain = await self._get_machine_station_domain("MachineStationFactory")
             types = {
@@ -884,26 +902,30 @@ class MachineStation(Base):
 
     async def machine_sign_machine_transaction(
         self,   
-        options: dict
-    ) -> EIP712SignableMessage:
+        options: MachineSignMachineTransactionOptions,
+        machine_owner_signer: Optional[BaseAccount] = None
+    ) -> Union[str, EIP712SignableMessage]:
         """
         Creates a signable EIP-712 message for machine transaction execution.
-        Returns the message structure for frontend wallet signing.
+        If machine_owner_signer is provided, signs the message and returns the signature.
+        Otherwise, returns the message structure for frontend wallet signing.
         
         Args:
-            options: Dictionary containing 'machineAddress', 'target', 'calldata', and 'nonce'
+            options: MachineSignMachineTransactionOptions object containing machine_address, target, calldata, nonce
+            machine_owner_signer: Optional machine owner signer for direct signing
             
         Returns:
-            EIP712SignableMessage: EIP-712 signable message object with domain, types, and message
+            Union[str, EIP712SignableMessage]: Either the signature string or EIP-712 signable message object
         
         Raises:
             ValueError: If the signable message generation fails
         """
         try:
-            machine_address = options['machineAddress']
-            target = options['target']
-            calldata = options['calldata']
-            nonce = options['nonce']
+            ops = parse_options(MachineSignMachineTransactionOptions, options, caller="machine_sign_machine_transaction()")
+            machine_address = ops.machine_address
+            target = ops.target
+            calldata = ops.calldata
+            nonce = ops.nonce
             
             domain = await self._get_machine_account_domain("MachineSmartAccount", machine_address)
             types = {
@@ -919,7 +941,13 @@ class MachineStation(Base):
                 "nonce": nonce
             }
             
-            # Return the complete signable message object for frontend signing
+            # If signer is provided, sign the message and return signature
+            if machine_owner_signer:
+                signable_message = encode_typed_data(domain, types, message)
+                signature = machine_owner_signer.sign_message(signable_message).signature.hex()
+                return "0x" + signature
+            
+            # Otherwise return the signable message object for frontend signing
             return EIP712SignableMessage(
                 domain=domain,
                 types=types,
@@ -927,29 +955,33 @@ class MachineStation(Base):
                 primaryType="Execute"
             )
         except Exception as e:
-            raise ValueError(f"Failed to send back a signable message for machine transaction: {str(e)}")
+            raise ValueError(f"Failed to create signable message for machine transaction: {str(e)}")
 
     async def machine_sign_transfer_machine_balance(
         self,
-        options: dict
-    ) -> EIP712SignableMessage:
+        options: MachineSignTransferMachineBalanceOptions,
+        machine_owner_signer: Optional[BaseAccount] = None
+    ) -> Union[str, EIP712SignableMessage]:
         """
         Creates a signable EIP-712 message for machine balance transfer.
-        Returns the message structure for frontend wallet signing.
+        If machine_owner_signer is provided, signs the message and returns the signature.
+        Otherwise, returns the message structure for frontend wallet signing.
         
         Args:
-            options: Dictionary containing 'machineAddress', 'recipientAddress', and 'nonce'
+            options: MachineSignTransferMachineBalanceOptions object containing machine_address, recipient_address, nonce
+            machine_owner_signer: Optional machine owner signer for direct signing
             
         Returns:
-            EIP712SignableMessage: EIP-712 signable message object with domain, types, and message
+            Union[str, EIP712SignableMessage]: Either the signature string or EIP-712 signable message object
         
         Raises:
             ValueError: If the signable message generation fails
         """
         try:
-            machine_address = options['machineAddress']
-            recipient_address = options['recipientAddress']
-            nonce = options['nonce']
+            ops = parse_options(MachineSignTransferMachineBalanceOptions, options, caller="machine_sign_transfer_machine_balance()")
+            machine_address = ops.machine_address
+            recipient_address = ops.recipient_address
+            nonce = ops.nonce
             
             domain = await self._get_machine_account_domain("MachineSmartAccount", machine_address)
             types = {
@@ -963,7 +995,13 @@ class MachineStation(Base):
                 "nonce": nonce,
             }
             
-            # Return the complete signable message object for frontend signing
+            # If signer is provided, sign the message and return signature
+            if machine_owner_signer:
+                signable_message = encode_typed_data(domain, types, message)
+                signature = machine_owner_signer.sign_message(signable_message).signature.hex()
+                return "0x" + signature
+            
+            # Otherwise return the signable message object for frontend signing
             return EIP712SignableMessage(
                 domain=domain,
                 types=types,
@@ -971,7 +1009,7 @@ class MachineStation(Base):
                 primaryType="TransferMachineBalance"
             )
         except Exception as e:
-            raise ValueError(f"Failed to send back a signable message for machine balance transfer: {str(e)}")
+            raise ValueError(f"Failed to create signable message for machine balance transfer: {str(e)}")
 
     # =====================================================================
     # PRIVATE HELPER METHODS

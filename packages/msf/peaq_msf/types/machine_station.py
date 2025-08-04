@@ -43,8 +43,104 @@ class AdminSignDeployMachineSmartAccountOptions(BaseModel):
     machine_owner_address: str = Field(..., description="Address of the machine account owner")
     nonce: int = Field(..., description="Nonce for the deployment")
     
-MachineStationWriteResult = EvmSendResult
+class TransferMachineStationBalanceOptions(BaseModel):
+    """Options for transferring machine station balance"""
+    new_machine_station_address: str = Field(..., description="New machine station address")
+    nonce: int = Field(..., description="Nonce for the transfer")
+    station_admin_signature: str = Field(..., description="Signature from station admin")
+    send_transaction: bool = Field(True, description="Whether to send transaction automatically")
+    
+class AdminSignTransferMachineStationBalanceOptions(BaseModel):
+    """Options for admin signing machine station balance transfer"""
+    new_machine_station_address: str = Field(..., description="New machine station address")
+    nonce: int = Field(..., description="Nonce for the transfer")
+    
+class ExecuteTransactionOptions(BaseModel):
+    """Options for executing a transaction"""
+    target: str = Field(..., description="Target contract address")
+    calldata: str = Field(..., description="Transaction calldata")
+    nonce: int = Field(..., description="Nonce for the transaction")
+    refund_amount: int = Field(0, description="Refund amount for the transaction")
+    machine_station_owner_signature: str = Field(None, description="Signature from machine station owner")
+    send_transaction: bool = Field(False, description="Whether to send transaction automatically")
+    
+class AdminSignExecuteTransactionOptions(BaseModel):
+    """Options for admin signing transaction execution"""
+    target: str = Field(..., description="Target contract address")
+    calldata: str = Field(..., description="Transaction calldata")
+    nonce: int = Field(..., description="Nonce for the transaction")
+    refund_amount: int = Field(0, description="Refund amount for the transaction")
+    
+class ExecuteMachineTransactionOptions(BaseModel):
+    """Options for executing a machine transaction"""
+    machine_address: str = Field(..., description="Machine account address")
+    target: str = Field(..., description="Target contract address")
+    calldata: str = Field(..., description="Transaction calldata")
+    nonce: int = Field(..., description="Nonce for the transaction")
+    refund_amount: int = Field(0, description="Refund amount for the transaction")
+    machine_station_owner_signature: str = Field(None, description="Signature from machine station owner")
+    machine_owner_signature: str = Field(None, description="Signature from machine owner")
+    send_transaction: bool = Field(False, description="Whether to send transaction automatically")
+    
+class AdminSignMachineTransactionOptions(BaseModel):
+    """Options for admin signing machine transaction execution"""
+    machine_address: str = Field(..., description="Machine account address")
+    target: str = Field(..., description="Target contract address")
+    calldata: str = Field(..., description="Transaction calldata")
+    nonce: int = Field(..., description="Nonce for the transaction")
+    refund_amount: int = Field(0, description="Refund amount for the transaction")
+    
+class MachineSignMachineTransactionOptions(BaseModel):
+    """Options for machine owner signing machine transaction"""
+    machine_address: str = Field(..., description="Address of the MachineSmartAccount. Must be checksummed.")
+    target: str = Field(..., description="Address of the contract being called.")
+    calldata: str = Field(..., description="ABI-encoded 0x… call data for the target contract.")
+    nonce: int = Field(..., description="One-time uint256 nonce to prevent replay attacks.")
+    
+class ExecuteMachineBatchTransactionsOptions(BaseModel):
+    """Options for executing machine batch transactions"""
+    machine_addresses: List[str] = Field(..., description="Array of MachineSmartAccount addresses")
+    targets: List[str] = Field(..., description="Array of contract addresses — one per machine call")
+    calldata_list: List[str] = Field(..., description="Array of ABI-encoded payloads matching targets")
+    nonce: int = Field(..., description="Global uint256 nonce for the batch")
+    refund_amount: int = Field(0, description="Token refund (in wei) for gas; defaults to 0")
+    machine_nonces: List[int] = Field(..., description="Array of per-machine nonces")
+    machine_station_owner_signature: str = Field(..., description="EIP-712 signature from adminSignMachineBatchTransactions()")
+    machine_owner_signatures: List[str] = Field(..., description="Array of each machine owner's signature from machineSignMachineTransaction()")
+    send_transaction: bool = Field(False, description="Whether to send transaction automatically")
+    
+class AdminSignMachineBatchTransactionsOptions(BaseModel):
+    """Options for admin signing machine batch transactions"""
+    machine_addresses: List[str] = Field(..., description="Array of MachineSmartAccount addresses")
+    targets: List[str] = Field(..., description="Array of contract addresses — one per machine call")
+    calldata_list: List[str] = Field(..., description="Array of ABI-encoded payloads matching targets")
+    nonce: int = Field(..., description="Global uint256 nonce for the batch")
+    refund_amount: int = Field(0, description="Token refund (in wei) for gas; defaults to 0")
+    machine_nonces: List[int] = Field(..., description="Array of per-machine nonces")
+    
+class ExecuteMachineTransferBalanceOptions(BaseModel):
+    """Options for executing machine transfer balance"""
+    machine_address: str = Field(..., description="MachineSmartAccount sending the transfer")
+    recipient_address: str = Field(..., description="Address receiving the token balance")
+    nonce: int = Field(..., description="Same nonce used in Steps 1 & 2")
+    station_manager_signature: str = Field(..., description="Signature from adminSignTransferMachineBalance()")
+    machine_owner_signature: str = Field(..., description="Signature from machineSignTransferMachineBalance()")
+    send_transaction: bool = Field(False, description="Whether to send transaction automatically")
+    
+class AdminSignTransferMachineBalanceOptions(BaseModel):
+    """Options for admin signing machine balance transfer"""
+    machine_address: str = Field(..., description="Same machine address as above")
+    recipient_address: str = Field(..., description="Same recipient address as above")
+    nonce: int = Field(..., description="Same nonce used in Step 1")
+    
+class MachineSignTransferMachineBalanceOptions(BaseModel):
+    """Options for machine owner signing balance transfer"""
+    machine_address: str = Field(..., description="Address of the MachineSmartAccount")
+    recipient_address: str = Field(..., description="Address to receive the token balance")
+    nonce: int = Field(..., description="One-time uint256 nonce to prevent replay attacks")
+    
 
+MachineStationWriteResult = EvmSendResult
 class DeployedSmartAccountResult(EvmSendResult):
     """Result object for smart account deployment containing both transaction info and the deployed address"""
     message: str = Field(..., description="Human-readable success message")
@@ -118,57 +214,3 @@ class EIP712SignableMessage(BaseModel):
     message: Dict[str, Any] = Field(..., description="EIP-712 message")
     primaryType: str = Field(..., description="Primary type for EIP-712")
 
-
-
-# Admin signature options
-class AdminSignTransferMachineStationBalanceOptions(BaseModel):
-    """Options for admin signing machine station balance transfer"""
-    new_machine_station_address: str = Field(..., description="New machine station address")
-    nonce: int = Field(..., description="Nonce for the transaction")
-
-class AdminSignTransactionOptions(BaseModel):
-    """Options for admin signing transaction execution"""
-    target: str = Field(..., description="Target contract address")
-    calldata: str = Field(..., description="Transaction calldata")
-    value: int = Field(..., description="Transaction value")
-    nonce: int = Field(..., description="Nonce for the transaction")
-
-class AdminSignMachineTransactionOptions(BaseModel):
-    """Options for admin signing machine transaction"""
-    machine_account_address: str = Field(..., description="Machine account address")
-    target: str = Field(..., description="Target contract address")
-    calldata: str = Field(..., description="Transaction calldata")
-    value: int = Field(..., description="Transaction value")
-    nonce: int = Field(..., description="Nonce for the transaction")
-    refund_amount: Optional[int] = Field(0, description="Refund amount")
-
-class AdminSignMachineBatchTransactionsOptions(BaseModel):
-    """Options for admin signing batch machine transactions"""
-    machine_account_addresses: List[str] = Field(..., description="List of machine account addresses")
-    targets: List[str] = Field(..., description="List of target contract addresses")
-    calldata_list: List[str] = Field(..., description="List of transaction calldata")
-    values: List[int] = Field(..., description="List of transaction values")
-    nonce: int = Field(..., description="Nonce for the transaction")
-
-class AdminSignTransferMachineBalanceOptions(BaseModel):
-    """Options for admin signing machine balance transfer"""
-    machine_account_address: str = Field(..., description="Machine account address")
-    recipient_address: str = Field(..., description="Recipient address")
-    amount: int = Field(..., description="Transfer amount")
-    nonce: int = Field(..., description="Nonce for the transaction")
-
-# Machine signature options
-class MachineSignMachineTransactionOptions(BaseModel):
-    """Options for machine owner signing machine transaction"""
-    machine_account_address: str = Field(..., description="Machine account address")
-    target: str = Field(..., description="Target contract address")
-    calldata: str = Field(..., description="Transaction calldata")
-    value: int = Field(..., description="Transaction value")
-    nonce: int = Field(..., description="Nonce for the transaction")
-
-class MachineSignTransferMachineBalanceOptions(BaseModel):
-    """Options for machine owner signing balance transfer"""
-    machine_account_address: str = Field(..., description="Machine account address")
-    recipient_address: str = Field(..., description="Recipient address")
-    amount: int = Field(..., description="Transfer amount")
-    nonce: int = Field(..., description="Nonce for the transaction")
