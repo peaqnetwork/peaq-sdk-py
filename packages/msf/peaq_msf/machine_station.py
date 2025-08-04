@@ -12,6 +12,8 @@ from peaq_msf.types.machine_station import (
     DeployedSmartAccountResult,
     UpdateConfigsTransactionData,
     UpdateConfigsOptions,
+    DeployMachineSmartAccountOptions,
+    AdminSignDeployMachineSmartAccountOptions,
     MachineStationWriteResult,
     DeployMachineSmartAccountTransactionData,
     TransferMachineStationBalanceTransactionData,
@@ -126,7 +128,6 @@ class MachineStation(Base):
         options: UpdateConfigsOptions,
         status_callback: StatusCallback = None,
         tx_options: TxOptions = {},
-        send_transaction: bool = True,
     ) -> Union[MachineStationWriteResult, UpdateConfigsTransactionData]:
         """
         Updates configuration values in the machine station factory contract.
@@ -134,11 +135,9 @@ class MachineStation(Base):
         **Transaction Execution**: Requires STATION_MANAGER_ROLE
         
         Args:
-            options: UpdateConfigsOptions object containing 'key' and 'value'
+            options: UpdateConfigsOptions object containing 'key', 'value' and optional 'send_transaction'
             status_callback: Optional callback function for transaction status updates.
             tx_options: Optional TransactionOptions for EVM transactions.
-            send_transaction: If True, sends the transaction automatically using the admin key. 
-                If False, returns transaction data for manual submission. Defaults to True.
             
         Returns:
             Union[MachineStationWriteResult, UpdateConfigsTransactionData]: Update result if sent, or transaction data if send_transaction=False.
@@ -150,6 +149,7 @@ class MachineStation(Base):
             ops = parse_options(UpdateConfigsOptions, options, caller="update_configs()")
             key = ops.key
             value = ops.value
+            send_transaction = ops.send_transaction
             
             data = self.iface.encode_abi(
                 "updateConfigs",
@@ -186,11 +186,11 @@ class MachineStation(Base):
     # SMART ACCOUNT DEPLOYMENT METHODS
     # =====================================================================
 
-    def deploy_machine_smart_account(
+    async def deploy_machine_smart_account(
         self,
-        options: dict,
-        status_callback = None,
-        tx_options = None
+        options: DeployMachineSmartAccountOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> Union[DeployedSmartAccountResult, DeployMachineSmartAccountTransactionData]:
         """
         Deploys a new machine smart account through the factory contract.
@@ -199,7 +199,7 @@ class MachineStation(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'machineOwnerAddress', 'nonce', 'stationManagerSignature', and optional 'sendTransaction'
+            options: DeployMachineSmartAccountOptions object containing machine owner address, nonce, signature and optional send_transaction.
             status_callback: Optional callback function for transaction status updates.
             tx_options: Optional TransactionOptions for EVM transactions.
             
@@ -210,10 +210,11 @@ class MachineStation(Base):
             ValueError: If deployment fails
         """
         try:
-            send_transaction = options.get('sendTransaction', True)
-            machine_owner_address = options['machine_owner_address']
-            nonce = options['nonce']
-            station_manager_signature = options['station_manager_signature']
+            ops = parse_options(DeployMachineSmartAccountOptions, options, caller="deploy_machine_smart_account()")
+            machine_owner_address = ops.machine_owner_address
+            nonce = ops.nonce
+            station_manager_signature = ops.station_manager_signature
+            send_transaction = ops.send_transaction
             
             payload = self.iface.encode_abi(
                 "deployMachineSmartAccount",
@@ -236,21 +237,33 @@ class MachineStation(Base):
                     note="After transaction is mined, listen for MachineSmartAccountDeployed event to get the deployed address"
                 )
             
-            opts = tx_options if tx_options else TxOptions()
-            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
+            # Use the new helper method with station manager signer
+            result = await self._handle_evm_tx(
+                tx=tx,
+                action=f"deploy machine smart account for owner {machine_owner_address}",
+                status_callback=status_callback,
+                tx_options=tx_options,
+                signer=self.station_manager_signer
+            )
+            receipt = await result.receipt
             machine_account_deployed_topic = self._api.keccak(text="MachineSmartAccountDeployed(address)").hex()
             
             for log in receipt["logs"]:
-                if log["topics"][0].hex() == machine_account_deployed_topic and len(log["topics"]) > 1:
-                    machine_account_address = Web3.to_checksum_address(log["topics"][1].hex()[24:])
-                    return DeployedSmartAccountResult(
-                        message=f"Successfully deployed machine smart account at address {machine_account_address}.",
-                        tx_hash=receipt.get('transactionHash'),
-                        receipt=receipt,
-                        deployed_address=machine_account_address
-                    )
-
-            raise ValueError("MachineSmartAccountDeployed event not found in logs")
+                # Handle both string and bytes topics
+                topic_0 = log["topics"][0]
+                topic_0_hex = topic_0.hex() if hasattr(topic_0, 'hex') else topic_0
+                
+                if topic_0_hex == machine_account_deployed_topic and len(log["topics"]) > 1:
+                    topic_1 = log["topics"][1]
+                    topic_1_hex = topic_1.hex() if hasattr(topic_1, 'hex') else topic_1
+                    machine_account_address = Web3.to_checksum_address(f"0x{topic_1_hex[24:]}")
+            
+            return DeployedSmartAccountResult(
+                message=f"Successfully deployed machine smart account at address {machine_account_address}.",
+                tx_hash=getattr(result, 'tx_hash', None),
+                receipt=receipt,
+                deployed_address=machine_account_address
+            )
         except Exception as e:
             raise ValueError(f"Failed to deploy machine smart account: {str(e)}")
 
@@ -603,9 +616,9 @@ class MachineStation(Base):
     # EIP-712 SIGNATURE GENERATION METHODS (ADMIN)
     # =====================================================================
 
-    def admin_sign_deploy_machine_smart_account(
+    async def admin_sign_deploy_machine_smart_account(
         self,
-        options: dict
+        options: AdminSignDeployMachineSmartAccountOptions
     ) -> str:
         """
         Generates a signature for deploying a machine smart account.
@@ -613,7 +626,7 @@ class MachineStation(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'machineOwnerAddress' and 'nonce'
+            options: AdminSignDeployMachineSmartAccountOptions object containing machine owner address and nonce
             
         Returns:
             str: Hex-encoded signature (0x prefixed) from the station manager or admin
@@ -622,10 +635,11 @@ class MachineStation(Base):
             Exception: If signature generation fails
         """
         try:
-            machine_owner_address = options['machine_owner_address']
-            nonce = options['nonce']
+            ops = parse_options(AdminSignDeployMachineSmartAccountOptions, options, caller="admin_sign_deploy_machine_smart_account()")
+            machine_owner_address = ops.machine_owner_address
+            nonce = ops.nonce
             
-            domain = self._get_machine_station_domain("MachineStationFactory")
+            domain = await self._get_machine_station_domain("MachineStationFactory")
             types = {
                 "DeployMachineSmartAccount": [
                     {"name": "machineOwner", "type": "address"},
@@ -643,7 +657,7 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to sign deploy machine smart account: {str(e)}")
 
-    def admin_sign_transfer_machine_station_balance(
+    async def admin_sign_transfer_machine_station_balance(
         self,
         options: dict
     ) -> str:
@@ -665,7 +679,7 @@ class MachineStation(Base):
             new_machine_station_address = options['newMachineStationAddress']
             nonce = options['nonce']
             
-            domain = self._get_machine_station_domain("MachineStationFactory")
+            domain = await self._get_machine_station_domain("MachineStationFactory")
             types = {
                 "TransferMachineStationBalance": [
                     {"name": "newMachineStationAddress", "type": "address"},
@@ -683,7 +697,7 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to sign transfer machine station balance: {str(e)}")
 
-    def admin_sign_transaction(
+    async def admin_sign_transaction(
         self,
         options: dict
     ) -> str:
@@ -703,7 +717,7 @@ class MachineStation(Base):
         """
             
         try:
-            domain = self._get_machine_station_domain("MachineStationFactory")
+            domain = await self._get_machine_station_domain("MachineStationFactory")
             types = {
                 "ExecuteTransaction": [
                     {"name": "target", "type": "address"},
@@ -725,7 +739,7 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to sign transaction: {str(e)}")
 
-    def admin_sign_machine_transaction(
+    async def admin_sign_machine_transaction(
         self,
         options: dict
     ) -> str:
@@ -745,7 +759,7 @@ class MachineStation(Base):
         """
             
         try:
-            domain = self._get_machine_station_domain("MachineStationFactory")
+            domain = await self._get_machine_station_domain("MachineStationFactory")  
             types = {
                 "ExecuteMachineTransaction": [
                     {"name": "machineAddress", "type": "address"},
@@ -769,7 +783,7 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to sign machine transaction: {str(e)}")
 
-    def admin_sign_machine_batch_transactions(
+    async def admin_sign_machine_batch_transactions(
         self,
         options: dict
     ) -> str:
@@ -795,7 +809,7 @@ class MachineStation(Base):
             refund_amount = options.get('refundAmount', 0)
             machine_nonces = options.get('machineNonces', [])
             
-            domain = self._get_machine_station_domain("MachineStationFactory")
+            domain = await self._get_machine_station_domain("MachineStationFactory")
             types = {
                 "ExecuteMachineBatchTransactions": [
                     {"name": "machineAddresses", "type": "address[]"},
@@ -821,7 +835,7 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to sign machine batch transactions: {str(e)}")
 
-    def admin_sign_transfer_machine_balance(
+    async def admin_sign_transfer_machine_balance(
         self,
         options: dict
     ) -> str:
@@ -844,7 +858,7 @@ class MachineStation(Base):
             recipient_address = options['recipientAddress']
             nonce = options['nonce']
             
-            domain = self._get_machine_station_domain("MachineStationFactory")
+            domain = await self._get_machine_station_domain("MachineStationFactory")
             types = {
                 "ExecuteMachineTransferBalance": [
                     {"name": "machineAddress", "type": "address"},
@@ -868,8 +882,8 @@ class MachineStation(Base):
     # EIP-712 SIGNATURE GENERATION METHODS (MACHINE)
     # =====================================================================
 
-    def machine_sign_machine_transaction(
-        self,
+    async def machine_sign_machine_transaction(
+        self,   
         options: dict
     ) -> EIP712SignableMessage:
         """
@@ -891,7 +905,7 @@ class MachineStation(Base):
             calldata = options['calldata']
             nonce = options['nonce']
             
-            domain = self._get_machine_account_domain("MachineSmartAccount", machine_address)
+            domain = await self._get_machine_account_domain("MachineSmartAccount", machine_address)
             types = {
                 "Execute": [
                     {"name": "target", "type": "address"},
@@ -915,7 +929,7 @@ class MachineStation(Base):
         except Exception as e:
             raise ValueError(f"Failed to send back a signable message for machine transaction: {str(e)}")
 
-    def machine_sign_transfer_machine_balance(
+    async def machine_sign_transfer_machine_balance(
         self,
         options: dict
     ) -> EIP712SignableMessage:
@@ -937,7 +951,7 @@ class MachineStation(Base):
             recipient_address = options['recipientAddress']
             nonce = options['nonce']
             
-            domain = self._get_machine_account_domain("MachineSmartAccount", machine_address)
+            domain = await self._get_machine_account_domain("MachineSmartAccount", machine_address)
             types = {
                 "TransferMachineBalance": [
                     {"name": "recipientAddress", "type": "address"},

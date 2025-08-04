@@ -22,6 +22,8 @@ from .types.machine_station import (
     EIP712SignableMessage,
     UpdateConfigsTransactionData,
     UpdateConfigsOptions,
+    DeployMachineSmartAccountOptions,
+    AdminSignDeployMachineSmartAccountOptions,
     DeployMachineSmartAccountTransactionData,
     TransferMachineStationBalanceTransactionData,
     ExecuteTransactionData,
@@ -117,7 +119,7 @@ class Main(Base):
         **Transaction Execution**: Requires STATION_MANAGER_ROLE
         
         Args:
-            options: The configuration update options
+            options: UpdateConfigsOptions object containing 'key', 'value' and optional 'send_transaction'
             status_callback: Optional callback for monitoring transaction status
             tx_options: Optional transaction confirmation mode settings
             
@@ -130,11 +132,11 @@ class Main(Base):
     # SMART ACCOUNT DEPLOYMENT METHODS
     # =====================================================================
 
-    def deploy_machine_smart_account(
+    async def deploy_machine_smart_account(
         self,
-        options: dict,
-        status_callback: Optional[Callable[[TransactionStatusCallback], Union[None, Awaitable[None]]]] = None,
-        tx_options: Optional[TxOptions] = None
+        options: DeployMachineSmartAccountOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> Union[DeployedSmartAccountResult, DeployMachineSmartAccountTransactionData]:
         """
         Deploys a new machine smart account through the factory contract.
@@ -143,14 +145,14 @@ class Main(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The deployment options including owner address and signature
+            options: DeployMachineSmartAccountOptions object containing machine owner address, nonce, signature and optional send_transaction.
             status_callback: Optional callback for monitoring transaction status
             tx_options: Optional transaction confirmation mode settings
             
         Returns:
             Promise resolving to deployment result with the new account address or transaction data
         """
-        return self._machine_station.deploy_machine_smart_account(options, status_callback, tx_options)
+        return await self._machine_station.deploy_machine_smart_account(options, status_callback, tx_options)
 
     # =====================================================================
     # BALANCE TRANSFER METHODS
@@ -277,9 +279,9 @@ class Main(Base):
     # EIP-712 SIGNATURE GENERATION METHODS (ADMIN)
     # =====================================================================
 
-    def admin_sign_deploy_machine_smart_account(
+    async def admin_sign_deploy_machine_smart_account(
         self,
-        options: dict
+        options: AdminSignDeployMachineSmartAccountOptions
     ) -> str:
         """
         Generates a signature for deploying a machine smart account.
@@ -287,14 +289,14 @@ class Main(Base):
         **Signature Generation**: Can be signed by either DEFAULT_ADMIN_ROLE or STATION_MANAGER_ROLE
         
         Args:
-            options: The signature options
+            options: AdminSignDeployMachineSmartAccountOptions object containing machine owner address and nonce
             
         Returns:
             The EIP-712 signature string
         """
-        return self._machine_station.admin_sign_deploy_machine_smart_account(options)
+        return await self._machine_station.admin_sign_deploy_machine_smart_account(options)
 
-    def admin_sign_transfer_machine_station_balance(
+    async def admin_sign_transfer_machine_station_balance(
         self,
         options: dict
     ) -> str:
@@ -309,9 +311,9 @@ class Main(Base):
         Returns:
             The EIP-712 signature string
         """
-        return self._machine_station.admin_sign_transfer_machine_station_balance(options)
+        return await self._machine_station.admin_sign_transfer_machine_station_balance(options)
 
-    def admin_sign_transaction(
+    async def admin_sign_transaction(
         self,
         options: dict
     ) -> str:
@@ -326,9 +328,9 @@ class Main(Base):
         Returns:
             The EIP-712 signature string
         """
-        return self._machine_station.admin_sign_transaction(options)
+        return await self._machine_station.admin_sign_transaction(options)
 
-    def admin_sign_machine_transaction(
+    async def admin_sign_machine_transaction(
         self,
         options: dict
     ) -> str:
@@ -343,9 +345,9 @@ class Main(Base):
         Returns:
             The EIP-712 signature string
         """
-        return self._machine_station.admin_sign_machine_transaction(options)
+        return await self._machine_station.admin_sign_machine_transaction(options)
 
-    def admin_sign_machine_batch_transactions(
+    async def admin_sign_machine_batch_transactions(
         self,
         options: dict
     ) -> str:
@@ -360,9 +362,9 @@ class Main(Base):
         Returns:
             The EIP-712 signature string
         """
-        return self._machine_station.admin_sign_machine_batch_transactions(options)
+        return await self._machine_station.admin_sign_machine_batch_transactions(options)
 
-    def admin_sign_transfer_machine_balance(
+    async def admin_sign_transfer_machine_balance(
         self,
         options: dict
     ) -> str:
@@ -377,13 +379,13 @@ class Main(Base):
         Returns:
             The EIP-712 signature string
         """
-        return self._machine_station.admin_sign_transfer_machine_balance(options)
+        return await self._machine_station.admin_sign_transfer_machine_balance(options)
 
     # =====================================================================
     # EIP-712 SIGNATURE GENERATION METHODS (MACHINE)
     # =====================================================================
 
-    def machine_sign_machine_transaction(
+    async def machine_sign_machine_transaction(
         self,
         options: dict,
         machine_owner_signer: Optional[BaseAccount] = None
@@ -400,9 +402,9 @@ class Main(Base):
         Returns:
             Either the signature string or EIP-712 signable message object
         """
-        return self._machine_station.machine_sign_machine_transaction(options)
+        return await self._machine_station.machine_sign_machine_transaction(options)
 
-    def machine_sign_transfer_machine_balance(
+    async def machine_sign_transfer_machine_balance(
         self,
         options: dict,
         machine_owner_signer: Optional[BaseAccount] = None
@@ -419,4 +421,4 @@ class Main(Base):
         Returns:
             Either the signature string or EIP-712 signable message object
         """
-        return self._machine_station.machine_sign_transfer_machine_balance(options)
+        return await self._machine_station.machine_sign_transfer_machine_balance(options)

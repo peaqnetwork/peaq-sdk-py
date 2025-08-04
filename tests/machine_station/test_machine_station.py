@@ -132,7 +132,7 @@ def test_machine_sign_transfer_machine_balance(machine_station_sdk, smart_accoun
 # These tests verify the actual execution of operations on the blockchain
 # ============================================================================
 
-def test_deploy_smart_account(machine_station_sdk, machine_smart_account_owner_address):
+async def test_deploy_smart_account(machine_station_sdk, machine_smart_account_owner_address):
     """Test deploying a new smart account and verify its on-chain deployment.
     
     Steps:
@@ -146,15 +146,19 @@ def test_deploy_smart_account(machine_station_sdk, machine_smart_account_owner_a
     
     # Get signature for deployment
     signature = machine_station_sdk.machine_station.admin_sign_deploy_machine_smart_account(
-        machine_smart_account_owner_address=machine_smart_account_owner_address,
-        nonce=nonce
+        options={
+            "machine_owner_address": machine_smart_account_owner_address,
+            "nonce": nonce
+        }
     )
     
     # Deploy the smart account
-    result = machine_station_sdk.machine_station.deploy_machine_smart_account(
-        machine_smart_account_owner_address=machine_smart_account_owner_address,
-        nonce=nonce,
-        machine_station_owner_signature=signature
+    result = await machine_station_sdk.machine_station.deploy_machine_smart_account(
+        options={
+            "machine_owner_address": machine_smart_account_owner_address,
+            "nonce": nonce,
+            "station_manager_signature": signature
+        }
     )
     
     # Test the result object structure

@@ -142,22 +142,25 @@ def machine_station_sdk_2(evm_sdk, machine_station_address_2, machine_station_2_
     )
 
 @pytest.fixture
-def deployed_smart_account(machine_station_sdk, smart_account_address):
+async def deployed_smart_account(machine_station_sdk, smart_account_address):
     """
     Fixture to deploy a smart account for testing.
     Returns the deployed smart account address.
     """
     nonce = secrets.randbits(128)
     signature = machine_station_sdk.machine_station.admin_sign_deploy_machine_smart_account(
-        machine_smart_account_owner_address=smart_account_address,
-        nonce=nonce
+        options={
+            "machine_owner_address": smart_account_address,
+            "nonce": nonce
+        }
     )
-    result = machine_station_sdk.machine_station.deploy_machine_smart_account(
-        machine_smart_account_owner_address=smart_account_address,
-        nonce=nonce,
-        machine_station_owner_signature=signature
+    result = await machine_station_sdk.machine_station.deploy_machine_smart_account(
+        options={
+            "machine_owner_address": smart_account_address,
+            "nonce": nonce,
+            "station_manager_signature": signature
+        }
     )
-    assert result.success == True, "Smart account deployment failed"
     assert result.deployed_address.startswith("0x")
     assert len(result.deployed_address) == 42
     return result.deployed_address 
