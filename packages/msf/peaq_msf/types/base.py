@@ -2,8 +2,8 @@
 Base types for transaction status and callbacks
 """
 
-from dataclasses import dataclass, asdict
 from typing import Optional, runtime_checkable, Protocol
+from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
 class TransactionStatus(Enum):
@@ -22,23 +22,24 @@ class ConfirmationMode(Enum):
     CUSTOM = 'CUSTOM'    # Waits for user-defined number of confirmations
     FINAL = 'FINAL'      # Waits until Polkadot-style GRANDPA finality
 
-@dataclass
-class TransactionStatusCallback:
+class TransactionStatusCallback(BaseModel):
     """
     Status update data sent to callback functions during transaction processing.
     """
-    status: TransactionStatus
-    confirmation_mode: ConfirmationMode
-    total_confirmations: int
-    hash: str
-    receipt: Optional[dict] = None
-    nonce: Optional[int] = None
+    status: TransactionStatus = Field(..., description="Current transaction status")
+    confirmation_mode: ConfirmationMode = Field(..., description="Confirmation mode being used")
+    total_confirmations: int = Field(..., description="Total number of confirmations")
+    hash: str = Field(..., description="Transaction hash")
+    receipt: Optional[dict] = Field(default=None, description="Transaction receipt")
+    nonce: Optional[int] = Field(default=None, description="Transaction nonce")
+    
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
     
     def to_dict(self, clean_fn=None) -> dict:
         """
         Convert to a dictionary. Optionally clean with a provided function.
         """
-        raw_dict = asdict(self)
+        raw_dict = self.model_dump()
         return clean_fn(raw_dict) if clean_fn else raw_dict
 
 @runtime_checkable
@@ -55,10 +56,10 @@ class StatusCallback(Protocol):
         """
         ...
 
-@dataclass 
-class TransactionOptions:
+class TxOptions(BaseModel):
     """
-    Options for customizing transaction behavior and gas parameters.
+    Transaction options for customizing transaction behavior and gas parameters.
+    Matches TypeScript txOptions interface exactly.
     
     Custom gas and fee parameters:
     - gasLimit: Manual gas limit. If omitted, SDK estimates gas.
@@ -68,13 +69,13 @@ class TransactionOptions:
     WARNING: Overriding gas parameters is for advanced users only.
     Improper values may cause transactions to fail, overpay, or stall.
     """
-    mode: Optional[ConfirmationMode] = None
-    confirmations: Optional[int] = None
-    gas_limit: Optional[int] = None
-    max_fee_per_gas: Optional[int] = None  
-    max_priority_fee_per_gas: Optional[int] = None
+    mode: Optional[ConfirmationMode] = Field(None, description="Confirmation mode for transaction")
+    confirmations: Optional[int] = Field(None, description="Number of confirmations required (for CUSTOM mode)")
+    gas_limit: Optional[int] = Field(None, alias="gasLimit", description="Manual gas limit override")
+    max_fee_per_gas: Optional[int] = Field(None, alias="maxFeePerGas", description="Maximum fee per gas unit")
+    max_priority_fee_per_gas: Optional[int] = Field(None, alias="maxPriorityFeePerGas", description="Maximum priority fee per gas unit")
     
-    def __post_init__(self):
+    def model_post_init(self, __context) -> None:
         """Validate transaction options after initialization."""
         # Set default mode if not provided
         if self.mode is None:
@@ -85,8 +86,10 @@ class TransactionOptions:
         
         if self.mode == ConfirmationMode.CUSTOM and (self.confirmations is None or self.confirmations < 1):
             raise ValueError("confirmations must be a positive integer for CUSTOM mode")
+        
+TransactionOptions = TxOptions
 
-@dataclass
+# @dataclass
 class EvmTransactionResult:
     """
     Result returned from EVM transaction execution.
@@ -96,7 +99,7 @@ class EvmTransactionResult:
     confirmation_mode: ConfirmationMode
     total_confirmations: int
     
-@dataclass  
+# @dataclass 
 class SubstrateTransactionResult:
     """
     Result returned from Substrate transaction execution.

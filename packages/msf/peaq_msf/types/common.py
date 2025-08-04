@@ -6,30 +6,34 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from eth_account.signers.base import BaseAccount
+from pydantic import BaseModel, ConfigDict, Field
+
 
 from .base import ConfirmationMode
+
 
 class ChainType(str, Enum):
     """Supported blockchain types"""
     EVM = "evm"
     SUBSTRATE = "substrate"
+    
+class SDKMetadata(BaseModel):
+    """SDK metadata containing chain configuration and authentication"""
+    base_url: str = Field(..., description="Base URL for the blockchain endpoint")
+    chain_type: Optional[ChainType] = Field(..., description="The blockchain type (EVM or Substrate)")
+    pair: Optional[BaseAccount] = Field(None, description="Optional keypair or account for signing transactions")
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True  # Allow Keypair and Account types
+    )
 
-@dataclass
-class SDKMetadata:
-    """Metadata for SDK configuration"""
-    base_url: str
-    chain_type: ChainType
-    pair: Optional[BaseAccount] = None
-    machine_station: bool = False
-
-
-@dataclass
-class CreateInstanceOptions:
-    """Options for creating an MSF SDK instance"""
-    base_url: str
-    machine_station_address: str
-    station_admin: BaseAccount
-    station_manager: Optional[BaseAccount] = None
+class CreateInstanceOptions(BaseModel):
+    base_url: str = Field(..., description="HTTPS/WSS endpoint to your node")
+    machine_station_address: str = Field(..., description="Machine Station Contract being connected to")
+    station_admin: BaseAccount = Field(..., description="Signer - BaseAccount; represents the station admin"    )
+    station_manager: Optional[BaseAccount] = Field(None, description="Optional signer - BaseAccount; represents the station admin")
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True
+    )
 
 
 @dataclass

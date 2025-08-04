@@ -1,31 +1,43 @@
 from typing import Optional, Union, Dict, Any
-import ast
-import json
+from enum import Enum
+import asyncio
 import time
 from hexbytes import HexBytes
+from peaq_sdk.utils.utils import parse_options
 
-from .types.common import ChainType, SDKMetadata
-from .types.base import TransactionStatus, ConfirmationMode, TransactionStatusCallback, TransactionOptions
+from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
+from peaq_sdk.types.base import (
+    TransactionStatus, 
+    ConfirmationMode, 
+    TransactionStatusCallback, 
+    TxOptions,
+    EvmSendResult,
+    StatusCallback
+)
 
 from web3 import Web3
 from web3.types import TxParams
 from web3.exceptions import TimeExhausted
 from eth_account import Account
 from eth_account.signers.base import BaseAccount
+from substrateinterface.base import SubstrateInterface, GenericCall
+from substrateinterface.keypair import Keypair, KeypairType
+from substrateinterface.exceptions import SubstrateRequestException
 from websocket import WebSocketConnectionClosedException
+
 
 class Base:
     """
     Provides shared functionality for both EVM and Substrate SDK operations,
     including signer generation and transaction submission logic.
     """
-    def __init__(self, api: Web3, metadata: SDKMetadata) -> None:
+    def __init__(self, api: Web3 | SubstrateInterface, metadata: SDKMetadata) -> None:
         """
         Initializes Base with a connected API instance and shared SDK metadata.
 
         Args:
-            api (Web3): The blockchain API connection.
-                which may be a Web3 (EVM).
+            api (Web3 | SubstrateInterface): The blockchain API connection.
+                which may be a Web3 (EVM) or SubstrateInterface (Substrate).
             metadata (SDKMetadata): Shared metadata, including chain type,
                 and optional signer.
         """
@@ -41,7 +53,7 @@ class Base:
         """Allows access to the same metadata object across the sdk using self.metadata"""
         return self._metadata
     
-    def _set_signer(self, auth: Union[BaseAccount]):
+    def _set_signer(self, auth: BaseAccount):
         """
         Sets the signer from auth input - handles BaseAccount or Keypair.
 
@@ -54,15 +66,10 @@ class Base:
         Raises:
             ValueError: If auth is invalid or incompatible with chain type
         """
-        if not auth:
-            raise ValueError('Authorization method is required')
-
-        if self._metadata.chain_type is ChainType.EVM:
+        if self._metadata.chain_type.value is ChainType.EVM.value:
             if isinstance(auth, BaseAccount):
                 self._metadata.pair = auth
                 return auth
-            else:
-                raise ValueError('Invalid signer type for EVM chain. Expected BaseAccount.')
         else:
             raise ValueError('Invalid chain type')
 
@@ -81,7 +88,8 @@ class Base:
             status_update: Status update data
         """
         if on_status and not cancelled:
-            on_status(status_update.to_dict(self._clean_callback_data))
+            cleaned_data = self._clean_callback_data(status_update.model_dump())
+            on_status(cleaned_data)
     
     def _create_status_update(
         self,
@@ -118,19 +126,14 @@ class Base:
     def _clean_callback_data(self, obj: Any) -> Any:
         """
         Recursively clean callback data by converting HexBytes to hex strings,
-        AttributeDict to dict, etc. for JSON serialization.
-        
-        Args:
-            obj: Object to clean (can be dict, list, HexBytes, AttributeDict, etc.)
-            
-        Returns:
-            Cleaned object suitable for JSON serialization
+        Enums to their values, and other types into JSON-serializable formats.
         """
         if isinstance(obj, HexBytes):
             return obj.hex()
+        if isinstance(obj, Enum):
+            return obj.value
         if hasattr(obj, '__dict__') and not isinstance(obj, (str, int, float, bool)):
-            # Handle AttributeDict and similar objects
-            return self._clean_callback_data(dict(obj))
+            return self._clean_callback_data(vars(obj))
         if isinstance(obj, dict):
             return {k: self._clean_callback_data(v) for k, v in obj.items()}
         if isinstance(obj, list):
@@ -194,98 +197,111 @@ class Base:
                         )
                     return address
     
-    def _send_evm_tx(
+
+    async def _send_evm_tx(
         self, 
         tx: TxParams,
-        on_status = None,
-        opts: TransactionOptions = TransactionOptions()
-    ) -> dict:
+        on_status: StatusCallback = None,
+        opts: TxOptions = {}
+    ) -> EvmSendResult:
         """
-        Sends an EVM transaction with configurable confirmation mode and gas settings.
-
-        Args:
-            tx (TxParams): Transaction parameters with at minimum 'to' and 'data'.
-            on_status: Optional callback function for status updates.
-            opts (TransactionOptions): Transaction options including confirmation mode and gas parameters.
-
+        Sends an EVM transaction and returns a structured EvmSendResult.
+        
         Returns:
-            dict: Transaction receipt
-
-        Raises:
-            Exception: For transaction failures.
+            EvmSendResult with tx_hash (immediate), unsubscribe function, and receipt promise
         """
-        try:
-            if not self._metadata.pair:
-                raise Exception('No signer available for signing')
-            
-            # Build transaction
-            built_tx = self._build_evm_tx(tx, opts)
-            
-            # Sign and send transaction
-            signed_tx = self._metadata.pair.sign_transaction(built_tx)
-            tx_hash = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
-
-            # Emit BROADCAST status
-            if on_status:
-                status_update = self._create_status_update(
-                    status=TransactionStatus.BROADCAST,
-                    confirmation_mode=opts.mode,
-                    total_confirmations=0,
-                    tx_hash=tx_hash.hex(),
-                    nonce=built_tx.get('nonce')
-                )
-                self._emit_status_callback(on_status, False, status_update)
-
-            # Wait for first confirmation
-            receipt = self._api.eth.wait_for_transaction_receipt(tx_hash)
-            
-            if receipt.status == 0:
-                raise Exception('Transaction failed')
-
-            # Emit IN_BLOCK status
-            if on_status:
-                status_update = self._create_status_update(
-                    status=TransactionStatus.IN_BLOCK,
-                    confirmation_mode=opts.mode,
-                    total_confirmations=1,
-                    tx_hash=tx_hash.hex(),
-                    receipt=dict(receipt),
-                    nonce=built_tx.get('nonce')
-                )
-                self._emit_status_callback(on_status, False, status_update)
-
-            # Wait for confirmations based on mode
-            final_receipt = self._wait_for_confirmations(
-                tx_hash, receipt, opts, on_status
+        opts = parse_options(TxOptions, opts, caller="_send_evm_tx()")
+        
+        
+        if not self._metadata.pair:
+            raise Exception('No signer available for signing')
+        
+        # Build transaction
+        built_tx = await self._build_evm_tx(tx, opts)
+        
+        # Sign and send transaction
+        signed_tx = self._metadata.pair.sign_transaction(built_tx)
+        tx_hash = await self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
+        
+        # Emit BROADCAST status immediately
+        if on_status:
+            status_update = self._create_status_update(
+                status=TransactionStatus.BROADCAST,
+                confirmation_mode=opts.mode,
+                total_confirmations=0,
+                tx_hash=tx_hash.hex(),
+                nonce=built_tx.get('nonce')
             )
+            self._emit_status_callback(on_status, False, status_update)
+        
+        # Create a flag to track if unsubscribed
+        is_unsubscribed = False
+        
+        def unsubscribe():
+            nonlocal is_unsubscribed
+            is_unsubscribed = True
+        
+        async def get_receipt():
+            """Async function that waits for transaction receipt and confirmations"""
+            try:
+                # Wait for first confirmation
+                receipt = await self._api.eth.wait_for_transaction_receipt(tx_hash)
+                
+                if receipt.status == 0:
+                    raise Exception('Transaction failed')
+                
+                # Check if unsubscribed before emitting status
+                if not is_unsubscribed and on_status:
+                    status_update = self._create_status_update(
+                        status=TransactionStatus.IN_BLOCK,
+                        confirmation_mode=opts.mode,
+                        total_confirmations=1,
+                        tx_hash=tx_hash.hex(),
+                        receipt=dict(receipt),
+                        nonce=built_tx.get('nonce')
+                    )
+                    self._emit_status_callback(on_status, False, status_update)
+                
+                # Wait for confirmations based on mode using native async
+                if not is_unsubscribed:
+                    final_receipt = await self._wait_for_confirmations(tx_hash, receipt, opts, on_status if not is_unsubscribed else None)
+                    return final_receipt
+                else:
+                    raw = dict(receipt)
+                    cleaned = self._clean_callback_data(raw)
+                    return cleaned
+                
+            except Exception as error:
+                raise Exception(f"EVM transaction failed: {str(error)}")
+        
+        return EvmSendResult(
+            tx_hash=tx_hash.hex(),
+            unsubscribe=unsubscribe,
+            receipt=get_receipt()
+        )
 
-            return final_receipt
 
-        except Exception as error:
-            # Simplify error handling - just re-raise with general message
-            raise Exception(f"EVM transaction failed: {str(error)}")
-
-    def _build_evm_tx(
+    async def _build_evm_tx(
         self, 
         tx: TxParams,
-        opts: TransactionOptions
+        opts: TxOptions
     ) -> TxParams:
         """
         Builds an EVM transaction with gas estimation and fee calculation.
         """
         checksum_address = Web3.to_checksum_address(self._metadata.pair.address)
         tx['from'] = checksum_address
-        tx['nonce'] = self._api.eth.get_transaction_count(checksum_address)
-        tx['chainId'] = self._api.eth.chain_id
+        tx['nonce'] = await self._api.eth.get_transaction_count(checksum_address)
+        tx['chainId'] = await self._api.eth.chain_id
 
         # Estimate gas limit if not provided
-        estimated_gas = self._api.eth.estimate_gas(tx)
+        estimated_gas = await self._api.eth.estimate_gas(tx)
         tx['gas'] = opts.gas_limit if opts.gas_limit else estimated_gas
 
         # Get current fee data
-        pending = self._api.eth.get_block("pending")
+        pending = await self._api.eth.get_block("pending")
         base_fee = pending.get("baseFeePerGas")
-        priority_fee = self._api.eth.max_priority_fee
+        priority_fee = await self._api.eth.max_priority_fee
         tx['type'] = 2
 
         tx['maxFeePerGas'] = opts.max_fee_per_gas if opts.max_fee_per_gas else base_fee
@@ -293,11 +309,11 @@ class Base:
         
         return tx
 
-    def _wait_for_confirmations(
+    async def _wait_for_confirmations(
         self,
         tx_hash,
         receipt,
-        opts: TransactionOptions,
+        opts: TxOptions,
         on_status
     ) -> dict:
         """
@@ -305,12 +321,14 @@ class Base:
         """
         if opts.mode == ConfirmationMode.FAST:
             # Already have 1 confirmation, nothing more needed
-            return dict(receipt)
+            raw = dict(receipt)
+            cleaned = self._clean_callback_data(raw)
+            return cleaned
 
         elif opts.mode == ConfirmationMode.CUSTOM:
             # Wait for user's target confirmations
             CUSTOM_POLL_INTERVAL_MS = 1000
-            starting_finalized = self._api.eth.get_block("finalized")
+            starting_finalized = await self._api.eth.get_block("finalized")
             if not starting_finalized:
                 raise Exception("Could not fetch finalized head")
             
@@ -319,7 +337,7 @@ class Base:
             # Wait for the finalized head to advance by the required confirmations
             while True:
                 try:
-                    current_finalized = self._api.eth.get_block("finalized")
+                    current_finalized = await self._api.eth.get_block("finalized")
                     if not current_finalized:
                         raise Exception("Could not fetch current finalized head")
                     
@@ -328,32 +346,21 @@ class Base:
                     if confirmations_seen >= opts.confirmations:
                         break
                     
-                    # # Only emit status update if finalized head > inclusion block
-                    # if current_finalized['number'] > inclusion_block and on_status:
-                    #     status_update = self._create_status_update(
-                    #         status=TransactionStatus.IN_BLOCK,
-                    #         confirmation_mode=opts.mode,
-                    #         total_confirmations=confirmations_seen,
-                    #         tx_hash=tx_hash.hex(),
-                    #         receipt=dict(receipt)
-                    #     )
-                    #     self._emit_status_callback(on_status, False, status_update)
-                    
-                    time.sleep(CUSTOM_POLL_INTERVAL_MS / 1000)
+                    await asyncio.sleep(CUSTOM_POLL_INTERVAL_MS / 1000)
                     
                 except Exception as e:
                     raise Exception(f"Error waiting for confirmations: {str(e)}")
             
             # Validate the receipt is still canonical to guard against chain reorgs
             try:
-                canonical_receipt = self._api.eth.get_transaction_receipt(tx_hash)
+                canonical_receipt = await self._api.eth.get_transaction_receipt(tx_hash)
                 if not canonical_receipt:
                     raise Exception('Could not fetch canonical transaction receipt')
             except Exception:
                 canonical_receipt = receipt
             
             # Final finalized head check
-            finalized_head = self._api.eth.get_block("finalized")
+            finalized_head = await self._api.eth.get_block("finalized")
             if not finalized_head:
                 raise Exception("Could not fetch finalized head")
             
@@ -372,12 +379,14 @@ class Base:
                 )
                 self._emit_status_callback(on_status, False, status_update)
             
-            return dict(canonical_receipt)
+            raw = dict(canonical_receipt)
+            cleaned = self._clean_callback_data(raw)
+            return cleaned
 
         elif opts.mode == ConfirmationMode.FINAL:
             # Poll until the finalized head >= inclusion block
             FINALITY_POLL_INTERVAL_MS = 1000
-            starting_block = self._api.eth.get_block("finalized")
+            starting_block = await self._api.eth.get_block("finalized")
             if not starting_block:
                 raise Exception('Could not get finalized block')
             
@@ -385,17 +394,17 @@ class Base:
             
             # Wait until finalized head reaches inclusion block
             while True:
-                finalized_head_final = self._api.eth.get_block("finalized")
+                finalized_head_final = await self._api.eth.get_block("finalized")
                 if not finalized_head_final:
                     raise Exception('Could not get finalized block')
                 
                 if finalized_head_final['number'] >= inclusion_block:
                     break
                     
-                time.sleep(FINALITY_POLL_INTERVAL_MS / 1000)  # Convert to seconds
+                await asyncio.sleep(FINALITY_POLL_INTERVAL_MS / 1000)  # Convert to seconds
             
             # Fetch new receipt after finalized head has passed inclusion block
-            final_receipt = self._api.eth.get_transaction_receipt(tx_hash)
+            final_receipt = await self._api.eth.get_transaction_receipt(tx_hash)
             if not final_receipt:
                 raise Exception("Could not fetch final receipt")
             
@@ -412,7 +421,9 @@ class Base:
                 )
                 self._emit_status_callback(on_status, False, status_update)
             
-            return dict(final_receipt)
+            raw = dict(final_receipt)
+            cleaned = self._clean_callback_data(raw)
+            return cleaned
 
         else:
             raise ValueError(f"Unknown confirmation mode: {opts.mode}")

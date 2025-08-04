@@ -59,9 +59,7 @@ class MachineStation(Base):
         self.machine_station_address = machine_station_address
         self.chain_id = self._api.eth.chain_id
         
-        # Store signers directly
         self.station_admin_signer = station_admin
-        # Use station_manager if provided, otherwise use station_admin for manager operations
         self.station_manager_signer = station_manager if station_manager else self.station_admin_signer
         
         # Load ABI and create contract interface

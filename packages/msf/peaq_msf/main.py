@@ -12,6 +12,7 @@ from web3 import Web3
 from eth_account.signers.base import BaseAccount
 
 from .base import Base
+from .utils.utils import parse_options
 from .machine_station import MachineStation
 from .types.common import ChainType, SDKMetadata, ConfirmationMode, CreateInstanceOptions, TxOptions
 from .types.base import TransactionStatusCallback
@@ -38,10 +39,6 @@ class Main(Base):
     signers, creating Web3 connections, and managing machine station operations.
     This is a standalone module that only supports EVM chains via web3.py.
     """
-    
-    # Class-level constants (equivalent to static properties in JS)
-    ChainType = ChainType
-    ConfirmationMode = ConfirmationMode
 
     def __init__(self, options: CreateInstanceOptions):
         """
@@ -51,10 +48,9 @@ class Main(Base):
             options: Configuration options for the machine station instance including EVM RPC URL and signers
         """
         metadata = SDKMetadata(
-            base_url=options['base_url'],
+            base_url=options.base_url,
             chain_type=ChainType.EVM,
-            pair=None,
-            machine_station=True
+            pair=None
         )
 
         api = self._create_api(metadata)
@@ -64,9 +60,9 @@ class Main(Base):
         self._machine_station = MachineStation(
             api,
             metadata,
-            options['machine_station_address'],
-            options['station_admin'],
-            options['station_manager']
+            options.machine_station_address,
+            options.station_admin,
+            options.station_manager
         )
 
     @classmethod
@@ -81,15 +77,15 @@ class Main(Base):
         Returns:
             An initialized Machine Station SDK instance ready for smart contract interactions
         """
-        sdk = cls(options)
+        ops = parse_options(CreateInstanceOptions, options, caller="create_instance()")
+        sdk = cls(ops)
         
         # Set the station admin as the primary signer for base operations
-        sdk._set_signer(options['station_admin'])
+        sdk._set_signer(ops.station_admin)
 
         return sdk
 
-    @staticmethod
-    def _create_api(metadata: SDKMetadata) -> Web3:
+    def _create_api(self, metadata: SDKMetadata) -> Web3:
         """
         Creates an EVM Web3 instance for connecting to EVM-compatible blockchains.
         """
