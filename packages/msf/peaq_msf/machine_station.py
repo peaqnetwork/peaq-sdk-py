@@ -1,17 +1,18 @@
 import json
 import os
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 # Import from the core SDK package
 from peaq_msf.base import Base
-from peaq_msf.types.base import TransactionOptions
+from peaq_msf.types.base import TxOptions, StatusCallback, TransactionStatusCallback, EvmSendResult, BuiltEvmTransactionResult
 from peaq_msf.types.common import (
-    SDKMetadata,
-    WrittenTransactionResult
+    SDKMetadata
 )
 from peaq_msf.types.machine_station import (
     DeployedSmartAccountResult,
     UpdateConfigsTransactionData,
+    UpdateConfigsOptions,
+    MachineStationWriteResult,
     DeployMachineSmartAccountTransactionData,
     TransferMachineStationBalanceTransactionData,
     ExecuteTransactionData,
@@ -20,6 +21,8 @@ from peaq_msf.types.machine_station import (
     ExecuteTransferMachineBalanceData,
     EIP712SignableMessage
 )
+from .utils.utils import parse_options
+
 
 from web3 import Web3
 from web3.types import TxParams
@@ -57,8 +60,6 @@ class MachineStation(Base):
         """
         super().__init__(api, metadata)
         self.machine_station_address = machine_station_address
-        self.chain_id = self._api.eth.chain_id
-        
         self.station_admin_signer = station_admin
         self.station_manager_signer = station_manager if station_manager else self.station_admin_signer
         
@@ -68,7 +69,7 @@ class MachineStation(Base):
             self.abi = json.load(f)
         
         # Create contract interface
-        self.contract = self._api.eth.contract(
+        self.iface = self._api.eth.contract(
             address=self.machine_station_address,
             abi=self.abi
         )
@@ -77,35 +78,82 @@ class MachineStation(Base):
     # CONFIGURATION METHODS
     # =====================================================================
 
-    def update_configs(
+    async def _handle_evm_tx(
         self,
-        options: dict,
-        status_callback = None,
-        tx_options = None,
+        tx: TxParams,
+        action: str,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {},
+        signer: Optional[BaseAccount] = None
+    ) -> Union[EvmSendResult, BuiltEvmTransactionResult]:
+        """
+        Helper method to handle EVM transaction execution with proper signer management.
+        
+        Args:
+            tx: Transaction parameters
+            action: Description of the action being performed
+            status_callback: Optional callback for transaction status updates
+            tx_options: Optional transaction options
+            signer: Optional specific signer to use (temporarily overrides metadata.pair)
+            iface: Optional contract interface for better error decoding
+            
+        Returns:
+            EvmSendResult for executed transactions or BuiltEvmTransactionResult for unsigned transactions
+        """
+        if not self._metadata.pair and not signer:
+            return BuiltEvmTransactionResult(
+                message=f"Constructed {action} tx (unsigned).",
+                tx=tx
+            )
+        
+        try:
+            # If a specific signer is provided, temporarily override the metadata.pair
+            if signer:
+                original_signer = self._metadata.pair
+                self._metadata.pair = signer
+                try:
+                    return await self._send_evm_tx(tx, on_status=status_callback, opts=tx_options, iface=self.iface)
+                finally:
+                    # Restore the original signer
+                    self._metadata.pair = original_signer
+            else:
+                return await self._send_evm_tx(tx, on_status=status_callback, opts=tx_options, iface=self.iface)
+        except Exception as err:
+            raise ValueError(f"Failed to {action}: {str(err)}")
+
+    async def update_configs(
+        self,
+        options: UpdateConfigsOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {},
         send_transaction: bool = True,
-    ) -> Union[WrittenTransactionResult, UpdateConfigsTransactionData]:
+    ) -> Union[MachineStationWriteResult, UpdateConfigsTransactionData]:
         """
         Updates configuration values in the machine station factory contract.
         
         **Transaction Execution**: Requires STATION_MANAGER_ROLE
         
         Args:
-            options: Dictionary containing 'key' and 'value'
+            options: UpdateConfigsOptions object containing 'key' and 'value'
             status_callback: Optional callback function for transaction status updates.
             tx_options: Optional TransactionOptions for EVM transactions.
             send_transaction: If True, sends the transaction automatically using the admin key. 
                 If False, returns transaction data for manual submission. Defaults to True.
             
         Returns:
-            Union[WrittenTransactionResult, UpdateConfigsTransactionData]: Update result if sent, or transaction data if send_transaction=False.
+            Union[MachineStationWriteResult, UpdateConfigsTransactionData]: Update result if sent, or transaction data if send_transaction=False.
             
         Raises:
             ValueError: If the configuration update fails.
         """
         try:
-            data = self.contract.encode_abi(
+            ops = parse_options(UpdateConfigsOptions, options, caller="update_configs()")
+            key = ops.key
+            value = ops.value
+            
+            data = self.iface.encode_abi(
                 "updateConfigs",
-                ["0x" + options['key'].value, options["value"]],
+                ["0x" + key.value, value],
             )
             tx: TxParams = {
                 "to": self.machine_station_address,
@@ -118,20 +166,18 @@ class MachineStation(Base):
                     message="Transaction data ready for manual submission",
                     machine_station_address=self.machine_station_address,
                     function="update_configs",
-                    config_key=options['key'].value,
-                    config_value=options['value'],
+                    config_key=key.value,
+                    config_value=value,
                     required_role="STATION_MANAGER_ROLE"
                 )
             
-            opts = tx_options if tx_options else TransactionOptions()
-            result = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-            
-            return WrittenTransactionResult(
-                message=f"Successfully updated config '{options['key'].value}' to {options['value']} through machine station {self.machine_station_address}.",
-                success=True,
-                transaction_hash=result.get('transactionHash') if isinstance(result, dict) else None,
-                block_number=result.get('blockNumber') if isinstance(result, dict) else None,
-                gas_used=result.get('gasUsed') if isinstance(result, dict) else None
+            # Use the new helper method with station manager signer
+            return await self._handle_evm_tx(
+                tx=tx,
+                action=f"update config '{key.value}' to {value}",
+                status_callback=status_callback,
+                tx_options=tx_options,
+                signer=self.station_manager_signer
             )
         except Exception as e:
             raise ValueError(f"Failed to update configs: {str(e)}")
@@ -169,7 +215,7 @@ class MachineStation(Base):
             nonce = options['nonce']
             station_manager_signature = options['station_manager_signature']
             
-            payload = self.contract.encode_abi(
+            payload = self.iface.encode_abi(
                 "deployMachineSmartAccount",
                 [machine_owner_address, nonce, station_manager_signature]
             )
@@ -190,7 +236,7 @@ class MachineStation(Base):
                     note="After transaction is mined, listen for MachineSmartAccountDeployed event to get the deployed address"
                 )
             
-            opts = tx_options if tx_options else TransactionOptions()
+            opts = tx_options if tx_options else TxOptions()
             receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             machine_account_deployed_topic = self._api.keccak(text="MachineSmartAccountDeployed(address)").hex()
             
@@ -217,7 +263,7 @@ class MachineStation(Base):
         options: dict,
         status_callback = None,
         tx_options = None
-    ) -> Union[WrittenTransactionResult, TransferMachineStationBalanceTransactionData]:
+    ) -> Union[MachineStationWriteResult, TransferMachineStationBalanceTransactionData]:
         """
         Transfers the machine station balance to a new machine station address.
         
@@ -230,7 +276,7 @@ class MachineStation(Base):
             tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
-            Union[WrittenTransactionResult, TransferMachineStationBalanceTransactionData]: Transfer result if sent, or transaction data if send_transaction=False
+            Union[MachineStationWriteResult, TransferMachineStationBalanceTransactionData]: Transfer result if sent, or transaction data if send_transaction=False
             
         Raises:
             ValueError: If transfer fails
@@ -241,7 +287,7 @@ class MachineStation(Base):
             nonce = options['nonce']
             station_admin_signature = options['stationAdminSignature']
             
-            payload = self.contract.encode_abi(
+            payload = self.iface.encode_abi(
                 "transferMachineStationBalance",
                 [new_machine_station_address, nonce, station_admin_signature]
             )
@@ -265,7 +311,7 @@ class MachineStation(Base):
             opts = tx_options if tx_options else TransactionOptions()
             receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
-            return WrittenTransactionResult(
+            return MachineStationWriteResult(
                 message=f"Successfully transferred balance from {self.machine_station_address} to {new_machine_station_address}.",
                 success=True,
                 transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
@@ -284,7 +330,7 @@ class MachineStation(Base):
         options: dict,
         status_callback = None,
         tx_options = None
-    ) -> Union[WrittenTransactionResult, ExecuteTransactionData]:
+    ) -> Union[MachineStationWriteResult, ExecuteTransactionData]:
         """
         Executes a transaction through the machine station factory.
         
@@ -297,7 +343,7 @@ class MachineStation(Base):
             tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
-            Union[WrittenTransactionResult, ExecuteTransactionData]: Transaction result if sent, or transaction data if send_transaction=False
+            Union[MachineStationWriteResult, ExecuteTransactionData]: Transaction result if sent, or transaction data if send_transaction=False
             
         Raises:
             ValueError: If transaction execution fails
@@ -310,7 +356,7 @@ class MachineStation(Base):
             nonce = options['nonce']
             refund_amount = options.get('refundAmount', 0)
             machine_station_owner_signature = options.get('machineStationOwnerSignature')
-            payload = self.contract.encode_abi(
+            payload = self.iface.encode_abi(
                 "executeTransaction",
                 [target, calldata, nonce, refund_amount, machine_station_owner_signature]
             )
@@ -333,7 +379,7 @@ class MachineStation(Base):
             opts = tx_options if tx_options else TransactionOptions()
             receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
-            return WrittenTransactionResult(
+            return MachineStationWriteResult(
                 message=f"Successfully executed transaction on target {target} through machine station {self.machine_station_address}.",
                 success=True,
                 transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
@@ -348,7 +394,7 @@ class MachineStation(Base):
         options: dict,
         status_callback = None,
         tx_options = None
-    ) -> Union[WrittenTransactionResult, ExecuteMachineTransactionData]:
+    ) -> Union[MachineStationWriteResult, ExecuteMachineTransactionData]:
         """
         Executes a transaction on behalf of a machine smart account.
         
@@ -362,7 +408,7 @@ class MachineStation(Base):
             tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
-            Union[WrittenTransactionResult, ExecuteMachineTransactionData]: Transaction result if sent, or transaction data if send_transaction=False
+            Union[MachineStationWriteResult, ExecuteMachineTransactionData]: Transaction result if sent, or transaction data if send_transaction=False
             
         Raises:
             ValueError: If the transaction execution fails
@@ -377,7 +423,7 @@ class MachineStation(Base):
             machine_station_owner_signature = options.get('machineStationOwnerSignature')
             machine_owner_signature = options.get('machineOwnerSignature')
             
-            payload = self.contract.encode_abi(
+            payload = self.iface.encode_abi(
                 "executeMachineTransaction",
                 [machine_address, target, calldata, nonce, refund_amount, machine_station_owner_signature, machine_owner_signature]
             )
@@ -401,7 +447,7 @@ class MachineStation(Base):
             opts = tx_options if tx_options else TransactionOptions()
             receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
-            return WrittenTransactionResult(
+            return MachineStationWriteResult(
                 message=f"Successfully executed machine transaction from {machine_address} on target {target} through machine station {self.machine_station_address}.",
                 success=True,
                 transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
@@ -416,7 +462,7 @@ class MachineStation(Base):
         options: dict,
         status_callback = None,
         tx_options = None
-    ) -> Union[WrittenTransactionResult, ExecuteMachineBatchTransactionsData]:
+    ) -> Union[MachineStationWriteResult, ExecuteMachineBatchTransactionsData]:
         """
         Executes multiple transactions in a batch on behalf of machine smart accounts.
         
@@ -430,7 +476,7 @@ class MachineStation(Base):
             tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
-            Union[WrittenTransactionResult, ExecuteMachineBatchTransactionsData]: Transaction result if sent, or transaction data if send_transaction=False
+            Union[MachineStationWriteResult, ExecuteMachineBatchTransactionsData]: Transaction result if sent, or transaction data if send_transaction=False
             
         Raises:
             ValueError: If the batch transaction execution fails
@@ -446,7 +492,7 @@ class MachineStation(Base):
             machine_owner_signatures = options.get('machineOwnerSignatures', [])
             send_transaction = options.get('sendTransaction', False)
             
-            payload = self.contract.encode_abi(
+            payload = self.iface.encode_abi(
                 "executeMachineBatchTransactions",
                 [machine_addresses, targets, calldata_list, nonce, refund_amount, machine_nonces, machine_station_owner_signature, machine_owner_signatures]
             )
@@ -476,7 +522,7 @@ class MachineStation(Base):
             # Create a descriptive message for the batch operation
             accounts_str = ", ".join(machine_addresses)
             targets_str = ", ".join(targets)
-            return WrittenTransactionResult(
+            return MachineStationWriteResult(
                 message=f"Successfully executed batch transactions from accounts [{accounts_str}] on targets [{targets_str}] through machine station {self.machine_station_address}.",
                 success=True,
                 transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
@@ -491,7 +537,7 @@ class MachineStation(Base):
         options: dict,
         status_callback = None,
         tx_options = None
-    ) -> Union[WrittenTransactionResult, ExecuteTransferMachineBalanceData]:
+    ) -> Union[MachineStationWriteResult, ExecuteTransferMachineBalanceData]:
         """
         Transfers balance from a machine smart account to a recipient.
         
@@ -505,7 +551,7 @@ class MachineStation(Base):
             tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
-            Union[WrittenTransactionResult, ExecuteTransferMachineBalanceData]: Result containing success message and transaction receipt if sent, 
+            Union[MachineStationWriteResult, ExecuteTransferMachineBalanceData]: Result containing success message and transaction receipt if sent, 
                 or transaction data if send_transaction=False
             
         Raises:
@@ -519,7 +565,7 @@ class MachineStation(Base):
             machine_owner_signature = options['machineOwnerSignature']
             send_transaction = options.get('sendTransaction', False)
             
-            payload = self.contract.encode_abi(
+            payload = self.iface.encode_abi(
                 "executeMachineTransferBalance",
                 [machine_address, recipient_address, nonce, station_manager_signature, machine_owner_signature]
             )
@@ -543,7 +589,7 @@ class MachineStation(Base):
             opts = tx_options if tx_options else TransactionOptions()
             receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
-            return WrittenTransactionResult(
+            return MachineStationWriteResult(
                 message=f"Successfully transferred balance from {machine_address} to {recipient_address} through machine station {self.machine_station_address}.",
                 success=True,
                 transaction_hash=receipt.get('transactionHash') if isinstance(receipt, dict) else None,
@@ -917,7 +963,7 @@ class MachineStation(Base):
     # PRIVATE HELPER METHODS
     # =====================================================================
 
-    def _get_machine_station_domain(self, name: str) -> dict:
+    async def _get_machine_station_domain(self, name: str) -> dict:
         """
         Generates an EIP-712 domain for MachineStationFactory contract.
         
@@ -930,11 +976,11 @@ class MachineStation(Base):
         return {
             "name": name,
             "version": "2",
-            "chainId": self.chain_id,
+            "chainId": await self.get_chain_id(),
             "verifyingContract": self.machine_station_address
         }
 
-    def _get_machine_account_domain(self, name: str, verifying_contract: str) -> dict:
+    async def _get_machine_account_domain(self, name: str, verifying_contract: str) -> dict:
         """
         Generates an EIP-712 domain for MachineSmartAccount contract.
         
@@ -948,6 +994,6 @@ class MachineStation(Base):
         return {
             "name": name,
             "version": "2",
-            "chainId": self.chain_id,
+            "chainId": await self.get_chain_id(),
             "verifyingContract": verifying_contract
         }

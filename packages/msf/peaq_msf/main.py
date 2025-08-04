@@ -8,19 +8,20 @@ This is a standalone module that only supports EVM chains via web3.py.
 """
 
 from typing import Union, Optional, Callable, Awaitable
-from web3 import Web3
+from web3 import Web3, AsyncWeb3, AsyncHTTPProvider
 from eth_account.signers.base import BaseAccount
 
 from .base import Base
 from .utils.utils import parse_options
 from .machine_station import MachineStation
-from .types.common import ChainType, SDKMetadata, ConfirmationMode, CreateInstanceOptions, TxOptions
-from .types.base import TransactionStatusCallback
+from .types.common import ChainType, SDKMetadata, CreateInstanceOptions
+from .types.base import TransactionStatusCallback, StatusCallback, TxOptions
 from .types.machine_station import (
     MachineStationWriteResult,
     DeployedSmartAccountResult,
     EIP712SignableMessage,
     UpdateConfigsTransactionData,
+    UpdateConfigsOptions,
     DeployMachineSmartAccountTransactionData,
     TransferMachineStationBalanceTransactionData,
     ExecuteTransactionData,
@@ -66,7 +67,7 @@ class Main(Base):
         )
 
     @classmethod
-    def create_instance(cls, options: CreateInstanceOptions) -> "Main":
+    async def create_instance(cls, options: CreateInstanceOptions) -> "Main":
         """
         Creates and returns a new instance of the Machine Station SDK configured for EVM operations.
         
@@ -95,7 +96,8 @@ class Main(Base):
         if chain_type == ChainType.EVM:
             if not base_url.startswith('https://'):
                 raise ValueError('Invalid base URL for EVM chain. Must start with https://')
-            return Web3(Web3.HTTPProvider(base_url))
+            return AsyncWeb3(AsyncHTTPProvider(base_url))
+
         else:
             raise ValueError('Only EVM chain type is supported by Machine Station SDK')
 
@@ -103,11 +105,11 @@ class Main(Base):
     # CONFIGURATION METHODS
     # =====================================================================
 
-    def update_configs(
+    async def update_configs(
         self,
-        options: dict,
-        status_callback: Optional[Callable[[TransactionStatusCallback], Union[None, Awaitable[None]]]] = None,
-        tx_options: Optional[TxOptions] = None
+        options: UpdateConfigsOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> Union[MachineStationWriteResult, UpdateConfigsTransactionData]:
         """
         Updates configuration values in the machine station factory contract.
@@ -122,7 +124,7 @@ class Main(Base):
         Returns:
             Promise resolving to transaction result or transaction data
         """
-        return self._machine_station.update_configs(options, status_callback, tx_options)
+        return await self._machine_station.update_configs(options, status_callback, tx_options)
 
     # =====================================================================
     # SMART ACCOUNT DEPLOYMENT METHODS

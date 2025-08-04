@@ -1,12 +1,11 @@
-from typing import Optional, Union, Dict, Any
+from typing import Optional, Dict, Any
 from enum import Enum
 import asyncio
-import time
 from hexbytes import HexBytes
-from peaq_sdk.utils.utils import parse_options
+from peaq_msf.utils.utils import parse_options
 
-from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
-from peaq_sdk.types.base import (
+from peaq_msf.types.common import ChainType, SDKMetadata
+from peaq_msf.types.base import (
     TransactionStatus, 
     ConfirmationMode, 
     TransactionStatusCallback, 
@@ -17,13 +16,7 @@ from peaq_sdk.types.base import (
 
 from web3 import Web3
 from web3.types import TxParams
-from web3.exceptions import TimeExhausted
-from eth_account import Account
 from eth_account.signers.base import BaseAccount
-from substrateinterface.base import SubstrateInterface, GenericCall
-from substrateinterface.keypair import Keypair, KeypairType
-from substrateinterface.exceptions import SubstrateRequestException
-from websocket import WebSocketConnectionClosedException
 
 
 class Base:
@@ -31,13 +24,13 @@ class Base:
     Provides shared functionality for both EVM and Substrate SDK operations,
     including signer generation and transaction submission logic.
     """
-    def __init__(self, api: Web3 | SubstrateInterface, metadata: SDKMetadata) -> None:
+    def __init__(self, api: Web3, metadata: SDKMetadata) -> None:
         """
         Initializes Base with a connected API instance and shared SDK metadata.
 
         Args:
-            api (Web3 | SubstrateInterface): The blockchain API connection.
-                which may be a Web3 (EVM) or SubstrateInterface (Substrate).
+            api (Web3): The blockchain API connection.
+                which must be a Web3 (EVM).
             metadata (SDKMetadata): Shared metadata, including chain type,
                 and optional signer.
         """
@@ -52,6 +45,28 @@ class Base:
     def metadata(self):
         """Allows access to the same metadata object across the sdk using self.metadata"""
         return self._metadata
+    
+    async def get_chain_id(self) -> int:
+        """
+        Gets the chain ID for EVM-compatible blockchains using Web3 provider.
+        
+        Returns:
+            int: The EVM chain ID as a number
+            
+        Raises:
+            ValueError: If chain type is not EVM or if Web3 provider is not available
+        """
+        if self._metadata.chain_type is ChainType.EVM:
+            if self._api:
+                try:
+                    chain_id = await self._api.eth.chain_id
+                    return chain_id
+                except Exception as e:
+                    raise ValueError(f'Failed to get chain ID from Web3 provider: {str(e)}')
+            else:
+                raise ValueError('EVM chain type requires Web3 provider')
+        else:
+            raise ValueError('Only EVM chain type is supported by Machine Station SDK')
     
     def _set_signer(self, auth: BaseAccount):
         """
@@ -127,7 +142,9 @@ class Base:
         """
         Recursively clean callback data by converting HexBytes to hex strings,
         Enums to their values, and other types into JSON-serializable formats.
+        Also ensures transaction hashes and block hashes have '0x' prefix.
         """
+        
         if isinstance(obj, HexBytes):
             return obj.hex()
         if isinstance(obj, Enum):
@@ -135,78 +152,35 @@ class Base:
         if hasattr(obj, '__dict__') and not isinstance(obj, (str, int, float, bool)):
             return self._clean_callback_data(vars(obj))
         if isinstance(obj, dict):
-            return {k: self._clean_callback_data(v) for k, v in obj.items()}
+            cleaned_dict = {}
+            for k, v in obj.items():
+                cleaned_value = self._clean_callback_data(v)
+                # Add '0x' prefix to transaction hashes and block hashes
+                if k in ['transactionHash', 'blockHash'] and isinstance(cleaned_value, str) and cleaned_value and not cleaned_value.startswith('0x'):
+                    cleaned_value = '0x' + cleaned_value
+                cleaned_dict[k] = cleaned_value
+            return cleaned_dict
         if isinstance(obj, list):
             return [self._clean_callback_data(v) for v in obj]
         return obj
-
-
-            
-    def _resolve_address(self, address: Optional[str] = None) -> str:
-            """
-            Resolves the user address for DID-related operations based on the chain type
-            (EVM or Substrate) and whether a local keypair is available.
-
-            - EVM: If a local pair is provided, the address is derived from the
-            `Account` object (`account.address`). Otherwise, `address` is used, and a
-            `SeedError` is raised if no `address` is specified.
-
-            - Substrate: If a local pair is provided, uses its `ss58_address`. Otherwise falls
-            back to the optional `address`, and raises `SeedError` if neither
-            is available.
-
-            Args:
-                chain_type (ChainType): The blockchain type (EVM or Substrate).
-                pair (Union[Keypair, Account]): A local keypair or EVM account, if any.
-                address (Optional[str]): An optional fallback address. For EVM, this
-                    should be an H160 address; for Substrate, an SS58 address.
-
-            Returns:
-                str: The resolved user address to be used for DID creation, update,
-                    or removal.
-
-            Raises:
-                SeedError: If neither a local keypair nor a fallback `address` is provided.
-            """
-            # Check chain type
-            if self._metadata.chain_type is ChainType.EVM:
-                if self._metadata.pair and not self._metadata.machine_station:
-                    # We have a local EVM account
-                    account = self._metadata.pair
-                    return account.address
-                else:
-                    # No local account: must rely on 'address' parameter
-                    if not address:
-                        raise SeedError(
-                            "No seed/private key set, and no address was provided. "
-                            "Unable to sign or construct the transaction properly."
-                        )
-                    return address
-            else:
-                # Substrate path
-                if self._metadata.pair:
-                    # We have a local Substrate keypair
-                    keypair = self._metadata.pair
-                    return keypair.ss58_address
-                else:
-                    # No local keypair: must rely on 'address' parameter
-                    if not address:
-                        raise SeedError(
-                            "No seed/private key set, and no address was provided. "
-                            "Unable to sign or construct the transaction properly."
-                        )
-                    return address
     
 
     async def _send_evm_tx(
         self, 
         tx: TxParams,
         on_status: StatusCallback = None,
-        opts: TxOptions = {}
+        opts: TxOptions = {},
+        iface: Optional[Any] = None
     ) -> EvmSendResult:
         """
         Sends an EVM transaction and returns a structured EvmSendResult.
         
+        Args:
+            tx: Transaction parameters
+            on_status: Optional status callback
+            opts: Transaction options
+            iface: Optional contract interface for better error decoding
+            
         Returns:
             EvmSendResult with tx_hash (immediate), unsubscribe function, and receipt promise
         """
@@ -229,7 +203,7 @@ class Base:
                 status=TransactionStatus.BROADCAST,
                 confirmation_mode=opts.mode,
                 total_confirmations=0,
-                tx_hash=tx_hash.hex(),
+                tx_hash="0x" + tx_hash.hex(),
                 nonce=built_tx.get('nonce')
             )
             self._emit_status_callback(on_status, False, status_update)
@@ -256,7 +230,7 @@ class Base:
                         status=TransactionStatus.IN_BLOCK,
                         confirmation_mode=opts.mode,
                         total_confirmations=1,
-                        tx_hash=tx_hash.hex(),
+                        tx_hash="0x" + tx_hash.hex(),
                         receipt=dict(receipt),
                         nonce=built_tx.get('nonce')
                     )
@@ -272,10 +246,15 @@ class Base:
                     return cleaned
                 
             except Exception as error:
-                raise Exception(f"EVM transaction failed: {str(error)}")
+                # Use enhanced error parsing if iface is provided
+                if iface:
+                    error_message = self._parse_evm_error(error, iface)
+                    raise Exception(f"EVM transaction failed: {error_message}")
+                else:
+                    raise Exception(f"EVM transaction failed: {str(error)}")
         
         return EvmSendResult(
-            tx_hash=tx_hash.hex(),
+            tx_hash="0x" + tx_hash.hex(),
             unsubscribe=unsubscribe,
             receipt=get_receipt()
         )
@@ -374,7 +353,7 @@ class Base:
                     status=status,
                     confirmation_mode=opts.mode,
                     total_confirmations=confirmations_seen,
-                    tx_hash=tx_hash.hex(),
+                    tx_hash="0x" + tx_hash.hex(),
                     receipt=dict(canonical_receipt)
                 )
                 self._emit_status_callback(on_status, False, status_update)
@@ -416,14 +395,109 @@ class Base:
                     status=TransactionStatus.FINALIZED,
                     confirmation_mode=opts.mode,
                     total_confirmations=final_confirmations,
-                    tx_hash=tx_hash.hex(),
+                    tx_hash="0x" + tx_hash.hex(),
                     receipt=dict(final_receipt)
                 )
                 self._emit_status_callback(on_status, False, status_update)
             
             raw = dict(final_receipt)
+            
             cleaned = self._clean_callback_data(raw)
             return cleaned
 
         else:
             raise ValueError(f"Unknown confirmation mode: {opts.mode}")
+
+    def _parse_evm_error(self, error: Any, iface: Optional[Any] = None) -> str:
+        """
+        Enhanced error parsing for smart contract errors.
+        This method uses the contract interface to decode known errors from the ABI,
+        while also handling wrapped errors from target contracts.
+        
+        Args:
+            error: The error object from web3
+            iface: Optional contract interface to decode custom errors
+            
+        Returns:
+            A human-readable error message
+        """
+        if not error:
+            return 'Unknown error occurred'
+
+        # Contract exception
+        if hasattr(error, 'code') and error.code == 'CALL_EXCEPTION':
+            # Try to decode contract errors first
+            if hasattr(error, 'data') and error.data and iface:
+                try:
+                    # Try to decode the error using the contract interface
+                    decoded_error = iface.decode_function_result(error.data)
+                    if decoded_error:
+                        # Format the decoded error nicely
+                        args = decoded_error.args if hasattr(decoded_error, 'args') else []
+                        args_str = ''
+                        if args:
+                            formatted_args = []
+                            for arg in args:
+                                if isinstance(arg, str) and arg.startswith('0x') and len(arg) == 42:
+                                    # Shorten addresses
+                                    formatted_args.append(f"{arg[:6]}...{arg[-4:]}")
+                                else:
+                                    formatted_args.append(str(arg))
+                            args_str = f" ({', '.join(formatted_args)})"
+                        
+                        error_name = getattr(decoded_error, 'name', 'UnknownError')
+                        return f"Contract error: {error_name}{args_str}"
+                except Exception:
+                    # Fall through to wrapped error handling
+                    pass
+
+        # Handle web3 specific errors
+        if hasattr(error, 'shortMessage'):
+            error_data = getattr(error, 'data', '')
+            
+            # Handle unknown custom error with helpful messages
+            if error.shortMessage == 'execution reverted (unknown custom error)':
+                target_address = self._extract_target_address(getattr(error, 'transaction', {}).get('data', ''))
+                if target_address:
+                    return f"Contract error: Operation failed with selector {error_data[:10]} (likely item already exists, incorrect machine owner signature, insufficient permissions, invalid parameters, or machine station factory out of gas)"
+            
+            return error.shortMessage
+
+        # Handle other common error cases
+        if hasattr(error, 'code'):
+            if error.code == 'INSUFFICIENT_FUNDS':
+                return 'Insufficient funds to complete the transaction'
+            if error.code == 'NONCE_EXPIRED':
+                return 'Transaction nonce has expired. Please try again'
+            if error.code == 'REPLACEMENT_UNDERPRICED':
+                return 'Gas price too low to replace pending transaction'
+
+        # If we can't parse it specifically, return the message or toString()
+        return getattr(error, 'message', str(error))
+
+    def _extract_target_address(self, tx_data: str) -> Optional[str]:
+        """
+        Extract target address from transaction data.
+        
+        Args:
+            tx_data: Transaction data string
+            
+        Returns:
+            Target address if found, None otherwise
+        """
+        if not tx_data or not tx_data.startswith('0x'):
+            return None
+        
+        try:
+            # Extract the target address from the transaction data
+            # This is a simplified version - in practice you might need more sophisticated parsing
+            if len(tx_data) >= 42:  # Minimum length for address
+                # Look for address pattern in the data
+                for i in range(len(tx_data) - 40):
+                    potential_addr = tx_data[i:i+42]
+                    if potential_addr.startswith('0x') and len(potential_addr) == 42:
+                        return potential_addr
+        except Exception:
+            pass
+        
+        return None

@@ -2,7 +2,8 @@
 Base types for transaction status and callbacks
 """
 
-from typing import Optional, runtime_checkable, Protocol
+from typing import Optional, runtime_checkable, Protocol, Callable, Awaitable, Any
+
 from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
@@ -87,27 +88,22 @@ class TxOptions(BaseModel):
         if self.mode == ConfirmationMode.CUSTOM and (self.confirmations is None or self.confirmations < 1):
             raise ValueError("confirmations must be a positive integer for CUSTOM mode")
         
-TransactionOptions = TxOptions
+# TransactionOptions = TxOptions
 
-# @dataclass
-class EvmTransactionResult:
+class EvmSendResult(BaseModel):
     """
-    Result returned from EVM transaction execution.
+    Result returned from EVM transaction sending, matching TypeScript EvmSendResult interface.
     """
-    tx_hash: str
-    receipt: dict
-    confirmation_mode: ConfirmationMode
-    total_confirmations: int
-    
-# @dataclass 
-class SubstrateTransactionResult:
+    tx_hash: str = Field(..., alias="txHash", description="Transaction hash")
+    unsubscribe: Optional[Callable[[], None]] = Field(None, description="Optional function to unsubscribe from transaction events")
+    receipt: Awaitable[Any] = Field(..., description="Promise that resolves to transaction receipt")
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True
+    )
+class BuiltEvmTransactionResult(BaseModel):
     """
-    Result returned from Substrate transaction execution.
+    Result returned for unsigned EVM transactions, matching TypeScript BuiltEvmTransactionResult interface.
     """
-    tx_hash: str
-    receipt: dict
-    confirmation_mode: ConfirmationMode
-    total_confirmations: int
-
-# Type alias for transaction results
-# TransactionResult = Union[EvmTransactionResult, SubstrateTransactionResult] 
+    message: str = Field(..., description="Informational message about the constructed transaction")
+    tx: Any = Field(..., description="EVM transaction object")

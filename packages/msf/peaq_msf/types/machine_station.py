@@ -3,10 +3,10 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Union
 from enum import Enum
-from .common import WrittenTransactionResult, TxOptions, EvmSendResult
-from .base import TransactionStatusCallback
+from .base import TransactionStatusCallback, EvmSendResult
 from web3.types import TxParams
 from eth_utils import keccak
+from pydantic import BaseModel, Field
 
 # Used for Machine Station Factory Smart Contract
 class MachineStationFactoryFunctionSignatures(str, Enum):
@@ -25,13 +25,19 @@ class MachineStationConfigKeys(str, Enum):
     CHECK_REFUND_MIN_BALANCE_KEY = keccak(text="CHECK_REFUND_MIN_BALANCE").hex()
     MIN_BALANCE_KEY = keccak(text="MIN_BALANCE").hex() 
     FUNDING_AMOUNT_KEY = keccak(text="FUNDING_AMOUNT").hex()
+    
+class UpdateConfigsOptions(BaseModel):
+    """Options for updating machine station configuration"""
+    key: MachineStationConfigKeys = Field(..., description="Configuration key to update")
+    value: int = Field(..., description="New value for the configuration key")
+    
+MachineStationWriteResult = EvmSendResult
 
 @dataclass(kw_only=True)
 class DeployedSmartAccountResult(EvmSendResult):
     """Result object for smart account deployment containing both transaction info and the deployed address"""
     message: str
     deployed_address: str
-
 # Base dataclass for transaction data objects
 @dataclass
 class MachineStationTransactionData:
@@ -99,11 +105,6 @@ class EIP712SignableMessage:
     message: Dict[str, Any]
     primaryType: str
 
-# Result types
-@dataclass(kw_only=True)
-class MachineStationWriteResult(WrittenTransactionResult):
-    """Result for machine station write operations"""
-    pass
 
 
 # Admin signature options
