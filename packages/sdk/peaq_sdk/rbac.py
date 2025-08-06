@@ -10,7 +10,6 @@ from peaq_sdk.types.common import (
     PrecompileAddresses,
     BuiltEvmTransactionResult,
     CallModule,
-    WrittenTransactionResult,
     BuiltCallTransactionResult,
     BaseUrlError
 )

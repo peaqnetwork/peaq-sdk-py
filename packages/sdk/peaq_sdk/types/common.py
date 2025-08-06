@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
-from dataclasses import dataclass
+# Removed dataclass import - using Pydantic BaseModel instead
 
 
 
@@ -45,10 +45,10 @@ class SDKMetadata(BaseModel):
     )
     
 # placeholder for now
-@dataclass
-class WrittenTransactionResult():
-    message: str
-    receipt: dict  # Backwards compatibility with dict
+class WrittenTransactionResult(BaseModel):
+    """Result for written transactions with message and receipt"""
+    message: str = Field(..., description="Informational message about the transaction")
+    receipt: dict = Field(..., description="Transaction receipt data")  # Backwards compatibility with dict
 
 
 class BuiltEvmTransactionResult(BaseModel):

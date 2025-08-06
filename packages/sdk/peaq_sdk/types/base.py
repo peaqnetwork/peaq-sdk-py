@@ -116,9 +116,6 @@ class BuiltEvmTransactionResult(BaseModel):
     message: str = Field(..., description="Informational message about the constructed transaction")
     tx: Any = Field(..., description="EVM transaction object")
     
-    # model_config = ConfigDict(
-    #     arbitrary_types_allowed=True
-    # )
 
 class BuiltCallTransactionResult(BaseModel):
     """
@@ -127,31 +124,3 @@ class BuiltCallTransactionResult(BaseModel):
     message: str = Field(..., description="Informational message about the constructed call")
     extrinsic: Any = Field(..., description="Substrate extrinsic object")
     
-    # model_config = ConfigDict(
-    #     arbitrary_types_allowed=True
-    # )
-
-# @dataclass
-# class EvmTransactionResult:
-#     """
-#     Result returned from EVM transaction execution.
-#     """
-#     tx_hash: str
-#     receipt: dict
-#     confirmation_mode: ConfirmationMode
-#     total_confirmations: int
-    
-# @dataclass  
-# class SubstrateTransactionResult:
-#     """
-#     Result returned from Substrate transaction execution.
-#     """
-#     tx_hash: str
-#     receipt: dict
-#     confirmation_mode: ConfirmationMode
-#     total_confirmations: int
-
-# # Type alias for transaction results
-# TransactionResult = Union[EvmTransactionResult, SubstrateTransactionResult]
-
-# Type alias matching TypeScript DidWriteResult 
