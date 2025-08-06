@@ -55,7 +55,7 @@ class Main(Base):
         self.transfer: Transfer = Transfer(self._api, self._metadata)
     
     @classmethod
-    def create_instance(cls,
+    async def create_instance(cls,
         options: CreateInstanceOptions
         ) -> Main:
         """

@@ -135,7 +135,9 @@ class Base:
         """
         Recursively clean callback data by converting HexBytes to hex strings,
         Enums to their values, and other types into JSON-serializable formats.
+        Also ensures transaction hashes and block hashes have '0x' prefix.
         """
+        
         if isinstance(obj, HexBytes):
             return obj.hex()
         if isinstance(obj, Enum):
@@ -143,7 +145,14 @@ class Base:
         if hasattr(obj, '__dict__') and not isinstance(obj, (str, int, float, bool)):
             return self._clean_callback_data(vars(obj))
         if isinstance(obj, dict):
-            return {k: self._clean_callback_data(v) for k, v in obj.items()}
+            cleaned_dict = {}
+            for k, v in obj.items():
+                cleaned_value = self._clean_callback_data(v)
+                # Add '0x' prefix to transaction hashes and block hashes
+                if k in ['transactionHash', 'blockHash'] and isinstance(cleaned_value, str) and cleaned_value and not cleaned_value.startswith('0x'):
+                    cleaned_value = '0x' + cleaned_value
+                cleaned_dict[k] = cleaned_value
+            return cleaned_dict
         if isinstance(obj, list):
             return [self._clean_callback_data(v) for v in obj]
         return obj
@@ -321,7 +330,7 @@ class Base:
                 status=TransactionStatus.BROADCAST,
                 confirmation_mode=opts.mode,
                 total_confirmations=0,
-                tx_hash=tx_hash.hex(),
+                tx_hash="0x" + tx_hash.hex(),
                 nonce=built_tx.get('nonce')
             )
             self._emit_status_callback(on_status, False, status_update)
@@ -348,7 +357,7 @@ class Base:
                         status=TransactionStatus.IN_BLOCK,
                         confirmation_mode=opts.mode,
                         total_confirmations=1,
-                        tx_hash=tx_hash.hex(),
+                        tx_hash="0x" + tx_hash.hex(),
                         receipt=dict(receipt),
                         nonce=built_tx.get('nonce')
                     )
@@ -367,7 +376,7 @@ class Base:
                 raise Exception(f"EVM transaction failed: {str(error)}")
         
         return EvmSendResult(
-            tx_hash=tx_hash.hex(),
+            tx_hash="0x" + tx_hash.hex(),
             unsubscribe=unsubscribe,
             receipt=get_receipt()   
         )
@@ -466,7 +475,7 @@ class Base:
                     status=status,
                     confirmation_mode=opts.mode,
                     total_confirmations=confirmations_seen,
-                    tx_hash=tx_hash.hex(),
+                    tx_hash="0x" + tx_hash.hex(),
                     receipt=dict(canonical_receipt)
                 )
                 self._emit_status_callback(on_status, False, status_update)
@@ -508,7 +517,7 @@ class Base:
                     status=TransactionStatus.FINALIZED,
                     confirmation_mode=opts.mode,
                     total_confirmations=final_confirmations,
-                    tx_hash=tx_hash.hex(),
+                    tx_hash="0x" + tx_hash.hex(),
                     receipt=dict(final_receipt)
                 )
                 self._emit_status_callback(on_status, False, status_update)
