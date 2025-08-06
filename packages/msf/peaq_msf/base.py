@@ -36,6 +36,7 @@ class Base:
         """
         self._api = api
         self._metadata = metadata
+        self._chain_id: Optional[int] = None
     
     @property
     def api(self):
@@ -49,6 +50,7 @@ class Base:
     async def get_chain_id(self) -> int:
         """
         Gets the chain ID for EVM-compatible blockchains using Web3 provider.
+        Caches the chain ID after first fetch to avoid repeated RPC calls.
         
         Returns:
             int: The EVM chain ID as a number
@@ -59,8 +61,10 @@ class Base:
         if self._metadata.chain_type is ChainType.EVM:
             if self._api:
                 try:
-                    chain_id = await self._api.eth.chain_id
-                    return chain_id
+                    # Cache on first fetch
+                    if self._chain_id is None:
+                        self._chain_id = await self._api.eth.chain_id
+                    return self._chain_id
                 except Exception as e:
                     raise ValueError(f'Failed to get chain ID from Web3 provider: {str(e)}')
             else:
@@ -271,7 +275,7 @@ class Base:
         checksum_address = Web3.to_checksum_address(self._metadata.pair.address)
         tx['from'] = checksum_address
         tx['nonce'] = await self._api.eth.get_transaction_count(checksum_address)
-        tx['chainId'] = await self._api.eth.chain_id
+        tx['chainId'] = await self.get_chain_id()
 
         # Estimate gas limit if not provided
         estimated_gas = await self._api.eth.estimate_gas(tx)

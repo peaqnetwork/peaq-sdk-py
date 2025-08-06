@@ -711,14 +711,12 @@ class Did(Base):
     async def get_chain_id(self) -> int:
         """
         Get the chain ID for EVM networks.
+        Uses the cached chain ID from the base class.
             
         Returns:
             int: The chain ID
         """
-        if self.metadata.chain_type == ChainType.EVM:
-            # For Web3, get chain ID from the provider
-            return await self.api.eth.chain_id
-        raise ValueError("Chain ID is only available for EVM networks")
+        return await super().get_chain_id()
 
     def _generate_multibase(self, address: str, verification_type: str) -> str:
         """
