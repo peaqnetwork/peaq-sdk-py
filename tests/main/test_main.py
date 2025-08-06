@@ -1,6 +1,6 @@
 import pytest
-from peaq_sdk.main import Main
-from peaq_sdk.types.common import ChainType, BaseUrlError
+from peaq_sdk_py_old.main import Main
+from peaq_sdk_py_old.types.common import ChainType, BaseUrlError
 from substrateinterface.base import SubstrateInterface
 from web3 import Web3
 

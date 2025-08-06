@@ -2,7 +2,7 @@ import pytest
 import re
 import json
 
-from peaq_sdk.types.storage import GetItemError
+from peaq_sdk_py_old.types.storage import GetItemError
 
 # @pytest.mark.skip(reason="Testing EVM")
 def test_substrate_storage(substrate_sdk, item_type, item, config):

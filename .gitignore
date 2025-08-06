@@ -10,4 +10,6 @@ env/
 .DS_STORE
 MANIFEST.in
 peaq_sdk.egg-info
+peaq_msf.egg-info
+
 dist

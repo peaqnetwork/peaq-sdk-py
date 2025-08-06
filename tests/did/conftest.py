@@ -1,7 +1,7 @@
 import pytest
-from peaq_sdk.main import Main
-from peaq_sdk.types.common import ChainType
-from peaq_sdk.types.did import CustomDocumentFields, Verification, Signature, Service
+from peaq_sdk_py_old.main import Main
+from peaq_sdk_py_old.types.common import ChainType
+from peaq_sdk_py_old.types.did import CustomDocumentFields, Verification, Signature, Service
 
 
 @pytest.fixture(params=["auto-did-test-015"])

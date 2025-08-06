@@ -1,0 +1,418 @@
+from typing import Optional, Union, Dict, Any
+import ast
+import json
+import time
+from hexbytes import HexBytes
+
+from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
+from peaq_sdk.types.base import TransactionStatus, ConfirmationMode, TransactionStatusCallback, TransactionOptions
+
+from web3 import Web3
+from web3.types import TxParams
+from web3.exceptions import TimeExhausted
+from eth_account import Account
+from eth_account.signers.base import BaseAccount
+from websocket import WebSocketConnectionClosedException
+
+class Base:
+    """
+    Provides shared functionality for both EVM and Substrate SDK operations,
+    including signer generation and transaction submission logic.
+    """
+    def __init__(self, api: Web3, metadata: SDKMetadata) -> None:
+        """
+        Initializes Base with a connected API instance and shared SDK metadata.
+
+        Args:
+            api (Web3): The blockchain API connection.
+                which may be a Web3 (EVM).
+            metadata (SDKMetadata): Shared metadata, including chain type,
+                and optional signer.
+        """
+        self._api = api
+        self._metadata = metadata
+    
+    @property
+    def api(self):
+        """Allows access to the same api object across the sdk using self.api"""
+        return self._api
+    @property
+    def metadata(self):
+        """Allows access to the same metadata object across the sdk using self.metadata"""
+        return self._metadata
+    
+    def _set_signer(self, auth: Union[BaseAccount]):
+        """
+        Sets the signer from auth input - handles BaseAccount or Keypair.
+
+        Args:
+            auth: BaseAccount instance (EVM) or Keypair instance (Substrate)
+
+        Returns:
+            BaseAccount | Keypair: The configured signer
+
+        Raises:
+            ValueError: If auth is invalid or incompatible with chain type
+        """
+        if not auth:
+            raise ValueError('Authorization method is required')
+
+        if self._metadata.chain_type is ChainType.EVM:
+            if isinstance(auth, BaseAccount):
+                self._metadata.pair = auth
+                return auth
+            else:
+                raise ValueError('Invalid signer type for EVM chain. Expected BaseAccount.')
+        else:
+            raise ValueError('Invalid chain type')
+
+    def _emit_status_callback(
+        self,
+        on_status,
+        cancelled: bool,
+        status_update: TransactionStatusCallback
+    ) -> None:
+        """
+        Emit status callback if provided and not cancelled.
+        
+        Args:
+            on_status: Optional callback function
+            cancelled: Whether callbacks are cancelled
+            status_update: Status update data
+        """
+        if on_status and not cancelled:
+            on_status(status_update.to_dict(self._clean_callback_data))
+    
+    def _create_status_update(
+        self,
+        status: TransactionStatus,
+        confirmation_mode: ConfirmationMode,
+        total_confirmations: int,
+        tx_hash: str,
+        receipt: Optional[Dict[str, Any]] = None,
+        nonce: Optional[int] = None
+    ) -> TransactionStatusCallback:
+        """
+        Create a status update object for callbacks.
+        
+        Args:
+            status: Current transaction status
+            confirmation_mode: Transaction confirmation mode
+            total_confirmations: Number of confirmations seen
+            tx_hash: Transaction hash
+            receipt: Optional transaction receipt
+            nonce: Optional transaction nonce
+            
+        Returns:
+            TransactionStatusCallback object with current transaction state
+        """
+        return TransactionStatusCallback(
+            status=status.value,
+            confirmation_mode=confirmation_mode.value,
+            total_confirmations=total_confirmations,
+            hash=tx_hash,
+            receipt=receipt,
+            nonce=nonce
+        )
+
+    def _clean_callback_data(self, obj: Any) -> Any:
+        """
+        Recursively clean callback data by converting HexBytes to hex strings,
+        AttributeDict to dict, etc. for JSON serialization.
+        
+        Args:
+            obj: Object to clean (can be dict, list, HexBytes, AttributeDict, etc.)
+            
+        Returns:
+            Cleaned object suitable for JSON serialization
+        """
+        if isinstance(obj, HexBytes):
+            return obj.hex()
+        if hasattr(obj, '__dict__') and not isinstance(obj, (str, int, float, bool)):
+            # Handle AttributeDict and similar objects
+            return self._clean_callback_data(dict(obj))
+        if isinstance(obj, dict):
+            return {k: self._clean_callback_data(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self._clean_callback_data(v) for v in obj]
+        return obj
+
+
+            
+    def _resolve_address(self, address: Optional[str] = None) -> str:
+            """
+            Resolves the user address for DID-related operations based on the chain type
+            (EVM or Substrate) and whether a local keypair is available.
+
+            - EVM: If a local pair is provided, the address is derived from the
+            `Account` object (`account.address`). Otherwise, `address` is used, and a
+            `SeedError` is raised if no `address` is specified.
+
+            - Substrate: If a local pair is provided, uses its `ss58_address`. Otherwise falls
+            back to the optional `address`, and raises `SeedError` if neither
+            is available.
+
+            Args:
+                chain_type (ChainType): The blockchain type (EVM or Substrate).
+                pair (Union[Keypair, Account]): A local keypair or EVM account, if any.
+                address (Optional[str]): An optional fallback address. For EVM, this
+                    should be an H160 address; for Substrate, an SS58 address.
+
+            Returns:
+                str: The resolved user address to be used for DID creation, update,
+                    or removal.
+
+            Raises:
+                SeedError: If neither a local keypair nor a fallback `address` is provided.
+            """
+            # Check chain type
+            if self._metadata.chain_type is ChainType.EVM:
+                if self._metadata.pair and not self._metadata.machine_station:
+                    # We have a local EVM account
+                    account = self._metadata.pair
+                    return account.address
+                else:
+                    # No local account: must rely on 'address' parameter
+                    if not address:
+                        raise SeedError(
+                            "No seed/private key set, and no address was provided. "
+                            "Unable to sign or construct the transaction properly."
+                        )
+                    return address
+            else:
+                # Substrate path
+                if self._metadata.pair:
+                    # We have a local Substrate keypair
+                    keypair = self._metadata.pair
+                    return keypair.ss58_address
+                else:
+                    # No local keypair: must rely on 'address' parameter
+                    if not address:
+                        raise SeedError(
+                            "No seed/private key set, and no address was provided. "
+                            "Unable to sign or construct the transaction properly."
+                        )
+                    return address
+    
+    def _send_evm_tx(
+        self, 
+        tx: TxParams,
+        on_status = None,
+        opts: TransactionOptions = TransactionOptions()
+    ) -> dict:
+        """
+        Sends an EVM transaction with configurable confirmation mode and gas settings.
+
+        Args:
+            tx (TxParams): Transaction parameters with at minimum 'to' and 'data'.
+            on_status: Optional callback function for status updates.
+            opts (TransactionOptions): Transaction options including confirmation mode and gas parameters.
+
+        Returns:
+            dict: Transaction receipt
+
+        Raises:
+            Exception: For transaction failures.
+        """
+        try:
+            if not self._metadata.pair:
+                raise Exception('No signer available for signing')
+            
+            # Build transaction
+            built_tx = self._build_evm_tx(tx, opts)
+            
+            # Sign and send transaction
+            signed_tx = self._metadata.pair.sign_transaction(built_tx)
+            tx_hash = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
+
+            # Emit BROADCAST status
+            if on_status:
+                status_update = self._create_status_update(
+                    status=TransactionStatus.BROADCAST,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=0,
+                    tx_hash=tx_hash.hex(),
+                    nonce=built_tx.get('nonce')
+                )
+                self._emit_status_callback(on_status, False, status_update)
+
+            # Wait for first confirmation
+            receipt = self._api.eth.wait_for_transaction_receipt(tx_hash)
+            
+            if receipt.status == 0:
+                raise Exception('Transaction failed')
+
+            # Emit IN_BLOCK status
+            if on_status:
+                status_update = self._create_status_update(
+                    status=TransactionStatus.IN_BLOCK,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=1,
+                    tx_hash=tx_hash.hex(),
+                    receipt=dict(receipt),
+                    nonce=built_tx.get('nonce')
+                )
+                self._emit_status_callback(on_status, False, status_update)
+
+            # Wait for confirmations based on mode
+            final_receipt = self._wait_for_confirmations(
+                tx_hash, receipt, opts, on_status
+            )
+
+            return final_receipt
+
+        except Exception as error:
+            # Simplify error handling - just re-raise with general message
+            raise Exception(f"EVM transaction failed: {str(error)}")
+
+    def _build_evm_tx(
+        self, 
+        tx: TxParams,
+        opts: TransactionOptions
+    ) -> TxParams:
+        """
+        Builds an EVM transaction with gas estimation and fee calculation.
+        """
+        checksum_address = Web3.to_checksum_address(self._metadata.pair.address)
+        tx['from'] = checksum_address
+        tx['nonce'] = self._api.eth.get_transaction_count(checksum_address)
+        tx['chainId'] = self._api.eth.chain_id
+
+        # Estimate gas limit if not provided
+        estimated_gas = self._api.eth.estimate_gas(tx)
+        tx['gas'] = opts.gas_limit if opts.gas_limit else estimated_gas
+
+        # Get current fee data
+        pending = self._api.eth.get_block("pending")
+        base_fee = pending.get("baseFeePerGas")
+        priority_fee = self._api.eth.max_priority_fee
+        tx['type'] = 2
+
+        tx['maxFeePerGas'] = opts.max_fee_per_gas if opts.max_fee_per_gas else base_fee
+        tx['maxPriorityFeePerGas'] = opts.max_priority_fee_per_gas if opts.max_priority_fee_per_gas else priority_fee
+        
+        return tx
+
+    def _wait_for_confirmations(
+        self,
+        tx_hash,
+        receipt,
+        opts: TransactionOptions,
+        on_status
+    ) -> dict:
+        """
+        Waits for confirmations based on the specified mode.
+        """
+        if opts.mode == ConfirmationMode.FAST:
+            # Already have 1 confirmation, nothing more needed
+            return dict(receipt)
+
+        elif opts.mode == ConfirmationMode.CUSTOM:
+            # Wait for user's target confirmations
+            CUSTOM_POLL_INTERVAL_MS = 1000
+            starting_finalized = self._api.eth.get_block("finalized")
+            if not starting_finalized:
+                raise Exception("Could not fetch finalized head")
+            
+            inclusion_block = receipt['blockNumber']
+            
+            # Wait for the finalized head to advance by the required confirmations
+            while True:
+                try:
+                    current_finalized = self._api.eth.get_block("finalized")
+                    if not current_finalized:
+                        raise Exception("Could not fetch current finalized head")
+                    
+                    confirmations_seen = current_finalized['number'] - starting_finalized['number'] + 1
+                    
+                    if confirmations_seen >= opts.confirmations:
+                        break
+                    
+                    # # Only emit status update if finalized head > inclusion block
+                    # if current_finalized['number'] > inclusion_block and on_status:
+                    #     status_update = self._create_status_update(
+                    #         status=TransactionStatus.IN_BLOCK,
+                    #         confirmation_mode=opts.mode,
+                    #         total_confirmations=confirmations_seen,
+                    #         tx_hash=tx_hash.hex(),
+                    #         receipt=dict(receipt)
+                    #     )
+                    #     self._emit_status_callback(on_status, False, status_update)
+                    
+                    time.sleep(CUSTOM_POLL_INTERVAL_MS / 1000)
+                    
+                except Exception as e:
+                    raise Exception(f"Error waiting for confirmations: {str(e)}")
+            
+            # Validate the receipt is still canonical to guard against chain reorgs
+            try:
+                canonical_receipt = self._api.eth.get_transaction_receipt(tx_hash)
+                if not canonical_receipt:
+                    raise Exception('Could not fetch canonical transaction receipt')
+            except Exception:
+                canonical_receipt = receipt
+            
+            # Final finalized head check
+            finalized_head = self._api.eth.get_block("finalized")
+            if not finalized_head:
+                raise Exception("Could not fetch finalized head")
+            
+            # Check if finalized head is at or ahead of inclusion block
+            confirmations_seen = finalized_head['number'] - starting_finalized['number'] + 1
+            status = TransactionStatus.FINALIZED if finalized_head['number'] >= inclusion_block else TransactionStatus.IN_BLOCK
+            
+            # Emit final custom confirmations callback
+            if on_status:
+                status_update = self._create_status_update(
+                    status=status,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=confirmations_seen,
+                    tx_hash=tx_hash.hex(),
+                    receipt=dict(canonical_receipt)
+                )
+                self._emit_status_callback(on_status, False, status_update)
+            
+            return dict(canonical_receipt)
+
+        elif opts.mode == ConfirmationMode.FINAL:
+            # Poll until the finalized head >= inclusion block
+            FINALITY_POLL_INTERVAL_MS = 1000
+            starting_block = self._api.eth.get_block("finalized")
+            if not starting_block:
+                raise Exception('Could not get finalized block')
+            
+            inclusion_block = receipt['blockNumber']
+            
+            # Wait until finalized head reaches inclusion block
+            while True:
+                finalized_head_final = self._api.eth.get_block("finalized")
+                if not finalized_head_final:
+                    raise Exception('Could not get finalized block')
+                
+                if finalized_head_final['number'] >= inclusion_block:
+                    break
+                    
+                time.sleep(FINALITY_POLL_INTERVAL_MS / 1000)  # Convert to seconds
+            
+            # Fetch new receipt after finalized head has passed inclusion block
+            final_receipt = self._api.eth.get_transaction_receipt(tx_hash)
+            if not final_receipt:
+                raise Exception("Could not fetch final receipt")
+            
+            final_confirmations = final_receipt['blockNumber'] - starting_block['number']
+            
+            # Emit finalized status callback
+            if on_status:
+                status_update = self._create_status_update(
+                    status=TransactionStatus.FINALIZED,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=final_confirmations,
+                    tx_hash=tx_hash.hex(),
+                    receipt=dict(final_receipt)
+                )
+                self._emit_status_callback(on_status, False, status_update)
+            
+            return dict(final_receipt)
+
+        else:
+            raise ValueError(f"Unknown confirmation mode: {opts.mode}")

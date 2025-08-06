@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from enum import Enum
-from peaq_sdk.types.common import WrittenTransactionResult
+from peaq_msf.types.common import WrittenTransactionResult
 from web3.types import TxParams
 from eth_utils import keccak
 

@@ -1,8 +1,8 @@
 import re
 import pytest
-from peaq_sdk.types.did import CustomDocumentFields, Verification, Signature, Service, GetDidError
-from peaq_sdk.types.storage import GetItemError
-from peaq_sdk.main import Main
+from peaq_sdk_py_old.types.did import CustomDocumentFields, Verification, Signature, Service, GetDidError
+from peaq_sdk_py_old.types.storage import GetItemError
+from peaq_sdk_py_old.main import Main
 
 # @pytest.mark.skip(reason="Testing EVM")
 def test_substrate_did(substrate_sdk, name, custom_document_fields, connection_type, config):

@@ -1,6 +1,5 @@
 from .did import CustomDocumentFields, Verification, Signature, Service
 from .common import ChainType, PrecompileAddresses
-from .machine_station import MachineStationConfigKeys
 from .base import (
     TransactionStatus,
     ConfirmationMode,

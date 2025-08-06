@@ -3,7 +3,7 @@ import pytest
 import re
 from web3 import Web3
 
-from peaq_sdk.types.did import CustomDocumentFields
+from peaq_sdk_py_old.types.did import CustomDocumentFields
 
 
 # Tests for the Machine Station module
@@ -301,7 +301,7 @@ def test_transaction_storage(machine_station_sdk, storage_precompile_address, ws
     assert result.message == f"Successfully executed transaction on target {storage_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
     
     # Verify the item was actually removed from storage
-    from peaq_sdk.types.storage import GetItemError
+    from peaq_sdk_py_old.types.storage import GetItemError
     with pytest.raises(GetItemError) as exc_info:
         machine_station_sdk.storage.get_item(
             item_type=test_item_type, 
@@ -390,7 +390,7 @@ def test_transaction_did(machine_station_sdk, did_precompile_address, wss_url_ag
     assert result.message == f"Successfully executed transaction on target {did_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
     
     # Verify the DID was actually removed
-    from peaq_sdk.types.did import GetDidError
+    from peaq_sdk_py_old.types.did import GetDidError
     with pytest.raises(GetDidError) as exc_info:
         machine_station_sdk.did.read(
             name=test_name,
@@ -495,7 +495,7 @@ def test_machine_transaction_storage(machine_station_sdk, smart_account_address,
     assert result.message == f"Successfully executed machine transaction from {smart_account_address} on target {storage_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
     
     # Verify the item was actually removed from storage
-    from peaq_sdk.types.storage import GetItemError
+    from peaq_sdk_py_old.types.storage import GetItemError
     with pytest.raises(GetItemError) as exc_info:
         machine_station_sdk.storage.get_item(
             item_type=test_item_type,
@@ -604,7 +604,7 @@ def test_machine_transaction_did(machine_station_sdk, smart_account_address, did
     assert result.message == f"Successfully executed machine transaction from {smart_account_address} on target {did_precompile_address} through machine station {machine_station_sdk.machine_station.machine_station_address}."
     
     # Verify the DID was actually removed
-    from peaq_sdk.types.did import GetDidError
+    from peaq_sdk_py_old.types.did import GetDidError
     with pytest.raises(GetDidError) as exc_info:
         machine_station_sdk.did.read(
             name=test_name,
@@ -764,7 +764,7 @@ def test_execute_batch_transactions(machine_station_sdk, smart_account_address, 
     assert result.message == f"Successfully executed batch transactions from accounts [{accounts_str}] on targets [{targets_str}] through machine station {machine_station_sdk.machine_station.machine_station_address}."
     
     # Verify storage item was removed
-    from peaq_sdk.types.storage import GetItemError
+    from peaq_sdk_py_old.types.storage import GetItemError
     with pytest.raises(GetItemError) as exc_info:
         machine_station_sdk.storage.get_item(
             item_type=test_item_type,
@@ -774,7 +774,7 @@ def test_execute_batch_transactions(machine_station_sdk, smart_account_address, 
     assert str(exc_info.value) == f"Item type of {test_item_type} was not found at address {smart_account_address_2}."
     
     # Verify DID was removed
-    from peaq_sdk.types.did import GetDidError
+    from peaq_sdk_py_old.types.did import GetDidError
     with pytest.raises(GetDidError) as exc_info:
         machine_station_sdk.did.read(
             name=test_name,
