@@ -5,6 +5,8 @@ from enum import Enum
 
 # local imports
 from peaq_sdk.base import Base
+from peaq_sdk.types.base import TransactionOptions
+
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
@@ -48,19 +50,22 @@ class Storage(Base):
         """
         super().__init__(api, metadata)
 
-    def add_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def add_item(
+        self, 
+        options: dict,
+        status_callback = None,
+        tx_options = None
+    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
-        Adds a new item of `item_type` to the on-chain storage, storing `item`
-        as its value.
+        Adds a new item to the on-chain storage.
         
         - EVM: Constructs a transaction to the `addItem` storage precompile contract.
-        - Substrate: Composes an `add_item` extrinsic to the peaqStorage
-            pallet.
+        - Substrate: Composes an `add_item` extrinsic to the peaqStorage pallet.
 
         Args:
-            item_type (str): A string key used to categorize or identify the item.
-            item (object): The value to store. If not already a string, it is
-                serialized to JSON before being sent on-chain.
+            options (dict): Dictionary containing 'item_type' and 'item' keys.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -69,7 +74,10 @@ class Storage(Base):
                 - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
                     but not signed (no local signer). Returned with message and tx/call.
         """
- 
+        # Extract values from options        
+        item_type = options['item_type']
+        item = options['item']
+        
         # Prepare payload
         item_string = item if isinstance(item, str) else json.dumps(item)
 
@@ -89,7 +97,8 @@ class Storage(Base):
             
             if self.metadata.pair and not self.metadata.machine_station:
                 account = self.metadata.pair
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully added the storage item type {item_type} with item {item} for the address {account.address}.",
                     receipt=receipt
@@ -189,7 +198,12 @@ class Storage(Base):
 
 
         
-    def update_item(self, item_type: str, item: object) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def update_item(
+        self, 
+        options: dict,
+        status_callback = None,
+        tx_options = None
+    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
         Updates an existing item under `item_type` in on-chain storage by
         replacing its value with `item`.
@@ -199,8 +213,9 @@ class Storage(Base):
             pallet.
 
         Args:
-            item_type (str): The key used for the on-chain item.
-            item (object): The new value for that key (JSON-stringified if not a str).
+            options (dict): Dictionary containing 'item_type' and 'item' keys.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -209,6 +224,10 @@ class Storage(Base):
                 - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
                     but not signed (no local signer). Returned with message and tx/call.
         """        
+        # Extract values from options
+        item_type = options['item_type']
+        item = options['item']
+        
         item_string = item if isinstance(item, str) else json.dumps(item)
         
         if self.metadata.chain_type is ChainType.EVM:
@@ -228,7 +247,8 @@ class Storage(Base):
             
             if self.metadata.pair:
                 account = self.metadata.pair
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully updated the storage item type {item_type} with item {item} for the address {account.address}.",
                     receipt=receipt
@@ -260,18 +280,22 @@ class Storage(Base):
 
 
             
-    def remove_item(self, item_type: str) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+    def remove_item(
+        self, 
+        options: dict,
+        status_callback = None,
+        tx_options = None
+    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
         """
-        Removes an on-chain item under `item_type`.
+        Removes an on-chain item.
         
-        - EVM: Currently not supported until the storage precompile is
-          upgraded. Calling this on EVM raises a ValueError. (An implementation
-          outline is provided in the code for future use.)
-        - Substrate: Composes a `remove_item` extrinsic to the peaqStorage
-            pallet.
+        - EVM: Constructs a transaction to the `removeItem` storage precompile contract.
+        - Substrate: Composes a `remove_item` extrinsic to the peaqStorage pallet.
 
         Args:
-            item_type (str): The key for the item to remove.
+            options (dict): Dictionary containing 'item_type' key.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
 
         Returns:
             Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
@@ -279,10 +303,10 @@ class Storage(Base):
                     Returned with a message and receipt.
                 - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
                     but not signed (no local signer). Returned with message and tx/call.
-
-        Raises:
-            ValueError: If called on EVM (not yet supported).
         """
+        # Extract values from options
+        item_type = options['item_type']
+        
         if self.metadata.chain_type is ChainType.EVM:
             # raise ValueError("Precompile for peaq Storage Remove Item will be included in the next runtime update.")
             # remove error when upgrade deployed
@@ -303,7 +327,8 @@ class Storage(Base):
             
             if self.metadata.pair and not self.metadata.machine_station:
                 account = self.metadata.pair
-                receipt = self._send_evm_tx(tx)
+                opts = tx_options if tx_options else TransactionOptions()
+                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
                 return WrittenTransactionResult(
                     message=f"Successfully removed the storage item type {item_type} for the address {account.address}.",
                     receipt=receipt

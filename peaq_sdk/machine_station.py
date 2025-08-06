@@ -1,6 +1,7 @@
 from typing import Optional, Union
 
 from peaq_sdk.base import Base
+from peaq_sdk.types.base import TransactionOptions
 from peaq_sdk.types.common import (
     SDKMetadata,
     WrittenTransactionResult
@@ -491,7 +492,9 @@ class MachineStation(Base):
         self,
         key: MachineStationConfigKeys,
         value: int,
-        send_transaction: bool = True) -> Union[WrittenTransactionResult, UpdateConfigsTransactionData]:
+        send_transaction: bool = True,
+        status_callback = None,
+        tx_options = None) -> Union[WrittenTransactionResult, UpdateConfigsTransactionData]:
         """
         Updates configuration values in the machine station contract.
         
@@ -503,6 +506,8 @@ class MachineStation(Base):
             value (int): The new value to set for the configuration key.
             send_transaction (bool): If True, sends the transaction automatically using the admin key. 
                 If False, returns transaction data for manual submission. Defaults to True.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
             Union[WrittenTransactionResult, UpdateConfigsTransactionData]: Update result if sent, or transaction data if send_transaction=False.
@@ -534,7 +539,8 @@ class MachineStation(Base):
                     required_role="STATION_MANAGER_ROLE"
                 )
             
-            receipt = self._send_evm_tx(tx)
+            opts = tx_options if tx_options else TransactionOptions()
+            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
             return WrittenTransactionResult(
                 message=f"Successfully updated config '{key.name}' to {value} through machine station {self.machine_station_address}.",
@@ -549,7 +555,9 @@ class MachineStation(Base):
         machine_account_owner_address: str,
         nonce: int,
         machine_station_owner_signature: str,
-        send_transaction: bool = True) -> Union[DeployedSmartAccountResult, DeployMachineSmartAccountTransactionData]:
+        send_transaction: bool = True,
+        status_callback = None,
+        tx_options = None) -> Union[DeployedSmartAccountResult, DeployMachineSmartAccountTransactionData]:
         """
         Deploys a new machine smart account contract.
         
@@ -562,6 +570,8 @@ class MachineStation(Base):
             machine_station_owner_signature (str): Signature from the machine station owner authorizing deployment
             send_transaction (bool): If True, sends the transaction automatically using the admin key. 
                 If False, returns transaction data for manual submission. Defaults to True.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
             Union[DeployedSmartAccountResult, DeployMachineSmartAccountTransactionData]: Deployment result if sent, or transaction data if send_transaction=False
@@ -593,7 +603,8 @@ class MachineStation(Base):
                     note="After transaction is mined, listen for MachineSmartAccountDeployed event to get the deployed address"
                 )
             
-            receipt = self._send_evm_tx(tx)
+            opts = tx_options if tx_options else TransactionOptions()
+            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             machine_account_deployed_topic = self.api.keccak(text="MachineSmartAccountDeployed(address)").hex()
             
             for log in receipt["logs"]:
@@ -614,7 +625,9 @@ class MachineStation(Base):
         new_machine_station_address: str,
         nonce: int,
         machine_station_owner_signature: str,
-        send_transaction: bool = True) -> Union[WrittenTransactionResult, TransferMachineStationBalanceTransactionData]:
+        send_transaction: bool = True,
+        status_callback = None,
+        tx_options = None) -> Union[WrittenTransactionResult, TransferMachineStationBalanceTransactionData]:
         """
         Transfers the balance from the current machine station to a new one.
         
@@ -627,6 +640,8 @@ class MachineStation(Base):
             machine_station_owner_signature (str): Signature from the machine station owner authorizing transfer
             send_transaction (bool): If True, sends the transaction automatically using the admin key. 
                 If False, returns transaction data for manual submission. Defaults to True.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
             Union[WrittenTransactionResult, TransferMachineStationBalanceTransactionData]: Transfer result if sent, or transaction data if send_transaction=False
@@ -658,7 +673,9 @@ class MachineStation(Base):
                     required_role="DEFAULT_ADMIN_ROLE"
                 )
             
-            receipt = self._send_evm_tx(tx)
+            opts = tx_options if tx_options else TransactionOptions()
+
+            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
             return WrittenTransactionResult(
                 message=f"Successfully transferred balance from {self.machine_station_address} to {new_machine_station_address}.",
@@ -674,7 +691,9 @@ class MachineStation(Base):
         nonce: int,
         refund_amount: Optional[int] = None,
         machine_station_owner_signature: str = None,
-        send_transaction: bool = False) -> Union[WrittenTransactionResult, ExecuteTransactionData]:
+        send_transaction: bool = False,
+        status_callback = None,
+        tx_options = None) -> Union[WrittenTransactionResult, ExecuteTransactionData]:
         """
         Executes a transaction through the machine station.
         
@@ -690,6 +709,8 @@ class MachineStation(Base):
             machine_station_owner_signature (str): Signature from the machine station owner authorizing the transaction
             send_transaction (bool): If False, returns transaction data for frontend wallet submission. 
                 If True, sends the transaction automatically. Defaults to False.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
             Union[WrittenTransactionResult, ExecuteTransactionData]: Transaction result if sent, or transaction data if send_transaction=False
@@ -723,7 +744,9 @@ class MachineStation(Base):
                     access_control="Anyone can call with proper signatures"
                 )
             
-            receipt = self._send_evm_tx(tx)
+            opts = tx_options if tx_options else TransactionOptions()
+
+            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
             return WrittenTransactionResult(
                 message=f"Successfully executed transaction on target {target} through machine station {self.machine_station_address}.",
@@ -741,7 +764,9 @@ class MachineStation(Base):
         refund_amount: Optional[int] = None,
         machine_station_owner_signature: str = None,
         machine_account_owner_signature: str = None,
-        send_transaction: bool = False) -> Union[WrittenTransactionResult, ExecuteMachineTransactionData]:
+        send_transaction: bool = False,
+        status_callback = None,
+        tx_options = None) -> Union[WrittenTransactionResult, ExecuteMachineTransactionData]:
         """
         Executes a transaction from a machine account to a target contract.
         
@@ -759,6 +784,8 @@ class MachineStation(Base):
             machine_account_owner_signature (str): Signature from the machine account owner
             send_transaction (bool): If False, returns transaction data for frontend wallet submission. 
                 If True, sends the transaction automatically. Defaults to False.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
             Union[WrittenTransactionResult, ExecuteMachineTransactionData]: Transaction result if sent, or transaction data if send_transaction=False
@@ -795,7 +822,9 @@ class MachineStation(Base):
                     access_control="Anyone can call with proper signatures"
                 )
             
-            receipt = self._send_evm_tx(tx)
+            opts = tx_options if tx_options else TransactionOptions()
+
+            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
             return WrittenTransactionResult(
                 message=f"Successfully executed machine transaction from {machine_account_address} on target {target} through machine station {self.machine_station_address}.",
@@ -814,7 +843,9 @@ class MachineStation(Base):
         machine_nonces: list[int] = None,
         machine_station_owner_signature: str = None,
         machine_account_owner_signatures: list[str] = None,
-        send_transaction: bool = False) -> Union[WrittenTransactionResult, ExecuteMachineBatchTransactionsData]:
+        send_transaction: bool = False,
+        status_callback = None,
+        tx_options = None) -> Union[WrittenTransactionResult, ExecuteMachineBatchTransactionsData]:
         """
         Executes multiple transactions from multiple machine accounts in a single batch operation.
         
@@ -833,6 +864,8 @@ class MachineStation(Base):
             machine_account_owner_signatures (Optional[list]): List of signatures from each machine account owner
             send_transaction (bool): If False, returns transaction data for frontend wallet submission. 
                 If True, sends the transaction automatically. Defaults to False.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
             Union[WrittenTransactionResult, ExecuteMachineBatchTransactionsData]: Transaction result if sent, or transaction data if send_transaction=False
@@ -879,7 +912,9 @@ class MachineStation(Base):
                     access_control="Anyone can call with proper signatures"
                 )
             
-            receipt = self._send_evm_tx(tx)
+            opts = tx_options if tx_options else TransactionOptions()
+
+            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
             # Create a descriptive message for the batch operation
             accounts_str = ", ".join(machine_account_addresses)
@@ -898,7 +933,9 @@ class MachineStation(Base):
         nonce: int,
         machine_station_owner_signature: str,
         machine_account_owner_signature: str,
-        send_transaction: bool = True) -> Union[WrittenTransactionResult, ExecuteTransferMachineBalanceData]:
+        send_transaction: bool = True,
+        status_callback = None,
+        tx_options = None) -> Union[WrittenTransactionResult, ExecuteTransferMachineBalanceData]:
         """
         Transfers the entire balance from a machine account to a recipient address.
         
@@ -913,6 +950,8 @@ class MachineStation(Base):
             machine_account_owner_signature (str): Signature from the machine account owner authorizing the transfer
             send_transaction (bool): If True, sends the transaction automatically using the admin key. 
                 If False, returns transaction data for manual submission. Defaults to True.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TransactionOptions for EVM transactions.
             
         Returns:
             Union[WrittenTransactionResult, ExecuteTransferMachineBalanceData]: Result containing success message and transaction receipt if sent, 
@@ -946,7 +985,9 @@ class MachineStation(Base):
                     required_role="STATION_MANAGER_ROLE"
                 )
             
-            receipt = self._send_evm_tx(tx)
+            opts = tx_options if tx_options else TransactionOptions()
+
+            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
             
             return WrittenTransactionResult(
                 message=f"Successfully transferred balance from {machine_account_address} to {recipient_address} through machine station {self.machine_station_address}.",

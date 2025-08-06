@@ -1,9 +1,11 @@
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
 import ast
 import json
 import time
+from hexbytes import HexBytes
 
 from peaq_sdk.types.common import ChainType, ExtrinsicExecutionError, SeedError, SDKMetadata
+from peaq_sdk.types.base import TransactionStatus, ConfirmationMode, TransactionStatusCallback, TransactionOptions
 
 from web3 import Web3
 from web3.types import TxParams
@@ -45,13 +47,13 @@ class Base:
     def _set_signer(self, auth: Union[BaseAccount, Keypair]):
         """
         Sets the signer from auth input - handles BaseAccount or Keypair.
-        
+
         Args:
             auth: BaseAccount instance (EVM) or Keypair instance (Substrate)
-            
+
         Returns:
             BaseAccount | Keypair: The configured signer
-            
+
         Raises:
             ValueError: If auth is invalid or incompatible with chain type
         """
@@ -73,34 +75,78 @@ class Base:
         else:
             raise ValueError('Invalid chain type')
 
-    def _create_key_pair(self, seed: str):
+    def _emit_status_callback(
+        self,
+        on_status,
+        cancelled: bool,
+        status_update: TransactionStatusCallback
+    ) -> None:
         """
-        Generates a blockchain key pair from a seed string.
-
-        For EVM chains, interprets `seed` as a hex private key and returns an
-        `eth_account.Account`. For Substrate chains, treats `seed` as a BIP39
-        mnemonic (12 or 24 words) and returns a `substrateinterface.Keypair`.
-
+        Emit status callback if provided and not cancelled.
+        
         Args:
-            chain_type (ChainType): The target chain type (EVM or SUBSTRATE).
-            seed (str): Hex private key (EVM) or mnemonic phrase (Substrate).
-
-        Returns:
-            Account | Keypair: A signing key pair for transactions.
-
-        Raises:
-            ValueError: If `seed` is empty or None.
+            on_status: Optional callback function
+            cancelled: Whether callbacks are cancelled
+            status_update: Status update data
         """
-        if not seed:
-            raise ValueError('Seed is required')
-        if self._metadata.chain_type is ChainType.EVM:
-            self._metadata.pair = Account.from_key(seed)
-        else:
-            self._metadata.pair = Keypair.create_from_mnemonic(
-                seed,
-                ss58_format=42,
-                crypto_type=KeypairType.SR25519
-            )
+        if on_status and not cancelled:
+            on_status(status_update.to_dict(self._clean_callback_data))
+    
+    def _create_status_update(
+        self,
+        status: TransactionStatus,
+        confirmation_mode: ConfirmationMode,
+        total_confirmations: int,
+        tx_hash: str,
+        receipt: Optional[Dict[str, Any]] = None,
+        nonce: Optional[int] = None
+    ) -> TransactionStatusCallback:
+        """
+        Create a status update object for callbacks.
+        
+        Args:
+            status: Current transaction status
+            confirmation_mode: Transaction confirmation mode
+            total_confirmations: Number of confirmations seen
+            tx_hash: Transaction hash
+            receipt: Optional transaction receipt
+            nonce: Optional transaction nonce
+            
+        Returns:
+            TransactionStatusCallback object with current transaction state
+        """
+        return TransactionStatusCallback(
+            status=status.value,
+            confirmation_mode=confirmation_mode.value,
+            total_confirmations=total_confirmations,
+            hash=tx_hash,
+            receipt=receipt,
+            nonce=nonce
+        )
+
+    def _clean_callback_data(self, obj: Any) -> Any:
+        """
+        Recursively clean callback data by converting HexBytes to hex strings,
+        AttributeDict to dict, etc. for JSON serialization.
+        
+        Args:
+            obj: Object to clean (can be dict, list, HexBytes, AttributeDict, etc.)
+            
+        Returns:
+            Cleaned object suitable for JSON serialization
+        """
+        if isinstance(obj, HexBytes):
+            return obj.hex()
+        if hasattr(obj, '__dict__') and not isinstance(obj, (str, int, float, bool)):
+            # Handle AttributeDict and similar objects
+            return self._clean_callback_data(dict(obj))
+        if isinstance(obj, dict):
+            return {k: self._clean_callback_data(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self._clean_callback_data(v) for v in obj]
+        return obj
+
+
             
     def _resolve_address(self, address: Optional[str] = None) -> str:
             """
@@ -241,117 +287,225 @@ class Base:
         else:
             raise ExtrinsicExecutionError("Failed to submit extrinsic after multiple attempts due to low priority.")
     
-    def _send_evm_tx(self, tx: TxParams, max_attempts: int = 5, timeout: int = 60) -> dict:
+    def _send_evm_tx(
+        self, 
+        tx: TxParams,
+        on_status = None,
+        opts: TransactionOptions = TransactionOptions()
+    ) -> dict:
         """
-        Sends an EVM transaction with dynamic EIP-1559 fees, retry logic, and error handling.
+        Sends an EVM transaction with configurable confirmation mode and gas settings.
 
         Args:
             tx (TxParams): Transaction parameters with at minimum 'to' and 'data'.
-            max_attempts (int): Max retries on failure.
-            timeout (int): Timeout in seconds per attempt.
+            on_status: Optional callback function for status updates.
+            opts (TransactionOptions): Transaction options including confirmation mode and gas parameters.
 
         Returns:
             dict: Transaction receipt
 
         Raises:
-            ExtrinsicExecutionError: If retries fail or critical errors occur.
+            Exception: For transaction failures.
+        """
+        try:
+            if not self._metadata.pair:
+                raise Exception('No signer available for signing')
+            
+            # Build transaction
+            built_tx = self._build_evm_tx(tx, opts)
+            
+            # Sign and send transaction
+            signed_tx = self._metadata.pair.sign_transaction(built_tx)
+            tx_hash = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
+
+            # Emit BROADCAST status
+            if on_status:
+                status_update = self._create_status_update(
+                    status=TransactionStatus.BROADCAST,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=0,
+                    tx_hash=tx_hash.hex(),
+                    nonce=built_tx.get('nonce')
+                )
+                self._emit_status_callback(on_status, False, status_update)
+
+            # Wait for first confirmation
+            receipt = self._api.eth.wait_for_transaction_receipt(tx_hash)
+            
+            if receipt.status == 0:
+                raise Exception('Transaction failed')
+
+            # Emit IN_BLOCK status
+            if on_status:
+                status_update = self._create_status_update(
+                    status=TransactionStatus.IN_BLOCK,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=1,
+                    tx_hash=tx_hash.hex(),
+                    receipt=dict(receipt),
+                    nonce=built_tx.get('nonce')
+                )
+                self._emit_status_callback(on_status, False, status_update)
+
+            # Wait for confirmations based on mode
+            final_receipt = self._wait_for_confirmations(
+                tx_hash, receipt, opts, on_status
+            )
+
+            return final_receipt
+
+        except Exception as error:
+            # Simplify error handling - just re-raise with general message
+            raise Exception(f"EVM transaction failed: {str(error)}")
+
+    def _build_evm_tx(
+        self, 
+        tx: TxParams,
+        opts: TransactionOptions
+    ) -> TxParams:
+        """
+        Builds an EVM transaction with gas estimation and fee calculation.
         """
         checksum_address = Web3.to_checksum_address(self._metadata.pair.address)
         tx['from'] = checksum_address
-        nonce = self._api.eth.get_transaction_count(checksum_address)
-        tx['nonce'] = nonce
+        tx['nonce'] = self._api.eth.get_transaction_count(checksum_address)
         tx['chainId'] = self._api.eth.chain_id
 
-        DEFAULT_PRIORITY_FEE = Web3.to_wei(2, 'gwei') # TODO identify what the default priority fee should be
+        # Estimate gas limit if not provided
+        estimated_gas = self._api.eth.estimate_gas(tx)
+        tx['gas'] = opts.gas_limit if opts.gas_limit else estimated_gas
 
-        attempt = 0
+        # Get current fee data
+        pending = self._api.eth.get_block("pending")
+        base_fee = pending.get("baseFeePerGas")
+        priority_fee = self._api.eth.max_priority_fee
+        tx['type'] = 2
 
-        while attempt < max_attempts:
-            latest_block = self._api.eth.get_block('latest')
-            supports_eip1559 = 'baseFeePerGas' in latest_block
+        tx['maxFeePerGas'] = opts.max_fee_per_gas if opts.max_fee_per_gas else base_fee
+        tx['maxPriorityFeePerGas'] = opts.max_priority_fee_per_gas if opts.max_priority_fee_per_gas else priority_fee
+        
+        return tx
 
-            try:
-                # Check connection
-                self._api.eth.chain_id
+    def _wait_for_confirmations(
+        self,
+        tx_hash,
+        receipt,
+        opts: TransactionOptions,
+        on_status
+    ) -> dict:
+        """
+        Waits for confirmations based on the specified mode.
+        """
+        if opts.mode == ConfirmationMode.FAST:
+            # Already have 1 confirmation, nothing more needed
+            return dict(receipt)
 
-                # Estimate gas limit
-                tx['gas'] = self._api.eth.estimate_gas(tx)
-
-                if supports_eip1559:
-                    base_fee = latest_block['baseFeePerGas']
-
-                    if attempt == 0:
-                        max_fee_per_gas = base_fee * 2 + DEFAULT_PRIORITY_FEE
-                        priority_fee = DEFAULT_PRIORITY_FEE
-                    else:
-                        max_fee_per_gas = int(tx['maxFeePerGas'] * 1.25)
-                        priority_fee = int(tx['maxPriorityFeePerGas'] * 1.25)
-
-                    tx['maxFeePerGas'] = max_fee_per_gas
-                    tx['maxPriorityFeePerGas'] = priority_fee
-
-                    tx.pop('gasPrice', None)
-                else:
-                    if attempt == 0:
-                        gas_price = self._api.eth.gas_price
-                    else:
-                        gas_price = int(tx['gasPrice'] * 1.25)
-
-                    tx['gasPrice'] = gas_price
-                    tx.pop('maxFeePerGas', None)
-                    tx.pop('maxPriorityFeePerGas', None)
-
-                signed_tx = self._metadata.pair.sign_transaction(tx)
-                tx_hash = self._api.eth.send_raw_transaction(signed_tx.raw_transaction)
-
+        elif opts.mode == ConfirmationMode.CUSTOM:
+            # Wait for user's target confirmations
+            CUSTOM_POLL_INTERVAL_MS = 1000
+            starting_finalized = self._api.eth.get_block("finalized")
+            if not starting_finalized:
+                raise Exception("Could not fetch finalized head")
+            
+            inclusion_block = receipt['blockNumber']
+            
+            # Wait for the finalized head to advance by the required confirmations
+            while True:
                 try:
-                    receipt = self._api.eth.wait_for_transaction_receipt(tx_hash, timeout=timeout)
-                    return receipt
-                except TimeExhausted:
-                    print(f"Attempt {attempt + 1}: Transaction {tx_hash.hex()} not confirmed within timeout. Increasing fee and retrying...")
-                    attempt += 1
-                    time.sleep(0.5)
-                    continue
-                except Exception as wait_exc:
-                    raise ExtrinsicExecutionError(f"Unexpected error while waiting for receipt: {str(wait_exc)}")
+                    current_finalized = self._api.eth.get_block("finalized")
+                    if not current_finalized:
+                        raise Exception("Could not fetch current finalized head")
+                    
+                    confirmations_seen = current_finalized['number'] - starting_finalized['number'] + 1
+                    
+                    if confirmations_seen >= opts.confirmations:
+                        break
+                    
+                    # # Only emit status update if finalized head > inclusion block
+                    # if current_finalized['number'] > inclusion_block and on_status:
+                    #     status_update = self._create_status_update(
+                    #         status=TransactionStatus.IN_BLOCK,
+                    #         confirmation_mode=opts.mode,
+                    #         total_confirmations=confirmations_seen,
+                    #         tx_hash=tx_hash.hex(),
+                    #         receipt=dict(receipt)
+                    #     )
+                    #     self._emit_status_callback(on_status, False, status_update)
+                    
+                    time.sleep(CUSTOM_POLL_INTERVAL_MS / 1000)
+                    
+                except Exception as e:
+                    raise Exception(f"Error waiting for confirmations: {str(e)}")
+            
+            # Validate the receipt is still canonical to guard against chain reorgs
+            try:
+                canonical_receipt = self._api.eth.get_transaction_receipt(tx_hash)
+                if not canonical_receipt:
+                    raise Exception('Could not fetch canonical transaction receipt')
+            except Exception:
+                canonical_receipt = receipt
+            
+            # Final finalized head check
+            finalized_head = self._api.eth.get_block("finalized")
+            if not finalized_head:
+                raise Exception("Could not fetch finalized head")
+            
+            # Check if finalized head is at or ahead of inclusion block
+            confirmations_seen = finalized_head['number'] - starting_finalized['number'] + 1
+            status = TransactionStatus.FINALIZED if finalized_head['number'] >= inclusion_block else TransactionStatus.IN_BLOCK
+            
+            # Emit final custom confirmations callback
+            if on_status:
+                status_update = self._create_status_update(
+                    status=status,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=confirmations_seen,
+                    tx_hash=tx_hash.hex(),
+                    receipt=dict(canonical_receipt)
+                )
+                self._emit_status_callback(on_status, False, status_update)
+            
+            return dict(canonical_receipt)
 
-            except Exception as e:
-                error_message = str(e).lower()
+        elif opts.mode == ConfirmationMode.FINAL:
+            # Poll until the finalized head >= inclusion block
+            FINALITY_POLL_INTERVAL_MS = 1000
+            starting_block = self._api.eth.get_block("finalized")
+            if not starting_block:
+                raise Exception('Could not get finalized block')
+            
+            inclusion_block = receipt['blockNumber']
+            
+            # Wait until finalized head reaches inclusion block
+            while True:
+                finalized_head_final = self._api.eth.get_block("finalized")
+                if not finalized_head_final:
+                    raise Exception('Could not get finalized block')
+                
+                if finalized_head_final['number'] >= inclusion_block:
+                    break
+                    
+                time.sleep(FINALITY_POLL_INTERVAL_MS / 1000)  # Convert to seconds
+            
+            # Fetch new receipt after finalized head has passed inclusion block
+            final_receipt = self._api.eth.get_transaction_receipt(tx_hash)
+            if not final_receipt:
+                raise Exception("Could not fetch final receipt")
+            
+            final_confirmations = final_receipt['blockNumber'] - starting_block['number']
+            
+            # Emit finalized status callback
+            if on_status:
+                status_update = self._create_status_update(
+                    status=TransactionStatus.FINALIZED,
+                    confirmation_mode=opts.mode,
+                    total_confirmations=final_confirmations,
+                    tx_hash=tx_hash.hex(),
+                    receipt=dict(final_receipt)
+                )
+                self._emit_status_callback(on_status, False, status_update)
+            
+            return dict(final_receipt)
 
-                retry_errors = [
-                    "replacement transaction underpriced",
-                    "fee too low",
-                    "intrinsic gas too low",
-                    "nonce too low",
-                    "already known",
-                    "transaction underpriced"
-                ]
-
-                if any(err in error_message for err in retry_errors):
-                    print(f"Attempt {attempt + 1}: Gas fee issue encountered. Increasing fee and retrying...")
-                    attempt += 1
-                    time.sleep(0.5)
-                    continue
-
-                elif "connection error" in error_message or "connection closed" in error_message:
-                    print("Connection lost. Reinitializing Web3 provider and retrying...")
-                    self._api = Web3(Web3.HTTPProvider(self._metadata.base_url))
-                    time.sleep(0.5)
-                    continue
-
-                elif "insufficient funds" in error_message:
-                    raise ExtrinsicExecutionError("Insufficient funds for gas and transaction value.")
-
-                elif "nonce too low" in error_message or "already known" in error_message:
-                    try:
-                        receipt = self._api.eth.get_transaction_receipt(tx_hash)
-                        if receipt:
-                            return receipt
-                    except Exception:
-                        pass
-                    raise ExtrinsicExecutionError("Nonce conflict or transaction already known.")
-
-                else:
-                    raise ExtrinsicExecutionError(f"EVM transaction failed: {error_message}")
-
-        raise ExtrinsicExecutionError("Failed to submit EVM transaction after multiple attempts.")
+        else:
+            raise ValueError(f"Unknown confirmation mode: {opts.mode}")
