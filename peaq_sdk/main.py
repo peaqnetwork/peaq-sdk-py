@@ -20,6 +20,7 @@ from peaq_sdk.types.main import CreateInstanceOptions
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface, GenericCall
 from substrateinterface.keypair import Keypair, KeypairType
+from eth_account.signers.base import BaseAccount
 from web3 import Web3
 
 
@@ -58,7 +59,7 @@ class Main(Base):
     def create_instance(cls,
         base_url: str,
         chain_type: Optional[ChainType],
-        seed: Optional[str] = None
+        auth: Optional[Union[BaseAccount, Keypair]] = None
         ) -> Main:
         """
         Creates and returns a new instance of the SDK, connecting to the specified network.
@@ -66,73 +67,28 @@ class Main(Base):
         Args:
             base_url (str): The connection URL for the blockchain.
             chain_type (Optional[ChainType]): Indicates whether the blockchain is EVM or Substrate.
-            seed (Optional[str]): The secret (mnemonic phrase or private key) used to generate the signer for executing transactions.
+            auth (Optional[Union[BaseAccount, Keypair]]): The authentication method:
+                - BaseAccount: Web3 account object for EVM chains
+                - Keypair: Substrate keypair object for Substrate chains
 
         Returns:
             Main: An initialized SDK object ready for executing blockchain operations.
         """
         sdk = Main(base_url, chain_type)
-        sdk._initialize_signer(seed)
+        sdk._initialize_signer(auth)
         return sdk
     
-    def _initialize_signer(self, seed: Optional[str] = None) -> None:
+    def _initialize_signer(self, auth: Optional[Union[BaseAccount, Keypair]] = None) -> None:
         """
-        Initializes the signer by validating and setting the secret used for generating the key pair/account.
+        Initializes the signer by validating and setting the authentication method.
 
         Args:
-            seed (Optional[str]): The mnemonic phrase or private key used to generate the key pair.
+            auth (Optional[Union[BaseAccount, Keypair]]): The authentication method:
+                - BaseAccount: Web3 account object for EVM chains
+                - Keypair: Substrate keypair object for Substrate chains
         """
-        self._validate_secret(seed)
-        self._set_metadata(seed)
-    
-    def _validate_secret(self, seed: Optional[str] = None):
-        """
-        Validates that the provided seed is compatible with EVM or Substrate.
-
-        Args:
-            seed (Optional[str]): The private key (for EVM) or mnemonic phrase (for Substrate)
-                to validate.
-
-        Raises:
-            ValueError: If the EVM private key is not 64 hex characters (excluding '0x' prefix)
-                or is not a valid hexadecimal string.
-            ValueError: If the substrate mnemonic does not consist of 12 or 24 words.
-        """
-        # is_sub = is_valid_ss58_address(addr)
-        # is_evm = Web3.is_address(addr)
-        # but for private keys??
-        if not seed:
-            return
-        if self._metadata.chain_type == ChainType.EVM:
-            # TODO allow setting with a mnemonic phrase for EVM
-            key_str = seed[2:] if seed.startswith("0x") else seed
-            if len(key_str) != 64:
-                raise ValueError("Invalid EVM private key length. Expected 64 hex characters (excluding '0x' prefix).")
-            try:
-                int(key_str, 16)
-            except ValueError:
-                raise ValueError("Invalid EVM private key. It must be a valid hexadecimal string.")
-        else:
-            words = seed.strip().split()
-            if len(words) not in (12, 24):
-                raise ValueError("Invalid substrate mnemonic. Expected 12 or 24 words.")
-        return
-    
-    def _set_metadata(self, seed: Optional[str] = None) -> None:
-        """
-        Generates a cryptographic key pair from the provided seed and stores it in the SDK metadata.
-
-        This method invokes _get_key_pair, which applies blockchain-specific logic:
-          - For EVM, it generates a key pair from a valid hexadecimal private key.
-          - For Substrate, it creates a key pair from a mnemonic phrase (typically 12 or 24 words).
-        The resulting key pair is stored in the metadata for use in signing transactions.
-
-        Args:
-            seed (Optional[str]): The mnemonic phrase (for Substrate) or private key (for EVM) used to generate the key pair.
-        """
-        if not seed:
-            return
-        self._create_key_pair(seed)
+        if auth is not None:
+            self._set_signer(auth)
     
     
     def _create_api(self, metadata: SDKMetadata) -> Union[Web3, SubstrateInterface]:
@@ -181,7 +137,7 @@ class Main(Base):
         cls,
         base_url: str,
         machine_station_address: str,
-        machine_station_owner_private_key: str,
+        auth: BaseAccount,
         ) -> Main:
         """
         Creates a new Machine Station instance for account abstraction functionality.
@@ -189,17 +145,17 @@ class Main(Base):
         Args:
             base_url (str): The connection URL for the blockchain.
             machine_station_address (str): The address of the deployed machine station contract.
-            machine_station_owner_private_key (str): Private key of the machine station owner (admin).
+            auth (BaseAccount): Web3 account object for the machine station owner (admin).
             
         Returns:
             Main: An initialized SDK object with Machine Station functionality.
         """
         sdk = cls(base_url, ChainType.EVM, machine_station=True)
-        sdk._initialize_signer(machine_station_owner_private_key)
+        sdk._initialize_signer(auth)
         sdk.machine_station = MachineStation(
             sdk=sdk,
             machine_station_address=machine_station_address,
-            machine_station_owner_private_key=machine_station_owner_private_key,
+            machine_station_owner_private_key=auth.key.hex(),
             api=sdk.api,
             metadata=sdk.metadata
         )
@@ -211,7 +167,7 @@ class Main(Base):
         cls,
         base_url: str,
         machine_station_address: str,
-        machine_station_owner_private_key: str,
+        auth: BaseAccount,
         service_url: str,
         api_key: str,
         project_api_key: str,
@@ -223,7 +179,7 @@ class Main(Base):
         Args:
             base_url (str): The connection URL for the blockchain.
             machine_station_address (str): The address of the deployed contract for the machine station factory.
-            machine_station_owner_private_key (str): Admin account owner that is responsible for funding and oversight on the machine station factory.
+            auth (BaseAccount): Web3 account object for the admin account.
             service_url (str): URL used to connect to peaq's campaign service.
             api_key (str): Key used to provide authentication with the peaq service.
             project_api_key (str): Key used to provide authentication for a specific project.
@@ -233,13 +189,13 @@ class Main(Base):
         """
         # Initialize SDK with EVM chain type
         sdk = cls(base_url, ChainType.EVM, machine_station=True)
-        sdk._initialize_signer(machine_station_owner_private_key)
+        sdk._initialize_signer(auth)
         
         # Create GetReal instance with machine station functionality
         sdk.get_real = GetReal(
             sdk=sdk,
             machine_station_address=machine_station_address,
-            machine_station_owner_private_key=machine_station_owner_private_key,
+            machine_station_owner_private_key=auth.key.hex(),
             service_url=service_url,
             api_key=api_key,
             project_api_key=project_api_key,

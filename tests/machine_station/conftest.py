@@ -152,14 +152,15 @@ def deployed_smart_account(machine_station_sdk, smart_account_address):
         machine_smart_account_owner_address=smart_account_address,
         nonce=nonce
     )
-    deployed_address = machine_station_sdk.machine_station.deploy_machine_smart_account(
+    result = machine_station_sdk.machine_station.deploy_machine_smart_account(
         machine_smart_account_owner_address=smart_account_address,
         nonce=nonce,
         machine_station_owner_signature=signature
     )
-    assert deployed_address.startswith("0x")
-    assert len(deployed_address) == 42
-    return deployed_address 
+    assert result.success == True, "Smart account deployment failed"
+    assert result.deployed_address.startswith("0x")
+    assert len(result.deployed_address) == 42
+    return result.deployed_address 
 
 @pytest.fixture
 def wss_url_agng():
