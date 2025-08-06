@@ -1,27 +1,26 @@
 # python native imports
 from __future__ import annotations
-from typing import Optional, Union, List
+from typing import Optional, Union
 
 # local imports
 from peaq_sdk.base import Base
 from peaq_sdk.did import Did
 from peaq_sdk.storage import Storage
 from peaq_sdk.rbac import Rbac
+from peaq_sdk.utils.utils import parse_options
+
 
 from peaq_sdk.transfer import Transfer
 
 from peaq_sdk.types.common import ChainType, SDKMetadata, BaseUrlError
 from peaq_sdk.types.main import CreateInstanceOptions
-from peaq_sdk.types.base import (
-    TransactionStatus, 
-    ConfirmationMode
-)
 
 # 3rd party imports
-from substrateinterface.base import SubstrateInterface, GenericCall
-from substrateinterface.keypair import Keypair, KeypairType
+from substrateinterface.base import SubstrateInterface
+from substrateinterface.keypair import Keypair
 from eth_account.signers.base import BaseAccount
 from web3 import Web3
+from web3 import AsyncWeb3, AsyncHTTPProvider
 
 
 class Main(Base):
@@ -34,54 +33,47 @@ class Main(Base):
     with enhanced batch processing and transaction control.
     """
     
-    # Expose enums and types at class level for easy access
-    TransactionStatus = TransactionStatus
-    ConfirmationMode = ConfirmationMode
-    ChainType = ChainType
-    
-    def __init__(self, base_url: str, chain_type: Optional[ChainType], machine_station: Optional[ChainType] = False) -> None:
+    def __init__(self, options: CreateInstanceOptions) -> None:
         """
         Initializes the Main class, representing the primary interface for the SDK.
 
         Args:
             base_url (str): The URL for connecting to the blockchain.
-            chain_type (Optional[ChainType]): The type of blockchain (e.g., EVM or Substrate).
+            chain_type (ChainType): The type of blockchain (e.g., EVM or Substrate).
         """
         metadata: SDKMetadata = SDKMetadata(
-            base_url=base_url,
-            chain_type=chain_type,
-            pair=None,
-            machine_station=machine_station
+            base_url=options.base_url,
+            chain_type=options.chain_type,
+            pair=None
         )
         api = self._create_api(metadata)
         super().__init__(api, metadata)
         
-        self.did: Did = Did(api, metadata)
-        self.storage: Storage = Storage(api, metadata)
-        self.rbac: Rbac = Rbac(api, metadata)
+        self.did: Did = Did(self._api, self._metadata)
+        self.storage: Storage = Storage(self._api, self._metadata)
+        self.rbac: Rbac = Rbac(self._api, self._metadata)
         self.transfer: Transfer = Transfer(self._api, self._metadata)
     
     @classmethod
-    def create_instance(cls,
-        base_url: str,
-        chain_type: Optional[ChainType],
-        auth: Optional[Union[BaseAccount, Keypair]] = None
+    async def create_instance(cls,
+        options: CreateInstanceOptions
         ) -> Main:
         """
         Creates and returns a new instance of the SDK, connecting to the specified network.
 
         Args:
             base_url (str): The connection URL for the blockchain.
-            chain_type (Optional[ChainType]): Indicates whether the blockchain is EVM or Substrate.
+            chain_type (ChainType): Indicates whether the blockchain is EVM or Substrate.
             auth (Optional[Union[BaseAccount, Keypair]]): The authentication method:
                 - BaseAccount: Web3 account object for EVM chains
                 - Keypair: Substrate keypair object for Substrate chains
 
         Returns:
-            Main: An initialized SDK object ready for executing blockchain operations.
+            Main: An initialized SDK object ready for building or executing blockchain operations.
         """
-        sdk = Main(base_url, chain_type)
-        sdk._initialize_signer(auth)
+        ops = parse_options(CreateInstanceOptions, options, caller="create_instance()")
+        sdk = cls(ops)
+        sdk._initialize_signer(ops.auth)
         return sdk
     
     def _initialize_signer(self, auth: Optional[Union[BaseAccount, Keypair]] = None) -> None:
@@ -112,13 +104,15 @@ class Main(Base):
         if metadata.chain_type == ChainType.EVM:
             expected_prefix: str = "https://"
             self._validate_base_url(base_url, expected_prefix, ChainType.EVM)
-            api = Web3(Web3.HTTPProvider(base_url))
+            api = AsyncWeb3(AsyncHTTPProvider(base_url))
             return api
-        elif metadata.chain_type in (ChainType.SUBSTRATE, None):
+        elif metadata.chain_type == ChainType.SUBSTRATE:
             expected_prefix: str = "wss://"
             self._validate_base_url(base_url, expected_prefix, ChainType.SUBSTRATE)
             api = SubstrateInterface(url=base_url, ss58_format=42)
             return api
+        else:
+            raise ValueError(f"Invalid chain type: {metadata.chain_type}")
 
     def _validate_base_url(self, base_url: str, expected_prefix: str, interaction: ChainType) -> None:
         """
@@ -137,32 +131,3 @@ class Main(Base):
                 f"Invalid base URL for {interaction}: {base_url}. "
                 f"It must start with '{expected_prefix}' to establish connection."
             )
-            
-    @classmethod
-    def machine_station_instance(
-        cls,
-        base_url: str,
-        machine_station_address: str,
-        auth: BaseAccount,
-        ) -> Main:
-        """
-        Creates a new Machine Station instance for account abstraction functionality.
-        
-        Args:
-            base_url (str): The connection URL for the blockchain.
-            machine_station_address (str): The address of the deployed machine station contract.
-            auth (BaseAccount): Web3 account object for the machine station owner (admin).
-            
-        Returns:
-            Main: An initialized SDK object with Machine Station functionality.
-        """
-        sdk = cls(base_url, ChainType.EVM, machine_station=True)
-        sdk._initialize_signer(auth)
-        sdk.machine_station = MachineStation(
-            sdk=sdk,
-            machine_station_address=machine_station_address,
-            machine_station_owner_private_key=auth.key.hex(),
-            api=sdk.api,
-            metadata=sdk.metadata
-        )
-        return sdk

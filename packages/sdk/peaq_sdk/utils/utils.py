@@ -1,5 +1,6 @@
 import hashlib
 import base58
+from pydantic import ValidationError
 
 def blake2b_256(data):
     """
@@ -78,3 +79,12 @@ def evm_to_address(evm_address, ss58_format=42, hash_type="blake2"):
 
     # Encode the hashed message as an SS58 address
     return encode_address(hashed_message, ss58_format)
+
+def parse_options(cls, options: dict, caller: str = "function"):
+    try:
+        return cls(**options)
+    except ValidationError as e:
+        missing = [err["loc"][0] for err in e.errors() if err["type"] == "missing"]
+        if missing:
+            raise ValueError(f"{caller}(): missing required field(s): {', '.join(missing)}") from None
+        raise

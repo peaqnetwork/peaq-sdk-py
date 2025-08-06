@@ -1,59 +1,32 @@
-"""commonly shared objects across the sdk"""
-# python native imports
+"""
+Common types and enums for the MSF SDK
+"""
+
 from enum import Enum
-from typing import Optional
-from dataclasses import dataclass
+from typing import Optional, Dict, Any
+from eth_account.signers.base import BaseAccount
+from pydantic import BaseModel, ConfigDict, Field
 
 
-# 3rd party imports
-from eth_account import Account
-from web3.types import TxParams
-
-
-class ChainType(Enum):
+class ChainType(str, Enum):
+    """Supported blockchain types"""
     EVM = "evm"
     SUBSTRATE = "substrate"
-
-# Used for EVM calls
-class PrecompileAddresses(str, Enum):
-    DID = "0x0000000000000000000000000000000000000800"
-    STORAGE = "0x0000000000000000000000000000000000000801"
-    RBAC = "0x0000000000000000000000000000000000000802"
-    IERC20 = "0x0000000000000000000000000000000000000809"
-
-# Used for Substrate calls
-class CallModule(str, Enum):
-    PEAQ_DID = 'PeaqDid'
-    PEAQ_STORAGE = 'PeaqStorage'
-    PEAQ_RBAC = 'PeaqRbac'
     
-    # Add more modules as needed
-@dataclass
-class SDKMetadata:
-    chain_type: Optional[ChainType]
-    base_url: str
-    pair: Optional[Account]
-    machine_station: bool
-# EVM Transaction type - using Web3.py native TxParams (equivalent to SubstrateInterface's GenericCall)
+class SDKMetadata(BaseModel):
+    """SDK metadata containing chain configuration and authentication"""
+    base_url: str = Field(..., description="Base URL for the blockchain endpoint")
+    chain_type: Optional[ChainType] = Field(..., description="The blockchain type (EVM or Substrate)")
+    pair: Optional[BaseAccount] = Field(None, description="Optional keypair or account for signing transactions")
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True  # Allow Keypair and Account types
+    )
 
-@dataclass
-class WrittenTransactionResult():
-    message: str
-    receipt: dict  # Backwards compatibility with dict
-
-@dataclass
-class BuiltEvmTransactionResult():
-    message: str
-    tx: TxParams
-    
-class ExtrinsicExecutionError(Exception):
-    """Raised when an extrinsic fails to execute successfully on the blockchain."""
-    pass
-
-class SeedError(Exception):
-    """Raised when there is no seed set for the write operation."""
-    pass
-
-class BaseUrlError(Exception):
-    """Raised when an incorrect Base Url is set."""
-    pass
+class CreateInstanceOptions(BaseModel):
+    base_url: str = Field(..., description="HTTPS/WSS endpoint to your node")
+    machine_station_address: str = Field(..., description="Machine Station Contract being connected to")
+    station_admin: BaseAccount = Field(..., description="Signer - BaseAccount; represents the station admin"    )
+    station_manager: Optional[BaseAccount] = Field(None, description="Optional signer - BaseAccount; represents the station admin")
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True
+    )

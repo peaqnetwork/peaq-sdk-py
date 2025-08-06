@@ -2,17 +2,22 @@ from typing import Optional, Union
 from decimal import Decimal
 
 from peaq_sdk.base import Base
-from peaq_sdk.types.base import TransactionOptions
+from peaq_sdk.types.base import TxOptions, StatusCallback
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
     PrecompileAddresses,
-    WrittenTransactionResult
+    WrittenTransactionResult,
+    BuiltEvmTransactionResult,
+    BuiltCallTransactionResult
 )
 from peaq_sdk.types.transfer import (
-    PayFunctionSignatures
+    PayFunctionSignatures,
+    NativeTransferOptions,
+    ERC20TransferOptions,
+    ERC721TransferOptions
 )
-from peaq_sdk.utils.utils import evm_to_address
+from peaq_sdk.utils.utils import evm_to_address, parse_options
 
 from web3 import Web3
 from web3.types import TxParams
@@ -64,12 +69,11 @@ class Transfer(Base):
         raise ValueError(f"Address {addr!r} is neither a valid Substrate SS58 nor a valid EVM H160.")
 
 # native tokens
-    def native(
+    async def native(
         self, 
-        to: str, 
-        amount: Union[int, float, str, Decimal],
-        status_callback = None,
-        tx_options = None
+        options: NativeTransferOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> WrittenTransactionResult:
         """
         Transfers the native token from the signer to a target address.
@@ -82,10 +86,9 @@ class Transfer(Base):
             - If `to` is Substrate, uses `transfer_keep_alive` directly.
 
         Args:
-            to (str): The recipient address (either SS58 or EVM H160).
-            amount (int | float | str | Decimal): Human-readable token amount (e.g., 1.5).
+            options (NativeTransferOptions): Options containing recipient address and amount.
             status_callback: Optional callback function for transaction status updates.
-            tx_options: Optional TransactionOptions for EVM transactions.
+            tx_options: Optional TxOptions for EVM transactions.
 
         Returns:
             WrittenTransactionResult: A message and transaction receipt object.
@@ -93,6 +96,11 @@ class Transfer(Base):
         Raises:
             ValueError: If address format is invalid.
         """
+        ops = parse_options(NativeTransferOptions, options, caller="transfer.native()")
+        
+        to = ops.to
+        amount = ops.amount
+        
         raw = self._to_raw_amount(amount,
             token_decimals=(
                 18 if self.metadata.chain_type == ChainType.EVM
@@ -118,12 +126,7 @@ class Transfer(Base):
                     "to": Web3.to_checksum_address(to),
                     "value": raw,
                 }
-            opts = tx_options if tx_options else TransactionOptions()
-            receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-            return WrittenTransactionResult(
-                message=f"Sent {amount} native-token from {self.metadata.pair.address} to {to}.",
-                receipt=receipt
-            )
+            return await self._handle_evm_tx(tx, f"transfer {amount} native tokens to {to}", status_callback, tx_options)
             
         else:
             # Substrate side
@@ -137,22 +140,22 @@ class Transfer(Base):
                 call_function="transfer_keep_alive",
                 call_params={"dest": to, "value": raw},
             )
-            receipt = self._send_substrate_tx(call)
-            return WrittenTransactionResult(
-                message=f"Sent {amount} native-token from {self.metadata.pair.ss58_address} to {display_address}.",
-                receipt=receipt
-            )
+            return self._handle_substrate_tx(call, f"transfer {amount} native tokens to {display_address}", status_callback)
 
 
-    def erc20(
+    async def erc20(
         self, 
-        erc_20_address: str, 
-        recipient_address: str, 
-        amount: Union[int, float, str, Decimal], 
-        token_decimals: Union[int, float, str, Decimal] = None,
-        status_callback = None,
-        tx_options = None
+        options: ERC20TransferOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> WrittenTransactionResult:
+        ops = parse_options(ERC20TransferOptions, options, caller="transfer.erc20()")
+        
+        erc_20_address = ops.erc_20_address
+        recipient_address = ops.recipient_address
+        amount = ops.amount
+        token_decimals = ops.token_decimals
+        
         raw = self._to_raw_amount(amount,
             token_decimals=(
                 18 if token_decimals == None
@@ -170,22 +173,21 @@ class Transfer(Base):
             "to": erc_20_checksum,
             "data": f"0x{function_selector}{encoded_params}"
         }
-        opts = tx_options if tx_options else TransactionOptions()
-        receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-        return WrittenTransactionResult(
-            message=f"Transferred {amount} of the erc-20 at address {erc_20_address} to the new owner of {recipient_address} from the owner {self.metadata.pair.address}.",
-            receipt=receipt
-        )
+        return await self._handle_evm_tx(tx, f"transfer {amount} ERC-20 tokens from {erc_20_address} to {recipient_address}", status_callback, tx_options)
         
         
-    def erc721(
+    async def erc721(
         self, 
-        erc_721_address: str, 
-        recipient_address: str, 
-        token_id: int,
-        status_callback = None,
-        tx_options = None
+        options: ERC721TransferOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ) -> WrittenTransactionResult:
+        ops = parse_options(ERC721TransferOptions, options, caller="transfer.erc721()")
+        
+        erc_721_address = ops.erc_721_address
+        recipient_address = ops.recipient_address
+        token_id = ops.token_id
+        
         function_selector = self.api.keccak(text=PayFunctionSignatures.ERC_721_SAFE_TRANSFER_FROM.value)[:4].hex()
         encoded_params = encode(
             ["address", "address", "uint256"], 
@@ -196,12 +198,7 @@ class Transfer(Base):
             "to": erc_721_checksum,
             "data": f"0x{function_selector}{encoded_params}"
         }
-        opts = tx_options if tx_options else TransactionOptions()
-        receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-        return WrittenTransactionResult(
-            message=f"Transferred NFT at address {erc_721_address} to the new owner of {recipient_address} from the owner {self.metadata.pair.address}.",
-            receipt=receipt
-        )
+        return await self._handle_evm_tx(tx, f"transfer ERC-721 token {token_id} from {erc_721_address} to {recipient_address}", status_callback, tx_options)
     
 
 
@@ -222,3 +219,64 @@ class Transfer(Base):
     
 
     # asset_transfer ??
+    
+    # ---------------  Generalized handlers ----------------
+    async def _handle_evm_tx(
+        self, 
+        tx: TxParams, 
+        action: str, 
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
+    ):
+        """
+        Generalized handler for EVM transactions.
+        
+        Args:
+            tx (TxParams): The transaction parameters
+            action (str): Description of the action being performed
+            status_callback: Optional callback for transaction status
+            tx_options: Optional transaction options
+            
+        Returns:
+            Union[EvmSendResult, BuiltEvmTransactionResult]: 
+                - EvmSendResult: For signed transactions with tx_hash, unsubscribe, and receipt promise
+                - BuiltEvmTransactionResult: For unsigned transactions with message and tx object
+        """
+        if not self.metadata.pair:
+            return BuiltEvmTransactionResult(
+                message=f"Constructed {action} tx (unsigned).",
+                tx=tx
+            )
+        try:
+            return await self._send_evm_tx(tx, on_status=status_callback, opts=tx_options)
+        except Exception as err:
+            raise Exception(f"Failed to {action}: {str(err)}")
+
+    def _handle_substrate_tx(
+        self, 
+        call, 
+        action: str, 
+        status_callback: StatusCallback = None
+    ):
+        """
+        Generalized handler for Substrate transactions.
+        
+        Args:
+            call: The Substrate call object
+            action (str): Description of the action being performed
+            status_callback: Optional callback for transaction status
+            
+        Returns:
+            Union[SubstrateSendResult, BuiltCallTransactionResult]:
+                - SubstrateSendResult: For signed transactions with tx_hash, unsubscribe, and finalize promise
+                - BuiltCallTransactionResult: For unsigned transactions with message and call object
+        """
+        if not self.metadata.pair:
+            return BuiltCallTransactionResult(
+                message=f"Constructed {action} call (unsigned).",
+                call=call
+            )
+        try:
+            return self._send_substrate_tx(call, on_status=status_callback)
+        except Exception as err:
+            raise Exception(f"Failed to {action}: {str(err)}")

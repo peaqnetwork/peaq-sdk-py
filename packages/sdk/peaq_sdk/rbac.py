@@ -2,14 +2,14 @@ from typing import Optional, List
 import uuid
 
 from peaq_sdk.base import Base
-from peaq_sdk.types.base import TransactionOptions
+from peaq_sdk.types.base import TxOptions, StatusCallback
+from peaq_sdk.utils.utils import parse_options
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
     PrecompileAddresses,
     BuiltEvmTransactionResult,
     CallModule,
-    WrittenTransactionResult,
     BuiltCallTransactionResult,
     BaseUrlError
 )
@@ -21,7 +21,36 @@ from peaq_sdk.types.rbac import (
     FetchResponseRole2Permission,
     FetchResponseRole2Group,
     FetchResponseRole2User,
-    ResponseFetchUserGroups
+    ResponseFetchUserGroups,
+    CreateRoleOptions,
+    CreateGroupOptions,
+    CreatePermissionOptions,
+    AssignPermissionToRoleOptions,
+    AssignRoleToGroupOptions,
+    AssignRoleToUserOptions,
+    AssignUserToGroupOptions,
+    DisableRoleOptions,
+    DisableGroupOptions,
+    DisablePermissionOptions,
+    UpdateRoleOptions,
+    UpdateGroupOptions,
+    UpdatePermissionOptions,
+    UnassignPermissionToRoleOptions,
+    UnassignRoleToGroupOptions,
+    UnassignRoleToUserOptions,
+    UnassignUserToGroupOptions,
+    FetchRoleOptions,
+    FetchGroupOptions,
+    FetchPermissionOptions,
+    FetchRolesOptions,
+    FetchGroupsOptions,
+    FetchPermissionsOptions,
+    FetchUserRolesOptions,
+    FetchGroupRolesOptions,
+    FetchUserGroupsOptions,
+    FetchRolePermissionsOptions,
+    FetchUserPermissionsOptions,
+    FetchGroupPermissionsOptions
 )
 
 from peaq_sdk.utils.utils import evm_to_address
@@ -50,13 +79,17 @@ class Rbac(Base):
         """
         super().__init__(api, metadata)
         
-    def create_role(
+    async def create_role(
         self, 
-        role_name: str, 
-        role_id: Optional[str] = None,
-        status_callback = None,
-        tx_options = None
+        options: CreateRoleOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
+        ops = parse_options(CreateRoleOptions, options, caller="rbac.create_role()")
+        
+        role_name = ops.role_name
+        role_id = ops.role_id
+        
         if role_id is None:
             role_id = str(uuid.uuid4())[:32]
         elif len(role_id) != 32:
@@ -76,18 +109,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully added the RBAC role under the role name of {role_name} with the role id of {role_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC create role call for the role name of {role_name} and role id of {role_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"create RBAC role {role_name}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -98,26 +120,22 @@ class Rbac(Base):
                     'name': role_name
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully added the RBAC role under the role name of {role_name} with the role id of {role_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC create role call for the role name of {role_name} and role id of {role_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"create RBAC role {role_name}", status_callback)
 
-    def create_group(
+    
+
+    async def create_group(
         self, 
-        group_name: str, 
-        group_id: Optional[str] = None,
-        status_callback = None,
-        tx_options = None
+        options: CreateGroupOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Creates a new group of the given name at the group id."""
+        ops = parse_options(CreateGroupOptions, options, caller="rbac.create_group()")
+        
+        group_name = ops.group_name
+        group_id = ops.group_id
+        
         if group_id is None:
             group_id = str(uuid.uuid4())[:32]
         elif len(group_id) != 32:
@@ -137,18 +155,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully added the RBAC group under the group name of {group_name} with the group id of {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC create group call for the group name of {group_name} and group id of {group_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"create RBAC group {group_name}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -159,23 +166,20 @@ class Rbac(Base):
                     'name': group_name
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully added the RBAC group under the group name of {group_name} with the group id of {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC create group call for the group name of {group_name} and group id of {group_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"create RBAC group {group_name}", status_callback)
 
-    def create_permission(self, permission_name: str, permission_id: Optional[str] = None,
-        status_callback = None,
-        tx_options = None
+    async def create_permission(
+        self, 
+        options: CreatePermissionOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Creates a new permission of the given name at the permission id."""
+        ops = parse_options(CreatePermissionOptions, options, caller="rbac.create_permission()")
+        
+        permission_name = ops.permission_name
+        permission_id = ops.permission_id
+        
         if permission_id is None:
             permission_id = str(uuid.uuid4())[:32]
         elif len(permission_id) != 32:
@@ -195,18 +199,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully added the RBAC permission under the permission name of {permission_name} with the permission id of {permission_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC create permission call for the permission name of {permission_name} and permission id of {permission_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"create RBAC permission {permission_name}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -217,23 +210,20 @@ class Rbac(Base):
                     'name': permission_name
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully added the RBAC permission under the permission name of {permission_name} with the permission id of {permission_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC create permission call for the permission name of {permission_name} and permission id of {permission_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"create RBAC permission {permission_name}", status_callback)
 
-    def assign_permission_to_role(self, permission_id: str, role_id: str,
-        status_callback = None,
-        tx_options = None
+    async def assign_permission_to_role(
+        self, 
+        options: AssignPermissionToRoleOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Assigns a permission to a role."""
+        ops = parse_options(AssignPermissionToRoleOptions, options, caller="rbac.assign_permission_to_role()")
+        
+        permission_id = ops.permission_id
+        role_id = ops.role_id
+        
         if len(permission_id) != 32:
             raise ValueError("Permission Id length should be 32 char only")
         if len(role_id) != 32:
@@ -253,18 +243,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully assigned permission {permission_id} to role {role_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC assign permission to role call for permission {permission_id} and role {role_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"assign permission {permission_id} to role {role_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -275,23 +254,20 @@ class Rbac(Base):
                     'role_id': role_id_bytes
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully assigned permission {permission_id} to role {role_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC assign permission to role call for permission {permission_id} and role {role_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"assign permission {permission_id} to role {role_id}", status_callback)
 
-    def assign_role_to_group(self, role_id: str, group_id: str,
-        status_callback = None,
-        tx_options = None
+    async def assign_role_to_group(
+        self, 
+        options: AssignRoleToGroupOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Assigns a role to a group."""
+        ops = parse_options(AssignRoleToGroupOptions, options, caller="rbac.assign_role_to_group()")
+        
+        role_id = ops.role_id
+        group_id = ops.group_id
+        
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
         if len(group_id) != 32:
@@ -311,18 +287,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully assigned role {role_id} to group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC assign role to group call for role {role_id} and group {group_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"assign role {role_id} to group {group_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -333,23 +298,20 @@ class Rbac(Base):
                     'group_id': group_id_bytes
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully assigned role {role_id} to group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC assign role to group call for role {role_id} and group {group_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"assign role {role_id} to group {group_id}", status_callback)
 
-    def assign_role_to_user(self, role_id: str, user_id: str,
-        status_callback = None,
-        tx_options = None
+    async def assign_role_to_user(
+        self, 
+        options: AssignRoleToUserOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Assigns a role to a user."""
+        ops = parse_options(AssignRoleToUserOptions, options, caller="rbac.assign_role_to_user()")
+        
+        role_id = ops.role_id
+        user_id = ops.user_id
+        
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
         if len(user_id) != 32:
@@ -369,18 +331,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully assigned role {role_id} to user {user_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC assign role to user call for role {role_id} and user {user_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"assign role {role_id} to user {user_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -391,23 +342,20 @@ class Rbac(Base):
                     'user_id': user_id_bytes
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully assigned role {role_id} to user {user_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC assign role to user call for role {role_id} and user {user_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"assign role {role_id} to user {user_id}", status_callback)
 
-    def assign_user_to_group(self, user_id: str, group_id: str,
-        status_callback = None,
-        tx_options = None
+    async def assign_user_to_group(
+        self, 
+        options: AssignUserToGroupOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Assigns a user to a group."""
+        ops = parse_options(AssignUserToGroupOptions, options, caller="rbac.assign_user_to_group()")
+        
+        user_id = ops.user_id
+        group_id = ops.group_id
+        
         if len(user_id) != 32:
             raise ValueError("User Id length should be 32 char only")
         if len(group_id) != 32:
@@ -427,18 +375,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully assigned user {user_id} to group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC assign user to group call for user {user_id} and group {group_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"assign user {user_id} to group {group_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -449,19 +386,14 @@ class Rbac(Base):
                     'group_id': group_id_bytes
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully assigned user {user_id} to group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC assign user to group call for user {user_id} and group {group_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"assign user {user_id} to group {group_id}", status_callback)
                 
-    def fetch_role(self, owner: str, role_id: str) -> FetchResponseData:
+    def fetch_role(self, options: FetchRoleOptions) -> FetchResponseData:
+        ops = parse_options(FetchRoleOptions, options, caller="rbac.fetch_role()")
+        
+        owner = ops.owner
+        role_id = ops.role_id
+        
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
             api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
@@ -491,8 +423,13 @@ class Rbac(Base):
             enabled=ok['enabled']
         )
 
-    def fetch_group(self, owner: str, group_id: str) -> FetchResponseData:
+    def fetch_group(self, options: FetchGroupOptions) -> FetchResponseData:
         """Fetches a group by owner and group id."""
+        ops = parse_options(FetchGroupOptions, options, caller="rbac.fetch_group()")
+        
+        owner = ops.owner
+        group_id = ops.group_id
+        
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
             api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
@@ -522,8 +459,13 @@ class Rbac(Base):
             enabled=ok['enabled']
         )
 
-    def fetch_permission(self, owner: str, permission_id: str) -> FetchResponseData:
+    def fetch_permission(self, options: FetchPermissionOptions) -> FetchResponseData:
         """Fetches a permission by owner and permission id."""
+        ops = parse_options(FetchPermissionOptions, options, caller="rbac.fetch_permission()")
+        
+        owner = ops.owner
+        permission_id = ops.permission_id
+        
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
             api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
@@ -553,8 +495,12 @@ class Rbac(Base):
             enabled=ok['enabled']
         )
 
-    def fetch_roles(self, owner: str) -> List[FetchResponseData]:
+    def fetch_roles(self, options: FetchRolesOptions) -> List[FetchResponseData]:
         """Fetches all roles for the given owner."""
+        ops = parse_options(FetchRolesOptions, options, caller="rbac.fetch_roles()")
+        
+        owner = ops.owner
+        
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
             api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
@@ -585,8 +531,12 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_groups(self, owner: str) -> List[FetchResponseData]:
+    def fetch_groups(self, options: FetchGroupsOptions) -> List[FetchResponseData]:
         """Fetches all groups for the given owner."""
+        ops = parse_options(FetchGroupsOptions, options, caller="rbac.fetch_groups()")
+        
+        owner = ops.owner
+        
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
             api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
@@ -617,8 +567,12 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_permissions(self, owner: str) -> List[FetchResponseData]:
+    def fetch_permissions(self, options: FetchPermissionsOptions) -> List[FetchResponseData]:
         """Fetches all permissions for the given owner."""
+        ops = parse_options(FetchPermissionsOptions, options, caller="rbac.fetch_permissions()")
+        
+        owner = ops.owner
+        
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
             api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
@@ -649,8 +603,13 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_user_roles(self, owner: str, user_id: str) -> List[FetchResponseRole2User]:
+    def fetch_user_roles(self, options: FetchUserRolesOptions) -> List[FetchResponseRole2User]:
         """Fetches all roles assigned to a user."""
+        ops = parse_options(FetchUserRolesOptions, options, caller="rbac.fetch_user_roles()")
+        
+        owner = ops.owner
+        user_id = ops.user_id
+        
         if len(user_id) != 32:
             raise GetRbacError("User Id length should be 32 char only")
             
@@ -684,8 +643,13 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_group_roles(self, owner: str, group_id: str) -> List[FetchResponseRole2Group]:
+    def fetch_group_roles(self, options: FetchGroupRolesOptions) -> List[FetchResponseRole2Group]:
         """Fetches all roles assigned to a group."""
+        ops = parse_options(FetchGroupRolesOptions, options, caller="rbac.fetch_group_roles()")
+        
+        owner = ops.owner
+        group_id = ops.group_id
+        
         if len(group_id) != 32:
             raise GetRbacError("Group Id length should be 32 char only")
             
@@ -719,8 +683,13 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_user_groups(self, owner: str, user_id: str) -> List[ResponseFetchUserGroups]:
+    def fetch_user_groups(self, options: FetchUserGroupsOptions) -> List[ResponseFetchUserGroups]:
         """Fetches all groups assigned to a user."""
+        ops = parse_options(FetchUserGroupsOptions, options, caller="rbac.fetch_user_groups()")
+        
+        owner = ops.owner
+        user_id = ops.user_id
+        
         if len(user_id) != 32:
             raise GetRbacError("User Id length should be 32 char only")
             
@@ -754,8 +723,13 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_role_permissions(self, owner: str, role_id: str) -> List[FetchResponseRole2Permission]:
+    def fetch_role_permissions(self, options: FetchRolePermissionsOptions) -> List[FetchResponseRole2Permission]:
         """Fetches all permissions assigned to a role."""
+        ops = parse_options(FetchRolePermissionsOptions, options, caller="rbac.fetch_role_permissions()")
+        
+        owner = ops.owner
+        role_id = ops.role_id
+        
         if len(role_id) != 32:
             raise GetRbacError("Role Id length should be 32 char only")
             
@@ -789,8 +763,13 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_user_permissions(self, owner: str, user_id: str) -> List[FetchResponseData]:
+    def fetch_user_permissions(self, options: FetchUserPermissionsOptions) -> List[FetchResponseData]:
         """Fetches all permissions available to a user (through direct role assignments and group memberships)."""
+        ops = parse_options(FetchUserPermissionsOptions, options, caller="rbac.fetch_user_permissions()")
+        
+        owner = ops.owner
+        user_id = ops.user_id
+        
         if len(user_id) != 32:
             raise GetRbacError("User Id length should be 32 char only")
             
@@ -825,8 +804,13 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_group_permissions(self, owner: str, group_id: str) -> List[FetchResponseData]:
+    def fetch_group_permissions(self, options: FetchGroupPermissionsOptions) -> List[FetchResponseData]:
         """Fetches all permissions available to a group (through role assignments)."""
+        ops = parse_options(FetchGroupPermissionsOptions, options, caller="rbac.fetch_group_permissions()")
+        
+        owner = ops.owner
+        group_id = ops.group_id
+        
         if len(group_id) != 32:
             raise GetRbacError("Group Id length should be 32 char only")
             
@@ -861,11 +845,17 @@ class Rbac(Base):
         
         return response_data
 
-    def disable_role(self, role_id: str,
-        status_callback = None,
-        tx_options = None
+    async def disable_role(
+        self, 
+        options: DisableRoleOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Disables a role."""
+        ops = parse_options(DisableRoleOptions, options, caller="rbac.disable_role()")
+        
+        role_id = ops.role_id
+        
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
         
@@ -882,18 +872,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully disabled role {role_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC disable role call for role {role_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"disable role {role_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -901,23 +880,19 @@ class Rbac(Base):
                 call_function=RbacCallFunction.DISABLE_ROLE.value,
                 call_params={'role_id': role_id_bytes}
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully disabled role {role_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC disable role call for role {role_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"disable role {role_id}", status_callback)
 
-    def disable_group(self, group_id: str,
-        status_callback = None,
-        tx_options = None
+    async def disable_group(
+        self, 
+        options: DisableGroupOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Disables a group."""
+        ops = parse_options(DisableGroupOptions, options, caller="rbac.disable_group()")
+        
+        group_id = ops.group_id
+        
         if len(group_id) != 32:
             raise ValueError("Group Id length should be 32 char only")
         
@@ -934,18 +909,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully disabled group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC disable group call for group {group_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"disable group {group_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -953,23 +917,19 @@ class Rbac(Base):
                 call_function=RbacCallFunction.DISABLE_GROUP.value,
                 call_params={'group_id': group_id_bytes}
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully disabled group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC disable group call for group {group_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"disable group {group_id}", status_callback)
 
-    def disable_permission(self, permission_id: str,
-        status_callback = None,
-        tx_options = None
+    async def disable_permission(
+        self, 
+        options: DisablePermissionOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Disables a permission."""
+        ops = parse_options(DisablePermissionOptions, options, caller="rbac.disable_permission()")
+        
+        permission_id = ops.permission_id
+        
         if len(permission_id) != 32:
             raise ValueError("Permission Id length should be 32 char only")
         
@@ -986,18 +946,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully disabled permission {permission_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC disable permission call for permission {permission_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"disable permission {permission_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -1005,23 +954,20 @@ class Rbac(Base):
                 call_function=RbacCallFunction.DISABLE_PERMISSION.value,
                 call_params={'permission_id': permission_id_bytes}
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully disabled permission {permission_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC disable permission call for permission {permission_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"disable permission {permission_id}", status_callback)
 
-    def update_role(self, role_id: str, role_name: str,
-        status_callback = None,
-        tx_options = None
+    async def update_role(
+        self, 
+        options: UpdateRoleOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Updates a role name."""
+        ops = parse_options(UpdateRoleOptions, options, caller="rbac.update_role()")
+        
+        role_id = ops.role_id
+        role_name = ops.role_name
+        
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
         
@@ -1039,18 +985,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully updated role {role_id} with name {role_name}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC update role call for role {role_id} with name {role_name}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"update role {role_id} with name {role_name}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -1061,23 +996,20 @@ class Rbac(Base):
                     'name': role_name
                 }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully updated role {role_id} with name {role_name}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC update role call for role {role_id} with name {role_name}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"update role {role_id} with name {role_name}", status_callback)
 
-    def update_group(self, group_id: str, group_name: str,
-        status_callback = None,
-        tx_options = None
+    async def update_group(
+        self, 
+        options: UpdateGroupOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Updates a group name."""
+        ops = parse_options(UpdateGroupOptions, options, caller="rbac.update_group()")
+        
+        group_id = ops.group_id
+        group_name = ops.group_name
+        
         if len(group_id) != 32:
             raise ValueError("Group Id length should be 32 char only")
         
@@ -1095,18 +1027,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully updated group {group_id} with name {group_name}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC update group call for group {group_id} with name {group_name}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"update group {group_id} with name {group_name}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -1117,23 +1038,20 @@ class Rbac(Base):
                     'name': group_name
                 }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully updated group {group_id} with name {group_name}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC update group call for group {group_id} with name {group_name}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"update group {group_id} with name {group_name}", status_callback)
 
-    def update_permission(self, permission_id: str, permission_name: str,
-        status_callback = None,
-        tx_options = None
+    async def update_permission(
+        self, 
+        options: UpdatePermissionOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Updates a permission name."""
+        ops = parse_options(UpdatePermissionOptions, options, caller="rbac.update_permission()")
+        
+        permission_id = ops.permission_id
+        permission_name = ops.permission_name
+        
         if len(permission_id) != 32:
             raise ValueError("Permission Id length should be 32 char only")
         
@@ -1151,18 +1069,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully updated permission {permission_id} with name {permission_name}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC update permission call for permission {permission_id} with name {permission_name}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"update permission {permission_id} with name {permission_name}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -1173,23 +1080,20 @@ class Rbac(Base):
                     'name': permission_name
                 }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully updated permission {permission_id} with name {permission_name}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC update permission call for permission {permission_id} with name {permission_name}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"update permission {permission_id} with name {permission_name}", status_callback)
 
-    def unassign_permission_to_role(self, permission_id: str, role_id: str,
-        status_callback = None,
-        tx_options = None
+    async def unassign_permission_to_role(
+        self, 
+        options: UnassignPermissionToRoleOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Unassigns a permission from a role."""
+        ops = parse_options(UnassignPermissionToRoleOptions, options, caller="rbac.unassign_permission_to_role()")
+        
+        permission_id = ops.permission_id
+        role_id = ops.role_id
+        
         if len(permission_id) != 32:
             raise ValueError("Permission Id length should be 32 char only")
         if len(role_id) != 32:
@@ -1209,18 +1113,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully unassigned permission {permission_id} from role {role_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC unassign permission from role call for permission {permission_id} and role {role_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"unassign permission {permission_id} from role {role_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -1231,23 +1124,20 @@ class Rbac(Base):
                     'role_id': role_id_bytes
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully unassigned permission {permission_id} from role {role_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC unassign permission from role call for permission {permission_id} and role {role_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"unassign permission {permission_id} from role {role_id}", status_callback)
 
-    def unassign_role_to_group(self, role_id: str, group_id: str,
-        status_callback = None,
-        tx_options = None
+    async def unassign_role_to_group(
+        self, 
+        options: UnassignRoleToGroupOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Unassigns a role from a group."""
+        ops = parse_options(UnassignRoleToGroupOptions, options, caller="rbac.unassign_role_to_group()")
+        
+        role_id = ops.role_id
+        group_id = ops.group_id
+        
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
         if len(group_id) != 32:
@@ -1267,18 +1157,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully unassigned role {role_id} from group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC unassign role from group call for role {role_id} and group {group_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"unassign role {role_id} from group {group_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -1289,23 +1168,20 @@ class Rbac(Base):
                     'group_id': group_id_bytes
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully unassigned role {role_id} from group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC unassign role from group call for role {role_id} and group {group_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"unassign role {role_id} from group {group_id}", status_callback)
 
-    def unassign_role_to_user(self, role_id: str, user_id: str,
-        status_callback = None,
-        tx_options = None
+    async def unassign_role_to_user(
+        self, 
+        options: UnassignRoleToUserOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Unassigns a role from a user."""
+        ops = parse_options(UnassignRoleToUserOptions, options, caller="rbac.unassign_role_to_user()")
+        
+        role_id = ops.role_id
+        user_id = ops.user_id
+        
         if len(role_id) != 32:
             raise ValueError("Role Id length should be 32 char only")
         if len(user_id) != 32:
@@ -1325,18 +1201,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully unassigned role {role_id} from user {user_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC unassign role from user call for role {role_id} and user {user_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"unassign role {role_id} from user {user_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -1347,23 +1212,20 @@ class Rbac(Base):
                     'user_id': user_id_bytes
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully unassigned role {role_id} from user {user_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC unassign role from user call for role {role_id} and user {user_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"unassign role {role_id} from user {user_id}", status_callback)
 
-    def unassign_user_to_group(self, user_id: str, group_id: str,
-        status_callback = None,
-        tx_options = None
+    async def unassign_user_to_group(
+        self, 
+        options: UnassignUserToGroupOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
     ):
         """Unassigns a user from a group."""
+        ops = parse_options(UnassignUserToGroupOptions, options, caller="rbac.unassign_user_to_group()")
+        
+        user_id = ops.user_id
+        group_id = ops.group_id
+        
         if len(user_id) != 32:
             raise ValueError("User Id length should be 32 char only")
         if len(group_id) != 32:
@@ -1383,18 +1245,7 @@ class Rbac(Base):
                 "to": PrecompileAddresses.RBAC.value,
                 "data": f"0x{rbac_function_selector}{encoded_params}"
             }
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully unassigned user {user_id} from group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed RBAC unassign user from group call for user {user_id} and group {group_id}. You must sign and send externally.",
-                    tx=tx
-                )
+            return await self._handle_evm_tx(tx, f"unassign user {user_id} from group {group_id}", status_callback, tx_options)
         
         else:
             call = self.api.compose_call(
@@ -1405,17 +1256,69 @@ class Rbac(Base):
                     'group_id': group_id_bytes
                     }
             )
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully unassigned user {user_id} from group {group_id}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed RBAC unassign user from group call for user {user_id} and group {group_id}. You must sign and send externally.",
-                    call=call
-                )
+            return self._handle_substrate_tx(call, f"unassign user {user_id} from group {group_id}", status_callback)
+                
+                
+    # ---------------  Generalized handlers ----------------
+    async def _handle_evm_tx(
+        self, 
+        tx: TxParams, 
+        action: str, 
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
+    ):
+        """
+        Generalized handler for EVM transactions.
+        
+        Args:
+            tx (TxParams): The transaction parameters
+            action (str): Description of the action being performed
+            status_callback: Optional callback for transaction status
+            tx_options: Optional transaction options
+            
+        Returns:
+            Union[EvmSendResult, BuiltEvmTransactionResult]: 
+                - EvmSendResult: For signed transactions with tx_hash, unsubscribe, and receipt promise
+                - BuiltEvmTransactionResult: For unsigned transactions with message and tx object
+        """
+        if not self.metadata.pair:
+            return BuiltEvmTransactionResult(
+                message=f"Constructed {action} tx (unsigned).",
+                tx=tx
+            )
+        try:
+            return await self._send_evm_tx(tx, on_status=status_callback, opts=tx_options)
+        except Exception as err:
+            raise Exception(f"Failed to {action}: {str(err)}")
+
+    def _handle_substrate_tx(
+        self, 
+        call, 
+        action: str, 
+        status_callback: StatusCallback = None
+    ):
+        """
+        Generalized handler for Substrate transactions.
+        
+        Args:
+            call: The Substrate call object
+            action (str): Description of the action being performed
+            status_callback: Optional callback for transaction status
+            
+        Returns:
+            Union[SubstrateSendResult, BuiltCallTransactionResult]:
+                - SubstrateSendResult: For signed transactions with tx_hash, unsubscribe, and finalize promise
+                - BuiltCallTransactionResult: For unsigned transactions with message and call object
+        """
+        if not self.metadata.pair:
+            return BuiltCallTransactionResult(
+                message=f"Constructed {action} call (unsigned).",
+                call=call
+            )
+        try:
+            return self._send_substrate_tx(call, on_status=status_callback)
+        except Exception as err:
+            raise Exception(f"Failed to {action}: {str(err)}")
 
 def _rpc_id(entity_id):
     return [ord(c) for c in entity_id]

@@ -1,6 +1,6 @@
 from enum import Enum
-from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class RbacFunctionSignatures(str, Enum):
@@ -53,31 +53,172 @@ class RbacCallFunction(str, Enum):
     GET_GROUP_ROLES = 'peaqrbac_fetchGroupRoles'
     GET_GROUP_PERMISSIONS = 'peaqrbac_fetchGroupPermissions'
     
-@dataclass
-class FetchResponseData:
-    id: str
-    name: str
-    enabled: bool
+class FetchResponseData(BaseModel):
+    """Response data for RBAC fetch operations (roles, groups, permissions)"""
+    id: str = Field(..., description="Unique identifier for the entity")
+    name: str = Field(..., description="Human-readable name of the entity")
+    enabled: bool = Field(..., description="Whether the entity is currently enabled")
 
-@dataclass
-class FetchResponseRole2Permission:
-    permission: str
-    role: str
+class FetchResponseRole2Permission(BaseModel):
+    """Response data for role-to-permission relationship queries"""
+    permission: str = Field(..., description="Permission identifier")
+    role: str = Field(..., description="Role identifier")
 
-@dataclass
-class FetchResponseRole2Group:
-    role: str
-    group: str
+class FetchResponseRole2Group(BaseModel):
+    """Response data for role-to-group relationship queries"""
+    role: str = Field(..., description="Role identifier")
+    group: str = Field(..., description="Group identifier")
 
-@dataclass
-class FetchResponseRole2User:
-    role: str
-    user: str
+class FetchResponseRole2User(BaseModel):
+    """Response data for role-to-user relationship queries"""
+    role: str = Field(..., description="Role identifier")
+    user: str = Field(..., description="User identifier")
 
-@dataclass
-class ResponseFetchUserGroups:
-    user: str
-    group: str
+class ResponseFetchUserGroups(BaseModel):
+    """Response data for user-to-group relationship queries"""
+    user: str = Field(..., description="User identifier")
+    group: str = Field(..., description="Group identifier")
     
+# Options classes for RBAC operations
+class CreateRoleOptions(BaseModel):
+    """Options for creating a role"""
+    role_name: str = Field(..., description="Name of the role to create")
+    role_id: Optional[str] = Field(None, description="Optional role ID (32 chars max)")
+
+class CreateGroupOptions(BaseModel):
+    """Options for creating a group"""
+    group_name: str = Field(..., description="Name of the group to create")
+    group_id: Optional[str] = Field(None, description="Optional group ID (32 chars max)")
+
+class CreatePermissionOptions(BaseModel):
+    """Options for creating a permission"""
+    permission_name: str = Field(..., description="Name of the permission to create")
+    permission_id: Optional[str] = Field(None, description="Optional permission ID (32 chars max)")
+
+class AssignPermissionToRoleOptions(BaseModel):
+    """Options for assigning a permission to a role"""
+    permission_id: str = Field(..., description="Permission ID (32 chars)")
+    role_id: str = Field(..., description="Role ID (32 chars)")
+
+class AssignRoleToGroupOptions(BaseModel):
+    """Options for assigning a role to a group"""
+    role_id: str = Field(..., description="Role ID (32 chars)")
+    group_id: str = Field(..., description="Group ID (32 chars)")
+
+class AssignRoleToUserOptions(BaseModel):
+    """Options for assigning a role to a user"""
+    role_id: str = Field(..., description="Role ID (32 chars)")
+    user_id: str = Field(..., description="User ID (32 chars)")
+
+class AssignUserToGroupOptions(BaseModel):
+    """Options for assigning a user to a group"""
+    user_id: str = Field(..., description="User ID (32 chars)")
+    group_id: str = Field(..., description="Group ID (32 chars)")
+
+class DisableRoleOptions(BaseModel):
+    """Options for disabling a role"""
+    role_id: str = Field(..., description="Role ID (32 chars)")
+
+class DisableGroupOptions(BaseModel):
+    """Options for disabling a group"""
+    group_id: str = Field(..., description="Group ID (32 chars)")
+
+class DisablePermissionOptions(BaseModel):
+    """Options for disabling a permission"""
+    permission_id: str = Field(..., description="Permission ID (32 chars)")
+
+class UpdateRoleOptions(BaseModel):
+    """Options for updating a role"""
+    role_id: str = Field(..., description="Role ID (32 chars)")
+    role_name: str = Field(..., description="New name for the role")
+
+class UpdateGroupOptions(BaseModel):
+    """Options for updating a group"""
+    group_id: str = Field(..., description="Group ID (32 chars)")
+    group_name: str = Field(..., description="New name for the group")
+
+class UpdatePermissionOptions(BaseModel):
+    """Options for updating a permission"""
+    permission_id: str = Field(..., description="Permission ID (32 chars)")
+    permission_name: str = Field(..., description="New name for the permission")
+
+class UnassignPermissionToRoleOptions(BaseModel):
+    """Options for unassigning a permission from a role"""
+    permission_id: str = Field(..., description="Permission ID (32 chars)")
+    role_id: str = Field(..., description="Role ID (32 chars)")
+
+class UnassignRoleToGroupOptions(BaseModel):
+    """Options for unassigning a role from a group"""
+    role_id: str = Field(..., description="Role ID (32 chars)")
+    group_id: str = Field(..., description="Group ID (32 chars)")
+
+class UnassignRoleToUserOptions(BaseModel):
+    """Options for unassigning a role from a user"""
+    role_id: str = Field(..., description="Role ID (32 chars)")
+    user_id: str = Field(..., description="User ID (32 chars)")
+
+class UnassignUserToGroupOptions(BaseModel):
+    """Options for unassigning a user from a group"""
+    user_id: str = Field(..., description="User ID (32 chars)")
+    group_id: str = Field(..., description="Group ID (32 chars)")
+
+# Fetch options classes
+class FetchRoleOptions(BaseModel):
+    """Options for fetching a role"""
+    owner: str = Field(..., description="Owner address")
+    role_id: str = Field(..., description="Role ID (32 chars)")
+
+class FetchGroupOptions(BaseModel):
+    """Options for fetching a group"""
+    owner: str = Field(..., description="Owner address")
+    group_id: str = Field(..., description="Group ID (32 chars)")
+
+class FetchPermissionOptions(BaseModel):
+    """Options for fetching a permission"""
+    owner: str = Field(..., description="Owner address")
+    permission_id: str = Field(..., description="Permission ID (32 chars)")
+
+class FetchRolesOptions(BaseModel):
+    """Options for fetching all roles"""
+    owner: str = Field(..., description="Owner address")
+
+class FetchGroupsOptions(BaseModel):
+    """Options for fetching all groups"""
+    owner: str = Field(..., description="Owner address")
+
+class FetchPermissionsOptions(BaseModel):
+    """Options for fetching all permissions"""
+    owner: str = Field(..., description="Owner address")
+
+class FetchUserRolesOptions(BaseModel):
+    """Options for fetching user roles"""
+    owner: str = Field(..., description="Owner address")
+    user_id: str = Field(..., description="User ID (32 chars)")
+
+class FetchGroupRolesOptions(BaseModel):
+    """Options for fetching group roles"""
+    owner: str = Field(..., description="Owner address")
+    group_id: str = Field(..., description="Group ID (32 chars)")
+
+class FetchUserGroupsOptions(BaseModel):
+    """Options for fetching user groups"""
+    owner: str = Field(..., description="Owner address")
+    user_id: str = Field(..., description="User ID (32 chars)")
+
+class FetchRolePermissionsOptions(BaseModel):
+    """Options for fetching role permissions"""
+    owner: str = Field(..., description="Owner address")
+    role_id: str = Field(..., description="Role ID (32 chars)")
+
+class FetchUserPermissionsOptions(BaseModel):
+    """Options for fetching user permissions"""
+    owner: str = Field(..., description="Owner address")
+    user_id: str = Field(..., description="User ID (32 chars)")
+
+class FetchGroupPermissionsOptions(BaseModel):
+    """Options for fetching group permissions"""
+    owner: str = Field(..., description="Owner address")
+    group_id: str = Field(..., description="Group ID (32 chars)")
+
 class GetRbacError(Exception):
     """Raised when there is a failure to one of the RBAC get item functions."""

@@ -1,30 +1,38 @@
 from typing import Optional, Union
 
 from peaq_sdk.base import Base
-from peaq_sdk.types.base import TransactionOptions
+from peaq_sdk.types.base import TxOptions, EvmSendResult, SubstrateSendResult, TxOptions, StatusCallback
+from peaq_sdk.utils.utils import parse_options
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
-    SeedError,
     CallModule,
     PrecompileAddresses,
-    WrittenTransactionResult,
-    BuiltEvmTransactionResult,
-    BuiltCallTransactionResult,
-    BaseUrlError
 )
 from peaq_sdk.types.did import (
-    CustomDocumentFields, 
-    Verification,
-    Signature,
-    Service,
+    CreateDIDOptions,
+    ReadDIDOptions,
+    UpdateDIDOptions,
+    RemoveDIDOptions,
     DidFunctionSignatures,
     DidCallFunction,
     ReadDidResult,
-    GetDidError
+    VerificationMethodType,
+    DidWriteResult,
+    DIDV2Document,
+    DIDDocument
+)
+from peaq_sdk.types.base import (
+    BuiltEvmTransactionResult,
+    BuiltCallTransactionResult
 )
 from peaq_sdk.utils import peaq_proto
 from peaq_sdk.utils.utils import evm_to_address
+from peaq_sdk.utils.crypto import (
+    generate_evm_public_key_multibase,
+    generate_ed25519_public_key_multibase,
+    generate_sr25519_public_key_multibase
+)
 
 from substrateinterface.base import SubstrateInterface
 from substrateinterface.utils.ss58 import ss58_decode
@@ -32,8 +40,6 @@ from web3 import Web3
 from web3.types import TxParams
 from eth_abi import encode
 from google.protobuf.json_format import MessageToDict
-import varint
-import base58
 
 class Did(Base):
     """
@@ -52,107 +58,73 @@ class Did(Base):
         """
         super().__init__(api, metadata)
         
-    def create(
+    async def create(
         self, 
-        name: str, 
-        custom_document_fields: CustomDocumentFields, 
-        address: Optional[str] = None,
-        status_callback = None,
-        tx_options = None
-    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+        options: CreateDIDOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
+    ) -> DidWriteResult:
         """
-        Creates a new Decentralized Identifier (DID) on-chain with the specified `name`
-        and `custom_document_fields`.
+        Creates a new Decentralized Identifier (DID) on-chain with the specified options.
 
         - EVM: Constructs a transaction to the `addAttribute` DID precompile contract.
-        - Substrate: Composes an `add_attribute` extrinsic to the peaqDid
-            pallet.
+        - Substrate: Composes an `add_attribute` extrinsic to the peaqDid pallet.
 
         Args:
-            name (str): The name or alias of the DID.
-            custom_document_fields (CustomDocumentFields): Additional fields/claims to embed
-                in the DID document.
-            address (Optional[str]): An optional address if no local keypair is present.
-                On EVM, this should be an H160 address. On Substrate, a SS58 address.
+            options (CreateDIDOptions): DID creation options containing name, controller, 
+                didAddress, verificationMethods, services, and signature.
             status_callback: Optional callback function for transaction status updates.
-            tx_options: Optional TransactionOptions for EVM transactions.
+            tx_options: Optional TxOptions for EVM transactions.
 
         Returns:
-            Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
-                - WrittenTransactionResult: The transaction or extrinsic was signed and broadcasted.
-                    Returned with a message and receipt.
-                - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
-                    but not signed (no local signer). Returned with message and tx/call.
+            DidWriteResult: A Union type that can be one of:
+                - SubstrateSendResult: For signed Substrate transactions with txHash, unsubscribe, and finalize promise
+                - EvmSendResult: For signed EVM transactions with txHash, unsubscribe, and receipt promise  
+                - BuiltEvmTransactionResult: For unsigned EVM transactions with message and tx object
+                - BuiltCallTransactionResult: For unsigned Substrate calls with message and extrinsic object
 
         Raises:
-            TypeError: If `custom_document_fields` is not an instance of `CustomDocumentFields`.
+            TypeError: If no valid address can be determined.
         """
-        if not isinstance(custom_document_fields, CustomDocumentFields):
-            raise TypeError(
-                f"custom_document_fields object must be CustomDocumentFields, "
-                f"got {type(custom_document_fields).__name__!r}"
-            )
-
-        user_address = self._resolve_address(address=address)
+        ops = parse_options(CreateDIDOptions, options, caller="did.create()")
         
-        serialized_did = self._generate_did_document(user_address, custom_document_fields)
+        # Extract options after type checking for proper parameters sent
+        name = ops.name
+        controller = ops.controller
+        did_address = ops.did_address
+        verification_methods = ops.verification_methods or []
+        services = ops.services or []
+        signature = ops.signature
+
+        # Get the connected wallet/keypair address
+        connected_address = getattr(self.metadata.pair, 'address', None) if self.metadata.pair else None
+        if not connected_address and not controller:
+            raise TypeError('No wallet/keypair connected. Please either provide a controller or connect a wallet/keypair.')
+
+        # Use provided controller or default to connected address
+        effective_controller = controller or connected_address
+        
+        # Use provided didAddress for ID generation, otherwise use effectiveController
+        id_address = did_address or effective_controller
+
+        # Build DID Document (protobuf) -> hex string
+        did_document_hex = await self._generate_did_document(id_address, {
+            'controller': effective_controller,
+            'verification_methods': verification_methods,
+            'services': services,
+            'signature': signature
+        })
         
         if self.metadata.chain_type is ChainType.EVM:
-            did_function_selector = self.api.keccak(text=DidFunctionSignatures.ADD_ATTRIBUTE.value)[:4].hex()
-            name_encoded = name.encode("utf-8").hex()
-            did_encoded = serialized_did.encode("utf-8").hex()
-            encoded_params = encode(
-                ['address', 'bytes', 'bytes', 'uint32'],
-                [user_address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
-            ).hex()
-            
-            tx: TxParams = {
-                "to": PrecompileAddresses.DID.value,
-                "data": f"0x{did_function_selector}{encoded_params}"
-            }
-            
-            if self.metadata.pair and not self.metadata.machine_station:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully added the DID under the name {name} for user {user_address}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed DID create transaction for {user_address} of the name {name}. You must sign and send it externally.",
-                    tx=tx
-                )
-                
+            return await self._create_evm(name, effective_controller, did_document_hex, status_callback, tx_options)
         else:
-            call = self.api.compose_call(
-                call_module=CallModule.PEAQ_DID.value,
-                call_function=DidCallFunction.ADD_ATTRIBUTE.value,
-                call_params={
-                    'did_account': user_address,
-                    'name': name,
-                    'value': serialized_did,
-                    'valid_for': None
-                    }
-            )
-            
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully added the DID under the name {name} for user {user_address}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed DID create call for {user_address} of the name {name}. You must sign and send externally.",
-                    call=call
-                )
+            return self._create_substrate(name, effective_controller, did_document_hex, status_callback)
             
             
             
-    def read(self, name: str, address: Optional[str] = None) -> ReadDidResult:
+    async def read(self, options: ReadDIDOptions) -> Optional[ReadDidResult]:
         """
-        Reads (fetches) an on-chain DID identified by `name`. This method locates
+        Reads (fetches) an on-chain DID identified by options.name. This method locates
         the DID document stored at `name` for the given user address.
 
         - EVM: Uses the EVM address (either from a local signer if present, or the
@@ -164,46 +136,251 @@ class Did(Base):
             if none is explicitly provided.
 
         Args:
-            name (str): The DID name or label under which the document is stored.
-            address (Optional[str]): The address owning the DID. On EVM, this should
-                be a H160 address; on Substrate, an SS58 address. If not provided,
-                falls back to the local signer's address (if any).
-
+            options (ReadDIDOptions): Options containing name and optional address.
 
         Returns:
-            ReadDidResult:
+            Optional[ReadDidResult]:
                 An object containing the DID name, on-chain value, validity, creation
-                timestamp, and the deserialized DID document.
+                timestamp, and the deserialized DID document. Returns None if not found.
 
         Raises:
             TypeError:
                 If no valid address can be determined (no local signer and no `address`).
-            GetDidError:
-                If the DID specified by `name` does not exist on-chain for `address`.
         """
+        ops = parse_options(ReadDIDOptions, options, caller="did.read()")
+        name = ops.name
+        address = ops.address
         
-        if self.metadata.chain_type is ChainType.EVM:
-            evm_address = (
-                getattr(self.metadata.pair, 'address', address)
-                if self.metadata.pair and not self.metadata.machine_station
-                else address
-            )
+        # Switch statement to determine chain type
+        if self.metadata.chain_type == ChainType.EVM:
+            evm_address = address or getattr(self.metadata.pair, 'address', None) if self.metadata.pair else None
             if not evm_address:
-                raise TypeError(f"Address is set to {evm_address}. Please either set seed at instance creation or pass an address.")
+                raise TypeError('Address is required. Please either set seed at instance creation or pass an address.')
+            
+            # Convert EVM address to Substrate address format
             owner_address = evm_to_address(evm_address)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
-            display_address = evm_address
-        else:
-            owner_address = (
-                getattr(self.metadata.pair, 'ss58_address', address)
-                if self.metadata.pair
-                else address
-            )
-            if not owner_address:
-                raise TypeError(f"Address is set to {owner_address}. Please either set seed at instance creation or pass an address.")
-            api = self.api
-            display_address = owner_address
+            
+            # Create temporary Substrate API connection
+            temp_api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            
+            try:
+                result = await self._read_from_substrate(name, owner_address, temp_api)
+                if result and result.get('document'):
+                    doc = result['document']
+                    return ReadDidResult(
+                        name=doc.name,
+                        value=doc.value,
+                        validity=doc.validity,
+                        created=doc.created,
+                        document=doc.document
+                    )
+                return None
+            finally:
+                # Clean up temporary connection if needed
+                # temp_api doesn't have disconnect in Python SubstrateInterface
+                pass
         
+        # For Substrate chains, use direct API access
+        api = self.api
+        owner_address = address or getattr(self.metadata.pair, 'ss58_address', None) if self.metadata.pair else None
+        if not owner_address:
+            raise TypeError('Signer/address required')
+        
+        result = await self._read_from_substrate(name, owner_address, api)
+        if result and result.get('document'):
+            doc = result['document']
+            return ReadDidResult(
+                name=doc.name,
+                value=doc.value,
+                validity=doc.validity,
+                created=doc.created,
+                document=doc.document
+            )
+        return None
+
+
+    async def update(
+        self,
+        options: UpdateDIDOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
+    ) -> DidWriteResult:
+        """
+        Updates an existing DID identified by options.name, completely overwriting 
+        the entire DID document with new verification methods and services.
+        
+        - EVM: Constructs a transaction to the `updateAttribute` DID precompile contract.
+        - Substrate: Composes an `update_attribute` extrinsic to the peaqDid pallet.
+        
+        Args:
+            options (UpdateDIDOptions): Update options containing name, controller, 
+                didAddress, verificationMethods, services, and signature.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TxOptions for EVM transactions.
+
+        Returns:
+            DidWriteResult: A Union type that can be one of:
+                - SubstrateSendResult: For signed Substrate transactions with txHash, unsubscribe, and finalize promise
+                - EvmSendResult: For signed EVM transactions with txHash, unsubscribe, and receipt promise  
+                - BuiltEvmTransactionResult: For unsigned EVM transactions with message and tx object
+                - BuiltCallTransactionResult: For unsigned Substrate calls with message and extrinsic object
+
+        Raises:
+            TypeError: If no valid address can be determined.
+        """
+        ops = parse_options(UpdateDIDOptions, options, caller="did.update()")
+        
+        # Extract options after type checking
+        name = ops.name
+        controller = ops.controller
+        did_address = ops.did_address
+        verification_methods = ops.verification_methods or []
+        services = ops.services or []
+        signature = ops.signature
+
+        # Get the connected wallet/keypair address
+        connected_address = getattr(self.metadata.pair, 'address', None) if self.metadata.pair else None
+        if not connected_address and not controller:
+            raise TypeError('No wallet/keypair connected. Please either provide a controller or connect a wallet/keypair.')
+
+        # Use provided controller or default to connected address
+        effective_controller = controller or connected_address
+        
+        # Use provided didAddress for ID generation, otherwise use effectiveController
+        id_address = did_address or effective_controller
+
+        # Build DID Document (protobuf) -> hex string
+        did_document_hex = self._generate_did_document(id_address, {
+            'controller': effective_controller,
+            'verification_methods': verification_methods,
+            'services': services,
+            'signature': signature
+        })
+
+        if self.metadata.chain_type == ChainType.EVM:
+            return await self._update_evm(name, effective_controller, did_document_hex, status_callback, tx_options)
+        else:
+            return self._update_substrate(name, effective_controller, did_document_hex, status_callback)
+
+
+    async def remove(
+        self,
+        options: RemoveDIDOptions,
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
+    ) -> DidWriteResult:
+        """
+        Removes an existing on-chain DID identified by options.name. Once removed,
+        the DID data is no longer accessible via subsequent reads.
+        
+        - EVM: Constructs a transaction to the `removeAttribute` DID precompile contract.
+        - Substrate: Composes an `remove_attribute` extrinsic to the peaqDid pallet.
+        
+        Args:
+            options (RemoveDIDOptions): Remove options containing name and optional address.
+            status_callback: Optional callback function for transaction status updates.
+            tx_options: Optional TxOptions for EVM transactions.
+
+        Returns:
+            DidWriteResult: A Union type that can be one of:
+                - SubstrateSendResult: For signed Substrate transactions with txHash, unsubscribe, and finalize promise
+                - EvmSendResult: For signed EVM transactions with txHash, unsubscribe, and receipt promise  
+                - BuiltEvmTransactionResult: For unsigned EVM transactions with message and tx object
+                - BuiltCallTransactionResult: For unsigned Substrate calls with message and extrinsic object
+        """
+        ops = parse_options(RemoveDIDOptions, options, caller="did.remove()")
+        name = ops.name
+        address = ops.address
+
+        if self.metadata.chain_type == ChainType.EVM:
+            return await self._remove_evm(name, getattr(self.metadata.pair, 'address', None) or address, status_callback, tx_options)
+        else:
+            return self._remove_substrate(name, getattr(self.metadata.pair, 'address', None) or address, status_callback)
+    
+    async def _create_evm(
+        self, 
+        name: str, 
+        address: str, 
+        did_hex: str, 
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
+    ) -> Union[EvmSendResult, BuiltEvmTransactionResult]:
+        """
+        Creates a DID on EVM by constructing a transaction to the addAttribute precompile.
+        
+        Args:
+            name (str): The DID name
+            address (str): The address/controller
+            did_hex (str): The hex-encoded DID document
+            status_callback: Optional callback for transaction status
+            tx_options: Optional transaction options
+            
+        Returns:
+            Union[EvmSendResult, BuiltEvmTransactionResult]: 
+                - EvmSendResult: For signed transactions with tx_hash, unsubscribe, and receipt promise
+                - BuiltEvmTransactionResult: For unsigned transactions with message and tx object
+        """
+        did_function_selector = self.api.keccak(text=DidFunctionSignatures.ADD_ATTRIBUTE.value)[:4].hex()
+        name_encoded = name.encode("utf-8").hex()
+        did_encoded = did_hex.encode("utf-8").hex()
+        encoded_params = encode(
+            ['address', 'bytes', 'bytes', 'uint32'],
+            [address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
+        ).hex()
+        
+        tx: TxParams = {
+            "to": PrecompileAddresses.DID.value,
+            "data": f"0x{did_function_selector}{encoded_params}"
+        }
+        
+        return await self._handle_evm_tx(tx, f"create DID {name} for {address}", status_callback, tx_options)
+
+    def _create_substrate(
+        self, 
+        name: str, 
+        address: str, 
+        did_hex: str, 
+        status_callback = None
+    ) -> Union[SubstrateSendResult, BuiltCallTransactionResult]:
+        """
+        Creates a DID on Substrate by composing an add_attribute extrinsic.
+        
+        Args:
+            name (str): The DID name
+            address (str): The address/controller  
+            did_hex (str): The hex-encoded DID document
+            status_callback: Optional callback for transaction status
+            
+        Returns:
+            Union[SubstrateSendResult, BuiltCallTransactionResult]:
+                - SubstrateSendResult: For signed transactions with tx_hash, unsubscribe, and finalize promise
+                - BuiltCallTransactionResult: For unsigned transactions with message and call object
+        """
+        call = self.api.compose_call(
+            call_module=CallModule.PEAQ_DID.value,
+            call_function=DidCallFunction.ADD_ATTRIBUTE.value,
+            call_params={
+                'did_account': address,
+                'name': name,
+                'value': did_hex,
+                'valid_for': None
+                }
+        )
+        
+        return self._handle_substrate_tx(call, f"add DID {name}", status_callback)
+
+    async def _read_from_substrate(self, name: str, owner_address: str, api) -> Optional[dict]:
+        """
+        Reads a DID from Substrate storage using the provided API.
+        
+        Args:
+            name (str): The DID name
+            owner_address (str): The owner's address
+            api: The Substrate API instance
+            
+        Returns:
+            Optional[dict]: Dictionary containing document info and proto_document, or None if not found
+        """
         # Query storage
         name_encoded = "0x" + name.encode("utf-8").hex()
         block_hash = api.get_block_hash(None)
@@ -211,223 +388,259 @@ class Did(Base):
         resp = api.rpc_request(
             DidCallFunction.READ_ATTRIBUTE.value, [owner_address, name_encoded, block_hash]
         )
+        
         # Check result
         if resp['result'] is None:
-            raise GetDidError(f"DID of name {name} was not found at address {display_address}.")
+            return None
 
         read_name = bytes.fromhex(resp['result']['name'][2:]).decode('utf-8')
         value = bytes.fromhex(resp['result']['value'][2:]).decode('utf-8')
         to_deserialize = bytes.fromhex(value)
-        document = self._deserialize_did(to_deserialize)
+        proto_document = self._deserialize_did(to_deserialize)
         
-        return ReadDidResult(
+        # Convert protobuf document to structured format using helper
+        proto_dict = self._proto_to_v2(proto_document)
+        
+        # Create the DIDDocument structure
+        did_document = DIDDocument(
             name=read_name,
             value=value,
             validity=str(resp['result']['validity']),
             created=str(resp['result']['created']),
-            document=MessageToDict(document)
+            document=DIDV2Document(**proto_dict)
         )
+        
+        return {
+            'name': read_name,
+            'raw_value': value,
+            'validity': str(resp['result']['validity']),
+            'created': str(resp['result']['created']),
+            'document': did_document,
+            'proto_document': proto_document
+        }
 
-
-    def update(
+    async def _update_evm(
         self, 
         name: str, 
-        custom_document_fields: CustomDocumentFields, 
-        address: Optional[str] = None,
-        status_callback = None,
-        tx_options = None
-    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+        address: str, 
+        did_hex: str, 
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
+    ) -> Union[EvmSendResult, BuiltEvmTransactionResult]:
         """
-        Updates an existing DID identified by `name`, overwriting the entire DID
-        document with new `custom_document_fields`. Use caution, as all existing
-        data is replaced with the newly provided fields.
-        
-        - EVM: Constructs a transaction to the `updateAttribute` DID precompile contract.
-        - Substrate: Composes an `update_attribute` extrinsic to the peaqDid
-            pallet.
+        Updates a DID on EVM by constructing a transaction to the updateAttribute precompile.
         
         Args:
-            name (str): The unique DID name or label to update.
-            custom_document_fields (CustomDocumentFields): The new fields to
-                embed in the DID document. These fully replace the prior document.
-            address (Optional[str]): An optional address if no local keypair is present.
-                On EVM, this should be an H160 address. On Substrate, a SS58 address.
-            status_callback: Optional callback function for transaction status updates.
-            tx_options: Optional TransactionOptions for EVM transactions.
+            name (str): The DID name
+            address (str): The address/controller
+            did_hex (str): The hex-encoded DID document
+            status_callback: Optional callback for transaction status
+            tx_options: Optional transaction options
 
         Returns:
-            Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
-                - WrittenTransactionResult: The transaction or extrinsic was signed and broadcasted.
-                    Returned with a message and receipt.
-                - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
-                    but not signed (no local signer). Returned with message and tx/call.
-
-        Raises:
-            TypeError: If `custom_document_fields` is not an instance of `CustomDocumentFields`.
+            Union[EvmSendResult, BuiltEvmTransactionResult]: 
+                - EvmSendResult: For signed transactions with tx_hash, unsubscribe, and receipt promise
+                - BuiltEvmTransactionResult: For unsigned transactions with message and tx object
         """
-        if not isinstance(custom_document_fields, CustomDocumentFields):
-            raise TypeError(
-                f"custom_document_fields object must be CustomDocumentFields, "
-                f"got {type(custom_document_fields).__name__!r}"
-            )
+        did_function_selector = self.api.keccak(text=DidFunctionSignatures.UPDATE_ATTRIBUTE.value)[:4].hex()
+        name_encoded = name.encode("utf-8").hex()
+        did_encoded = did_hex.encode("utf-8").hex()
+        encoded_params = encode(
+            ['address', 'bytes', 'bytes', 'uint32'],
+        [address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
+        ).hex()
             
-        user_address = self._resolve_address(address=address)
+        tx: TxParams = {
+            "to": PrecompileAddresses.DID.value,
+            "data": f"0x{did_function_selector}{encoded_params}"
+        }
         
-        serialized_did = self._generate_did_document(user_address, custom_document_fields)
-        
-        if self.metadata.chain_type is ChainType.EVM:
-            serialized_did = self._generate_did_document(user_address, custom_document_fields)
-            did_function_selector = self.api.keccak(text=DidFunctionSignatures.UPDATE_ATTRIBUTE.value)[:4].hex()
-            name_encoded = name.encode("utf-8").hex()
-            did_encoded = serialized_did.encode("utf-8").hex()
-            
-            encoded_params = encode(
-                ['address', 'bytes', 'bytes', 'uint32'],
-                [user_address, bytes.fromhex(name_encoded), bytes.fromhex(did_encoded), 0]
-            ).hex()
-            
-            tx: TxParams = {
-                "to": PrecompileAddresses.DID.value,
-                "data": f"0x{did_function_selector}{encoded_params}"
-            }
-            
-            if self.metadata.pair:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully updated the DID under the name {name} for user {user_address}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed DID update transaction for {user_address} of the name {name}. You must sign and send it externally.",
-                    tx=tx
-                )
+        return await self._handle_evm_tx(tx, f"update DID {name}", status_callback, tx_options)
                 
-        else:
-            call = self.api.compose_call(
-                call_module=CallModule.PEAQ_DID.value,
-                call_function=DidCallFunction.UPDATE_ATTRIBUTE.value,
-                call_params={
-                    'did_account': user_address,
-                    'name': name,
-                    'value': serialized_did,
-                    'valid_for': None
-                    }
-            )
-            
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully updated the DID under the name {name} for user {user_address}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed DID update call for {user_address} of the name {name}. You must sign and send externally.",
-                    call=call
-                )
-
-
-    
-    def remove(
+    def _update_substrate(
         self, 
         name: str, 
-        address: Optional[str] = None,
-        status_callback = None,
-        tx_options = None
-    ) -> Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
+        address: str, 
+        did_hex: str, 
+        status_callback = None
+    ) -> Union[SubstrateSendResult, BuiltCallTransactionResult]:
         """
-        Removes an existing on-chain DID identified by `name`. Once removed,
-        the DID data is no longer accessible via subsequent reads.
-        
-        - EVM: Constructs a transaction to the `removeAttribute` DID precompile contract.
-        - Substrate: Composes an `remove_attribute` extrinsic to the peaqDid
-            pallet.
+        Updates a DID on Substrate by composing an update_attribute extrinsic.
         
         Args:
-            name (str): The DID name or alias to remove from the chain.
-            address (Optional[str]): An optional address if no local keypair is present.
-                On EVM, this should be an H160 address. On Substrate, a SS58 address.
-            status_callback: Optional callback function for transaction status updates.
-            tx_options: Optional TransactionOptions for EVM transactions.
+            name (str): The DID name
+            address (str): The address/controller  
+            did_hex (str): The hex-encoded DID document
+            status_callback: Optional callback for transaction status
+            
+        Returns:
+            Union[SubstrateSendResult, BuiltCallTransactionResult]:
+                - SubstrateSendResult: For signed transactions with tx_hash, unsubscribe, and finalize promise
+                - BuiltCallTransactionResult: For unsigned transactions with message and call object
+        """
+        call = self.api.compose_call(
+            call_module=CallModule.PEAQ_DID.value,
+            call_function=DidCallFunction.UPDATE_ATTRIBUTE.value,
+            call_params={
+            'did_account': address,
+                'name': name,
+            'value': did_hex,
+                'valid_for': None
+                }
+        )
+            
+        return self._handle_substrate_tx(call, f"update DID {name}", status_callback)
+
+    async def _remove_evm(
+        self, 
+        name: str, 
+        address: str, 
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
+    ) -> Union[EvmSendResult, BuiltEvmTransactionResult]:
+        """
+        Removes a DID on EVM by constructing a transaction to the removeAttribute precompile.
+        
+        Args:
+            name (str): The DID name
+            address (str): The address/controller
+            status_callback: Optional callback for transaction status
+            tx_options: Optional transaction options
 
         Returns:
-            Union[WrittenTransactionResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]:
-                - WrittenTransactionResult: The transaction or extrinsic was signed and broadcasted.
-                    Returned with a message and receipt.
-                - BuiltEvmTransactionResult or BuiltCallTransactionResult: The tx/call was constructed
-                    but not signed (no local signer). Returned with message and tx/call.
+            Union[EvmSendResult, BuiltEvmTransactionResult]: 
+                - EvmSendResult: For signed transactions with tx_hash, unsubscribe, and receipt promise
+                - BuiltEvmTransactionResult: For unsigned transactions with message and tx object
         """
-        
-        user_address = self._resolve_address(address=address)
-        
-        if self.metadata.chain_type is ChainType.EVM:
-            did_function_selector = self.api.keccak(text=DidFunctionSignatures.REMOVE_ATTRIBUTE.value)[:4].hex()
-            name_encoded = name.encode("utf-8").hex()
-            encoded_params = encode(
-                ['address', 'bytes'],
-                [user_address, bytes.fromhex(name_encoded)]
-            ).hex()
+        did_function_selector = self.api.keccak(text=DidFunctionSignatures.REMOVE_ATTRIBUTE.value)[:4].hex()
+        name_encoded = name.encode("utf-8").hex()
+        encoded_params = encode(
+            ['address', 'bytes'],
+        [address, bytes.fromhex(name_encoded)]
+        ).hex()
             
-            tx: TxParams = {
-                "to": PrecompileAddresses.DID.value,
-                "data": f"0x{did_function_selector}{encoded_params}"
-            }
+        tx: TxParams = {
+            "to": PrecompileAddresses.DID.value,
+            "data": f"0x{did_function_selector}{encoded_params}"
+        }
             
-            if self.metadata.pair and not self.metadata.machine_station:
-                opts = tx_options if tx_options else TransactionOptions()
-                receipt = self._send_evm_tx(tx, on_status=status_callback, opts=opts)
-                return WrittenTransactionResult(
-                    message=f"Successfully removed the DID under the name {name} for user {user_address}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltEvmTransactionResult(
-                    message=f"Constructed DID remove transaction for {user_address} of the name {name}. You must sign and send it externally.",
-                    tx=tx
-                )
+        return await self._handle_evm_tx(tx, f"remove DID {name}", status_callback, tx_options)
                 
-        else:
-            call = self.api.compose_call(
-                call_module=CallModule.PEAQ_DID.value,
-                call_function=DidCallFunction.REMOVE_ATTRIBUTE.value,
-                call_params={
-                    'did_account': user_address,
-                    'name': name
-                    }
-            )
+    def _remove_substrate(
+        self, 
+        name: str, 
+        address: str, 
+        status_callback = None
+    ) -> Union[SubstrateSendResult, BuiltCallTransactionResult]:
+        """
+        Removes a DID on Substrate by composing a remove_attribute extrinsic.
+        
+        Args:
+            name (str): The DID name
+            address (str): The address/controller  
+            status_callback: Optional callback for transaction status
             
-            if self.metadata.pair:
-                receipt = self._send_substrate_tx(call)
-                return WrittenTransactionResult(
-                    message=f"Successfully removed the DID under the name {name} for user {user_address}.",
-                    receipt=receipt
-                )
-            else:
-                return BuiltCallTransactionResult(
-                    message=f"Constructed DID remove call for {user_address} of the name {name}. You must sign and send externally.",
-                    call=call
-                )
+        Returns:
+            Union[SubstrateSendResult, BuiltCallTransactionResult]:
+                - SubstrateSendResult: For signed transactions with tx_hash, unsubscribe, and finalize promise
+                - BuiltCallTransactionResult: For unsigned transactions with message and call object
+        """
+        call = self.api.compose_call(
+            call_module=CallModule.PEAQ_DID.value,
+            call_function=DidCallFunction.REMOVE_ATTRIBUTE.value,
+            call_params={
+            'did_account': address,
+                'name': name
+                }
+        )
+        
+        return self._handle_substrate_tx(call, f"remove DID {name}", status_callback)
+
+    # ---------------  Generalized handlers ----------------
+    async def _handle_evm_tx(
+        self, 
+        tx: TxParams, 
+        action: str, 
+        status_callback: StatusCallback = None,
+        tx_options: TxOptions = {}
+    ) -> Union[EvmSendResult, BuiltEvmTransactionResult]:
+        """
+        Generalized handler for EVM transactions, similar to TypeScript _handleEvmTx.
+        
+        Args:
+            tx (TxParams): The transaction parameters
+            action (str): Description of the action being performed
+            status_callback: Optional callback for transaction status
+            tx_options: Optional transaction options
+            
+        Returns:
+            Union[EvmSendResult, BuiltEvmTransactionResult]: 
+                - EvmSendResult: For signed transactions with tx_hash, unsubscribe, and receipt promise
+                - BuiltEvmTransactionResult: For unsigned transactions with message and tx object
+        """
+        if not self.metadata.pair:
+            return BuiltEvmTransactionResult(
+                message=f"Constructed {action} tx (unsigned).",
+                tx=tx
+            )
+        try:
+            # The _send_evm_tx method already handles EVM status updates properly
+            return await self._send_evm_tx(tx, on_status=status_callback, opts=tx_options)
+        except Exception as err:
+            # Throw error instead of returning signable extrinsic
+            raise Exception(f"Failed to {action}: {str(err)}")
+
+    def _handle_substrate_tx(
+        self, 
+        call, 
+        action: str, 
+        status_callback = None
+    ) -> Union[SubstrateSendResult, BuiltCallTransactionResult]:
+        """
+        Generalized handler for Substrate transactions, similar to TypeScript _handleSubstrateTx.
+        
+        Args:
+            call: The Substrate call object
+            action (str): Description of the action being performed
+            status_callback: Optional callback for transaction status
+            
+        Returns:
+            Union[SubstrateSendResult, BuiltCallTransactionResult]:
+                - SubstrateSendResult: For signed transactions with tx_hash, unsubscribe, and finalize promise
+                - BuiltCallTransactionResult: For unsigned transactions with message and call object
+        """
+        if not self.metadata.pair:
+            return BuiltCallTransactionResult(
+                message=f"Constructed {action} call (unsigned).",
+                call=call
+            )
+        try:
+            # Now both methods accept the unified TransactionStatusCallback type
+            return self._send_substrate_call_structured(call, on_status=status_callback)
+        except Exception as err:
+            # Throw error instead of returning signable extrinsic
+            raise Exception(f"Failed to {action}: {str(err)}")
     
-    
-    def _generate_did_document(self, address: str, custom_document_fields: CustomDocumentFields) -> str:
+    async def _generate_did_document(self, id_address: str, extra: dict) -> str:
         """
         Constructs and serializes a DID document in Protobuf format based on the
-        provided `address` and `custom_document_fields`. The result is returned as
+        provided `id_address` and extra fields. The result is returned as
         a hex-encoded string.
 
         This document includes:
-        - `id` and `controller` fields both set to `"did:peaq:{address}"`.
-        - Verification methods (and authentications) if present in `custom_document_fields.verifications`.
-        - A signature if `custom_document_fields.signature` is set.
-        - One or more services if `custom_document_fields.services` is provided.
+        - `id` field set to `"did:peaq:{id_address}"`.
+        - `controller` field set to `"did:peaq:{controller}"`.
+        - Verification methods (and authentications) if present in `extra['verification_methods']`.
+        - A signature if `extra['signature']` is set.
+        - One or more services if `extra['services']` is provided.
 
         Args:
-            address (str): The on-chain address (EVM hex or Substrate SS58) representing
-                the DID subject.
-            custom_document_fields (CustomDocumentFields): Additional fields or claims
-                (verification methods, signature, services) to embed into the DID document.
+            id_address (str): The address used for the DID ID.
+            extra (dict): Dictionary containing:
+                - controller (str): The controller address
+                - verification_methods (List[Verification]): Verification methods
+                - services (List[Service]): Services 
+                - signature (Optional[Signature]): Document signature
 
         Returns:
             str: A hex-encoded Protobuf serialization of the DID document.
@@ -436,264 +649,79 @@ class Did(Base):
             ValueError: If a verification type or signature type is invalid for the
                 current chain type (checked inside helper methods).
         """
+        # Create new Doc and set id & controller
         doc = peaq_proto.Document()
-        doc.id = f"did:peaq:{address}"
-        doc.controller = f"did:peaq:{address}"
+        doc.id = f"did:peaq:{id_address}"
+        doc.controller = f"did:peaq:{extra['controller']}"
         
-        if custom_document_fields.verifications:
-            for key_counter, verification in enumerate(custom_document_fields.verifications, start=1):
-                id = f"did:peaq:{address}#keys-{key_counter}"
-                verification_method = self._create_verification_method(
-                    id,
-                    address,
-                    verification
-                )
-                doc.verification_methods.append(verification_method)
-                doc.authentications.append(id)
+        # Add verification methods
+        verification_methods = extra.get('verification_methods', [])
+        for idx, vm in enumerate(verification_methods):
+            method = peaq_proto.VerificationMethod()
+            method.id = vm.id or f"did:peaq:{id_address}#keys-{idx + 1}"
+            method.type = vm.type.value
+            method.controller = vm.controller or f"did:peaq:{extra['controller']}"
             
-        if custom_document_fields.signature:
-            document_signature = self._add_signature(custom_document_fields.signature)
-            doc.signature.CopyFrom(document_signature)
-
+            # user can manually set the multibase if they would like
+            if vm.public_key_multibase:
+                method.public_key_multibase = vm.public_key_multibase
+            elif self.metadata.chain_type == ChainType.EVM:
+                # For EVM chains, use EIP-155 format: eip155:chain_id:address
+                chain_id = await self.get_chain_id()  
+                method.public_key_multibase = f"eip155:{chain_id}:{extra['controller']}"
+            else:
+                # For other chains, use the traditional multibase generation
+                method.public_key_multibase = self._generate_multibase(extra['controller'], vm.type)
             
-        if custom_document_fields.services:
-            for service in custom_document_fields.services:
-                document_service = self._add_service(service)
-                doc.services.append(document_service)
+            doc.verification_methods.append(method)
+            doc.authentications.append(method.id)
+        
+        # Add services
+        services = extra.get('services', [])
+        for srv in services:
+            s = peaq_proto.Services()
+            s.id = srv.id
+            s.type = srv.type
+            
+            # At least one of serviceEndpoint or data should be provided
+            if srv.service_endpoint:
+                s.service_endpoint = srv.service_endpoint
+            if srv.data:
+                s.data = srv.data
+            
+            # Validate that at least one field is set
+            if not srv.service_endpoint and not srv.data:
+                raise ValueError(f"Service {srv.id} must have either serviceEndpoint or data")
+            
+            doc.services.append(s)
+        
+        # Add signature if provided
+        signature = extra.get('signature')
+        if signature:
+            sig = peaq_proto.Signature()
+            sig.type = signature.type.value
+            sig.issuer = signature.issuer
+            sig.hash = signature.hash
+            doc.signature.CopyFrom(sig)
         
         serialized_data = doc.SerializeToString()
         serialized_hex = serialized_data.hex()
         return serialized_hex
     
-    def _create_verification_method(self, id: str, address: str, verification: Verification) -> peaq_proto.VerificationMethod:
+    async def get_chain_id(self) -> int:
         """
-        Builds a Protobuf `VerificationMethod` from the given `verification`
-        object. Enforces certain constraints depending on whether the chain type
-        is EVM or Substrate.
-
-        For EVM chains:
-        - Only "EcdsaSecp256k1RecoveryMethod2020" is supported.
-
-        For Substrate chains:
-        - The `verification.type` must be one of "Ed25519VerificationKey2020",
-            "Sr25519VerificationKey2020", or "EcdsaSecp256k1RecoveryMethod2020".
-
-        Args:
-            id (str): A string identifier for the verification method,
-                typically `"did:peaq:{address}#keys-{N}"`.
-            address (str): The address used as controller and public key fallback
-                if no `public_key_multibase` is specified in `verification`.
-            verification (Verification): Contains details such as the type, potential
-                `public_key_multibase`, etc.
-
-        Returns:
-            peaq_proto.VerificationMethod: A populated Protobuf verification method.
-
-        Raises:
-            ValueError: If the `verification.type` is unsupported for the current chain.
-        """
-        verification_method = peaq_proto.VerificationMethod()
-        verification_method.id = id
-        
-        if self.metadata.chain_type is ChainType.EVM:
-            if verification.type != "EcdsaSecp256k1RecoveryMethod2020":
-                raise ValueError(
-                    f"EVM only supports EcdsaSecp256k1RecoveryMethod2020, got {verification.type}"
-                )
-            verification_method.type = verification.type
-            verification_method.controller = f"did:peaq:{address}"
-            
-            # Use provided multibase or generate from signer
-            if verification.public_key_multibase:
-                verification_method.public_key_multibase = verification.public_key_multibase
-            else:
-                verification_method.public_key_multibase = address
-                # TODO: figure out when public key multibase in btc base58 is required
-                # verification_method.public_key_multibase = self._generate_multibase_for_verification(
-                #     address, verification.type
-                # )
-            return verification_method
-        
-        if verification.type not in ("Sr25519VerificationKey2020", "Ed25519VerificationKey2020"):
-            raise ValueError(
-                "Substrate verification.type must be "
-                "'Ed25519VerificationKey2020', or 'Sr25519VerificationKey2020'"
-            )
-        verification_method.type = verification.type
-        verification_method.controller = f"did:peaq:{address}"
-    
-        if verification.public_key_multibase:
-            verification_method.public_key_multibase = verification.public_key_multibase
-        else:
-            # Generate multibase from address and verification type
-            verification_method.public_key_multibase = self._generate_multibase_for_verification(
-                address, verification.type
-            )
-        
-        return verification_method
-    
-    def _add_signature(self, signature: Signature) -> peaq_proto.Signature:
-        """
-        Constructs a Protobuf `Signature` object from a given `Signature` dataclass,
-        enforcing the supported signature types and mandatory fields.
-
-        Supported types:
-        - "EcdsaSecp256k1RecoveryMethod2020"
-        - "Ed25519VerificationKey2020"
-        - "Sr25519VerificationKey2020"
-
-        Args:
-            signature (Signature): Contains `type`, `issuer`, and `hash`.
-
-        Returns:
-            peaq_proto.Signature: The Protobuf representation of the signature.
-
-        Raises:
-            ValueError: If `signature.type` is not one of the allowed types, or if
-                `issuer` or `hash` are missing.
-        """
-        allowed = {
-            "EcdsaSecp256k1RecoveryMethod2020",
-            "Ed25519VerificationKey2020",
-            "Sr25519VerificationKey2020",
-        }
-        if signature.type not in allowed:
-            raise ValueError(
-                'Signature.type must be one of '
-                '"EcdsaSecp256k1RecoveryMethod2020", '
-                '"Ed25519VerificationKey2020", or '
-                '"Sr25519VerificationKey2020".'
-            )
-        if not signature.issuer:
-            raise ValueError("Signature.issuer is required")
-        if not signature.hash:
-            raise ValueError("Signature.hash is required")
-
-        proto_signature = peaq_proto.Signature()
-        proto_signature.type = signature.type
-        proto_signature.issuer = signature.issuer
-        proto_signature.hash = signature.hash
-        return proto_signature
-    
-    def _add_service(self, service: Service):
-        """
-        Builds a Protobuf `Services` message representing one service entry in the
-        DID document. Validates required fields and stores either a service endpoint
-        or some `data` (if provided).
-
-        Args:
-            service (Service): Must include an `id`, `type`, and at least one of
-                `service_endpoint` or `data`.
-
-        Returns:
-            peaq_proto.Services: A populated Protobuf service record.
-
-        Raises:
-            ValueError: If `service.id` or `service.type` is missing, or if neither
-                `service_endpoint` nor `data` is provided.
-        """
-        if not service.id:
-            raise ValueError("Service.id is required")
-        if not service.type:
-            raise ValueError("Service.type is required")
-        if not (service.service_endpoint or service.data):
-            raise ValueError(
-                "Either serviceEndpoint or data must be provided for Service"
-            )
-        proto_service = peaq_proto.Services()
-        proto_service.id = service.id
-        proto_service.type = service.type
-
-        if service.service_endpoint:
-            proto_service.service_endpoint = service.service_endpoint
-        if service.data:
-            proto_service.data = service.data
-
-        return proto_service
-    
-    def _generate_sr25519_multibase(self, address: str) -> str:
-        """
-        Generates Sr25519 publicKeyMultibase from a Substrate SS58 address.
-        
-        Args:
-            address (str): SS58 address
+        Get the chain ID for EVM networks.
+        Uses the cached chain ID from the base class.
             
         Returns:
-            str: publicKeyMultibase with 'z' prefix
+            int: The chain ID
         """
-        # Decode SS58 address to get raw 32-byte public key
-        decoded_hex = ss58_decode(address)
-        public_key = bytes.fromhex(decoded_hex)
-        
-        # Varint-encode the multicodec prefix for sr25519 (0xef)
-        prefix = varint.encode(0xef)
-        
-        # Concatenate prefix + public key
-        prefixed_key = prefix + public_key
-        
-        # Base58-btc encode + 'z' prefix
-        multibase = 'z' + base58.b58encode(prefixed_key).decode()
-        return multibase
-    
-    def _generate_ed25519_multibase(self, address: str) -> str:
-        """
-        Generates Ed25519 publicKeyMultibase from a Substrate SS58 address.
-        
-        Args:
-            address (str): SS58 address
-            
-        Returns:
-            str: publicKeyMultibase with 'z' prefix
-        """
-        # Decode SS58 address to get raw 32-byte public key
-        decoded_hex = ss58_decode(address)
-        public_key = bytes.fromhex(decoded_hex)
-        
-        # Varint-encode the multicodec prefix for ed25519 (0xed)
-        prefix = varint.encode(0xed)
-        
-        # Concatenate prefix + public key
-        prefixed_key = prefix + public_key
-        
-        # Base58-btc encode + 'z' prefix
-        multibase = 'z' + base58.b58encode(prefixed_key).decode()
-        return multibase
-    
-    def _generate_ecdsa_multibase(self, address: str) -> str:
-        """
-        Generates ECDSA publicKeyMultibase from an EVM address using the connected signer.
-        
-        Args:
-            address (str): EVM address (used for validation, actual key comes from signer)
-            
-        Returns:
-            str: publicKeyMultibase with 'z' prefix
-            
-        Raises:
-            ValueError: If no EVM signer is available or signer doesn't match address
-        """
-        if not self.metadata.pair or not hasattr(self.metadata.pair, '_key_obj'):
-            raise ValueError(
-                "EVM signer required for ECDSA multibase generation. "
-                "Please provide a seed when creating the SDK instance."
-            )
-        
-        # Get compressed public key from the signer
-        compressed_pub_key = self.metadata.pair._key_obj.public_key.to_compressed_bytes()
-        
-        # Multicodec prefix for secp256k1-pub ([0xe7, 0x01])
-        prefix = bytes([0xE7, 0x01])
-        
-        # Concatenate prefix + key bytes
-        full = prefix + compressed_pub_key
-        
-        # Base58-btc encode and prepend 'z'
-        multibase = "z" + base58.b58encode(full).decode()
-        return multibase
-    
-    def _generate_multibase_for_verification(self, address: str, verification_type: str) -> str:
+        return await super().get_chain_id()
+
+    def _generate_multibase(self, address: str, verification_type: str) -> str:
         """
         Generates the appropriate publicKeyMultibase based on verification type and chain.
+        Similar to the TypeScript implementation.
         
         Args:
             address (str): The address (EVM or SS58)
@@ -705,25 +733,28 @@ class Did(Base):
         Raises:
             ValueError: If verification type is unsupported or required signer is missing
         """
-        if verification_type == "EcdsaSecp256k1RecoveryMethod2020":
-            if self.metadata.chain_type == ChainType.EVM:
-                return self._generate_ecdsa_multibase(address)
-            else:
-                # For Substrate chains with ECDSA, we still need the actual public key
-                # For now, fall back to address until we have proper key extraction
-                return address
-        elif verification_type == "Ed25519VerificationKey2020":
-            if self.metadata.chain_type == ChainType.SUBSTRATE:
-                return self._generate_ed25519_multibase(address)
-            else:
-                raise ValueError("Ed25519VerificationKey2020 is only supported on Substrate chains")
-        elif verification_type == "Sr25519VerificationKey2020":
-            if self.metadata.chain_type == ChainType.SUBSTRATE:
-                return self._generate_sr25519_multibase(address)
-            else:
-                raise ValueError("Sr25519VerificationKey2020 is only supported on Substrate chains")
+        if verification_type == VerificationMethodType.ECDSA:
+            if self.metadata.chain_type != ChainType.EVM:
+                raise ValueError('EcdsaSecp256k1RecoveryMethod2020 is only supported on EVM chains')
+            
+            # Note: EVM case should be handled in _generate_did_document using EIP-155 format
+            # This fallback attempts to generate from signing key if available
+            if self.metadata.pair and hasattr(self.metadata.pair, '_key_obj'):
+                return generate_evm_public_key_multibase(self.metadata.pair)
+            # If no signing key, return empty string (caller should handle EIP-155 format)
+            return ''
+            
+        elif verification_type == VerificationMethodType.ED25519:
+            if self.metadata.chain_type != ChainType.SUBSTRATE:
+                raise ValueError('Ed25519VerificationKey2020 is only supported on Substrate chains')
+            return generate_ed25519_public_key_multibase(address)
+            
+        elif verification_type == VerificationMethodType.SR25519:
+            if self.metadata.chain_type != ChainType.SUBSTRATE:
+                raise ValueError('Sr25519VerificationKey2020 is only supported on Substrate chains')
+            return generate_sr25519_public_key_multibase(address)
         else:
-            raise ValueError(f"Unsupported verification type: {verification_type}")
+            raise ValueError(f"Unsupported DID verification method type: {verification_type}")
     
     def _deserialize_did(self, data):
         """
@@ -738,3 +769,41 @@ class Did(Base):
         deserialized_doc = peaq_proto.Document()
         deserialized_doc.ParseFromString(data)
         return deserialized_doc
+    
+    def _proto_to_v2(self, doc) -> dict:
+        """
+        Converts a protobuf DID document to a structured dictionary format.
+        Similar to the TypeScript _protoToV2 method.
+        
+        Args:
+            doc: The protobuf DID document
+            
+        Returns:
+            dict: Structured dictionary representation of the DID document
+        """
+        return {
+            'id': doc.id,
+            'controller': doc.controller,
+            'verificationMethod': [
+                {
+                    'id': m.id,
+                    'type': m.type,
+                    'controller': m.controller,
+                    'publicKeyMultibase': m.public_key_multibase
+                } for m in (doc.verification_methods or [])
+            ],
+            'authentication': list(doc.authentications),
+            'service': [
+                {
+                    'id': s.id,
+                    'type': s.type,
+                    'serviceEndpoint': s.service_endpoint if hasattr(s, 'service_endpoint') else None,
+                    'data': s.data if hasattr(s, 'data') else None
+                } for s in (doc.services or [])
+            ],
+            'signature': {
+                'type': doc.signature.type,
+                'issuer': doc.signature.issuer,
+                'hash': doc.signature.hash
+            } if doc.HasField('signature') else None
+        }

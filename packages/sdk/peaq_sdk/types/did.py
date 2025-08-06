@@ -1,69 +1,81 @@
 """objects used in the main sdk initializer"""
 # python native imports
-
-from dataclasses import dataclass, field
-from typing import List, Optional
+from peaq_sdk.types.base import (
+    SubstrateSendResult,
+    EvmSendResult,
+    BuiltEvmTransactionResult,
+    BuiltCallTransactionResult
+)
+from typing import List, Optional, Any, Callable, Union
 from enum import Enum
+from pydantic import BaseModel, Field, ConfigDict
 
-@dataclass
-class Verification:
-    type: str
-    controller: Optional[str] = None
-    public_key_multibase: Optional[str] = None
 
-    def __post_init__(self):
-        if not isinstance(self.type, str):
-            raise TypeError(f"Verification.type must be str, got {type(self.type).__name__}")
-    # add more checks here if needed
+class VerificationMethodType(str, Enum):
+    """Verification method types supported by the DID implementation."""
+    ECDSA = "EcdsaSecp256k1RecoveryMethod2020"
+    ED25519 = "Ed25519VerificationKey2020"
+    SR25519 = "Sr25519VerificationKey2020"
+
+
+class Verification(BaseModel):
+    type: VerificationMethodType = Field(..., description="Type of verification method (ECDSA, Ed25519, Sr25519)")
+    id: Optional[str] = Field(None, description="Unique identifier for this verification method (optional)")
+    controller: Optional[str] = Field(None, description="Controller DID for this verification method (optional)")
+    public_key_multibase: Optional[str] = Field(None, description="Public key in multibase format (optional)")
+
+
+class Signature(BaseModel):
+    type: VerificationMethodType = Field(..., description="Signature type (e.g., EcdsaSecp256k1RecoveryMethod2020)")
+    issuer: str = Field(..., description="DID of the signature issuer")
+    hash: str = Field(..., description="Hash value of the signature")
+
+
+class Service(BaseModel):
+    id: str = Field(..., description="Unique identifier for the service")
+    type: str = Field(..., description="Service type")
+    service_endpoint: Optional[str] = Field(None, description="Service endpoint URL (optional)")
+    data: Optional[str] = Field(None, description="Additional service data (optional)")
+
+
+class CustomDocumentFields(BaseModel):
+    verifications: List[Verification] = Field(default_factory=list, description="List of verification methods")
+    signature: Optional[Signature] = Field(None, description="Optional document signature")
+    services: List[Service] = Field(default_factory=list, description="List of service endpoints")
+
+
+class CreateDIDOptions(BaseModel):
+    name: str = Field(..., description="Unique identifier for the DID document")
+    controller: Optional[str] = Field(None, description="Controller DID (optional)")
+    did_address: Optional[str] = Field(None, description="Target DID address (optional)")
+    verification_methods: Optional[List[Verification]] = Field(
+        None, description="List of verification methods to include (optional)"
+    )
+    services: Optional[List[Service]] = Field(None, description="List of service endpoints (optional)")
+    signature: Optional[Signature] = Field(None, description="Optional signature from admin to validate issuance")
+
+
+class ReadDIDOptions(BaseModel):
+    """Options for reading a DID document"""
+    name: str = Field(..., description="DID name/identifier to read")
+    address: Optional[str] = Field(None, description="Address owning the DID (optional, defaults to connected wallet)")
+
+class UpdateDIDOptions(BaseModel):
+    """Options for updating a DID document"""
+    name: str = Field(..., description="Unique identifier for the DID document to update")
+    controller: Optional[str] = Field(None, description="Controller DID (optional)")
+    did_address: Optional[str] = Field(None, description="Target DID address (optional)")
+    verification_methods: Optional[List[Verification]] = Field(
+        None, description="List of verification methods to include (optional)"
+    )
+    services: Optional[List[Service]] = Field(None, description="List of service endpoints (optional)")
+    signature: Optional[Signature] = Field(None, description="Optional signature from admin to validate issuance")
+
+class RemoveDIDOptions(BaseModel):
+    """Options for removing a DID document"""
+    name: str = Field(..., description="DID name/identifier to remove")
+    address: Optional[str] = Field(None, description="Address owning the DID (optional, defaults to connected wallet)")
     
-    # when should the user be able to set controller/publicKeyMultibase themselves?
-
-@dataclass
-class Signature:
-    type: str
-    issuer: str
-    hash: str
-
-    def __post_init__(self):
-        if not all(isinstance(attr, str) for attr in (self.type, self.issuer, self.hash)):
-            raise TypeError("Signature fields type, issuer, hash must all be str")
-
-@dataclass
-class Service:
-    id: str
-    type: str
-    service_endpoint: Optional[str] = None
-    data: Optional[str] = None
-
-    def __post_init__(self):
-        if not isinstance(self.id, str) or not isinstance(self.type, str):
-            raise TypeError("Service.id and Service.type must be str")
-        if self.service_endpoint is not None and not isinstance(self.service_endpoint, str):
-            raise TypeError("Service.serviceEndpoint must be str or None")
-        if self.data is not None and not isinstance(self.data, str):
-            raise TypeError("Service.data must be str or None")
-
-@dataclass
-class CustomDocumentFields:
-    verifications: List[Verification] = field(default_factory=list)
-    signature: Optional[Signature] = None
-    services: List[Service] = field(default_factory=list)
-
-    def __post_init__(self):
-        if not isinstance(self.verifications, list):
-            raise TypeError("verifications must be a Verification[]]")
-        for v in self.verifications:
-            if not isinstance(v, Verification):
-                raise TypeError(f"Expected Verification, got {type(v).__name__}")
-        if self.signature is not None and not isinstance(self.signature, Signature):
-            raise TypeError(f"Expected Signature or None, got {type(self.signature).__name__}")
-        if not isinstance(self.services, list):
-            raise TypeError("services must be a Service[]")
-        for s in self.services:
-            if not isinstance(s, Service):
-                raise TypeError(f"Expected Service, got {type(s).__name__}")
-
-# Used for Storage EVM precompiles
 class DidFunctionSignatures(str, Enum):
     ADD_ATTRIBUTE = "addAttribute(address,bytes,bytes,uint32)"
     READ_ATTRIBUTE = "readAttribute(address,bytes)"
@@ -76,14 +88,47 @@ class DidCallFunction(str, Enum):
     UPDATE_ATTRIBUTE = 'update_attribute'
     REMOVE_ATTRIBUTE = 'remove_attribute'
     
-@dataclass
-class ReadDidResult:
-    name: str
-    value: str
-    validity: str
-    created: str
-    document: dict
+
+
+class DIDV2Document(BaseModel):
+    """DID Document structure"""
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
     
+    id: str = Field(..., description="DID identifier (e.g., did:peaq:0x...)")
+    controller: str = Field(..., description="Controller DID")
+    verificationMethod: List[dict] = Field(default_factory=list, description="List of verification methods")
+    authentication: List[str] = Field(default_factory=list, description="List of authentication method references")
+    service: List[dict] = Field(default_factory=list, description="List of service endpoints")
+    signature: Optional[dict] = Field(None, description="Optional document signature")
+    
+    def __str__(self):
+        """String representation for printing"""
+        return self.model_dump_json(indent=2)
+    
+
+class DIDDocument(BaseModel):
+    """Complete DID Document structure with metadata"""
+    name: str = Field(..., description="DID name/identifier")
+    value: str = Field(..., description="Raw hex-encoded DID document value")
+    validity: str = Field(..., description="Validity period of the DID")
+    created: str = Field(..., description="Creation timestamp")
+    document: DIDV2Document = Field(..., description="Parsed DID document structure")
+
+    
+class ReadDidResult(BaseModel):
+    name: str = Field(..., description="DID name/identifier")
+    value: str = Field(..., description="Raw hex-encoded DID document value")
+    validity: str = Field(..., description="Validity period of the DID")
+    created: str = Field(..., description="Creation timestamp")
+    document: DIDV2Document = Field(..., description="Parsed DID document as dictionary")
+    
+    def __str__(self):
+        """String representation for printing"""
+        return self.model_dump_json(indent=2)
+
+# DidWriteResult is now imported from base.py as a Union type alias
+DidWriteResult = Union[SubstrateSendResult, EvmSendResult, BuiltEvmTransactionResult, BuiltCallTransactionResult]
+
 class GetDidError(Exception):
     """Raised when there is a failure to the function get item."""
     pass

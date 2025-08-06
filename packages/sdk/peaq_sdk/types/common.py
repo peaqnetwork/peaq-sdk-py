@@ -2,7 +2,9 @@
 # python native imports
 from enum import Enum
 from typing import Optional
-from dataclasses import dataclass
+from pydantic import BaseModel, Field, ConfigDict
+# Removed dataclass import - using Pydantic BaseModel instead
+
 
 
 # 3rd party imports
@@ -31,28 +33,41 @@ class CallModule(str, Enum):
     PEAQ_RBAC = 'PeaqRbac'
     
     # Add more modules as needed
-@dataclass
-class SDKMetadata:
-    chain_type: Optional[ChainType]
-    base_url: str
-    pair: Optional[Keypair | Account]
-    machine_station: bool
-# EVM Transaction type - using Web3.py native TxParams (equivalent to SubstrateInterface's GenericCall)
 
-@dataclass
-class WrittenTransactionResult():
-    message: str
-    receipt: dict  # Backwards compatibility with dict
+class SDKMetadata(BaseModel):
+    """SDK metadata containing chain configuration and authentication"""
+    chain_type: Optional[ChainType] = Field(..., description="The blockchain type (EVM or Substrate)")
+    base_url: str = Field(..., description="Base URL for the blockchain endpoint")
+    pair: Optional[Keypair | Account] = Field(None, description="Optional keypair or account for signing transactions")
+    
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True  # Allow Keypair and Account types
+    )
+    
+# placeholder for now
+class WrittenTransactionResult(BaseModel):
+    """Result for written transactions with message and receipt"""
+    message: str = Field(..., description="Informational message about the transaction")
+    receipt: dict = Field(..., description="Transaction receipt data")  # Backwards compatibility with dict
 
-@dataclass
-class BuiltEvmTransactionResult():
-    message: str
-    tx: TxParams
 
-@dataclass
-class BuiltCallTransactionResult():
-    message: str
-    call: GenericCall
+class BuiltEvmTransactionResult(BaseModel):
+    """Result for unsigned EVM transactions that need external signing"""
+    message: str = Field(..., description="Informational message about the constructed transaction")
+    tx: TxParams = Field(..., description="EVM transaction parameters for external signing")
+    
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True  # Allow TxParams type
+    )
+
+class BuiltCallTransactionResult(BaseModel):
+    """Result for unsigned Substrate calls that need external signing"""
+    message: str = Field(..., description="Informational message about the constructed call")
+    call: GenericCall = Field(..., description="Substrate call object for external signing")
+    
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True  # Allow GenericCall type
+    )
     
 class ExtrinsicExecutionError(Exception):
     """Raised when an extrinsic fails to execute successfully on the blockchain."""
