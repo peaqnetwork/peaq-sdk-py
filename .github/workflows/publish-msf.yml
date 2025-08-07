@@ -92,9 +92,9 @@ jobs:
            cd packages/msf
            git add setup.cfg bumpversion.cfg 
            git commit -m "Bump peaq-msf version to ${{ steps.current_version.outputs.version }}"
-           # Pull latest changes and force push if needed
-           git pull --rebase origin ${{ github.ref }} || true
-           git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force-with-lease
+           # Go back to root and push
+           cd ../..
+           git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force
            sleep 5 
   build:
     name: Build peaq-msf distribution
