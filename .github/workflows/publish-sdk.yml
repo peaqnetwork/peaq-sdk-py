@@ -19,7 +19,7 @@ on:
 # Prevent concurrent runs with other publish workflows
 concurrency:
   group: publish-workflows-${{ github.ref }}
-  cancel-in-progress: true 
+  cancel-in-progress: false 
 
 jobs:
   bump_version:
