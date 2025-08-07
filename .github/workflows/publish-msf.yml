@@ -16,15 +16,16 @@ on:
     branches:
       - dev
 
+# Prevent concurrent runs with other publish workflows
+concurrency:
+  group: publish-workflows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   bump_version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.current_version.outputs.version }}
-    # Prevent concurrent runs
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -91,10 +92,15 @@ jobs:
         run: |
            cd packages/msf
            git add setup.cfg bumpversion.cfg 
-           git commit -m "Bump peaq-msf version to ${{ steps.current_version.outputs.version }}"
-           # Go back to root and push
-           cd ../..
-           git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force
+           # Only commit if there are changes
+           if git diff --staged --quiet; then
+             echo "No changes to commit"
+           else
+             git commit -m "Bump peaq-msf version to ${{ steps.current_version.outputs.version }}"
+             # Go back to root and push
+             cd ../..
+             git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force
+           fi
            sleep 5 
   build:
     name: Build peaq-msf distribution
