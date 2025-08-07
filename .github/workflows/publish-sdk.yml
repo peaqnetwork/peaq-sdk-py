@@ -1,0 +1,208 @@
+name: Publish peaq-sdk to PyPI and TestPyPI
+
+on:
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      version:
+        description: 'Version Type to Bump (major, minor, patch)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+  push:
+    branches:
+      - ci/07082025_packages-restructure 
+
+jobs:
+  bump_version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.current_version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+      - name: Set Git user for manual trigger
+        run: |
+           git config --global user.name "github-actions"
+           git config --global user.email "github-actions@github.com"
+      - name: Install bump2version
+        if: ${{ github.event_name == 'workflow_dispatch' }}  # Only run this job when manually triggered
+        run: pip install bump2version
+      - name: Bump version
+        id: current_version
+        run: |
+          # Change to sdk package directory
+          cd packages/sdk
+          # Get the version bump type (major, minor, patch) from the input
+          if ${{ github.event_name == 'workflow_dispatch' }} ; then
+           bump2version ${{ github.event.inputs.version }} --no-tag --config-file bumpversion.cfg 
+           #reset dev version to current release version
+           VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
+           if grep -q "\[development\]" setup.cfg; then
+             sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $VERSION/}" setup.cfg
+           else
+             echo -e "\n[development]\nversion = $VERSION" >> setup.cfg
+           fi
+           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+           VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['development']['version'])")
+           echo "Current version: $VERSION"
+          # If the version doesn't already have a .dev suffix, append '.dev1'
+           if [[ "$VERSION" != *".dev"* ]]; then
+             BASE_VERSION=$VERSION
+             DEV_VERSION=1
+           else
+             # If the version already has a .devX suffix, increment the X part
+             BASE_VERSION=$(echo $VERSION | sed 's/\(.*\)\.dev[0-9]\+/\1/')  # Strip current .devX part
+             DEV_VERSION=$(echo $VERSION | sed 's/.*\.dev\([0-9]\+\)/\1/')  # Extract current dev number
+             DEV_VERSION=$((DEV_VERSION + 1))  # Increment dev number
+           fi
+          # Construct the new version (e.g., 0.0.1 -> 0.0.1.dev1, 0.0.1.dev1 -> 0.0.1.dev2)
+           NEW_VERSION="$BASE_VERSION.dev$DEV_VERSION"
+           echo "Bumping version to $NEW_VERSION"
+          # Update the version in setup.cfg
+           sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $NEW_VERSION/}" setup.cfg
+
+          # Output the new version for further steps
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          fi
+      - name: Push version bump changes
+        run: |
+           cd packages/sdk
+           git add setup.cfg bumpversion.cfg 
+           git commit -m "Bump peaq-sdk version to ${{ steps.current_version.outputs.version }}"
+           git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
+           sleep 5 
+  build:
+    name: Build peaq-sdk distribution
+    needs: bump_version
+    if: ${{ github.actor != 'peaqbot' }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}
+        persist-credentials: false
+    - name: Set release version for TestPypi
+      if: ${{ github.event_name != 'workflow_dispatch' }}
+      run: |
+         cd packages/sdk
+         VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['development']['version'])")
+          sed -i "s/^version = .*/version = $VERSION/" setup.cfg
+          echo "Using release version: $VERSION"
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+    - name: Install pypa/build
+      run: >-
+        python3 -m
+        pip install
+        build
+        --user
+    - name: Build a binary wheel and a source tarball
+      run: |
+        cd packages/sdk
+        python3 -m build
+    - name: Store the distribution packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: peaq-sdk-python-package-distributions
+        path: packages/sdk/dist/
+
+  publish-to-pypi:
+    name: >-
+      Publish peaq-sdk Python distribution to PyPI
+    if: ${{ github.event_name == 'workflow_dispatch' }}  # only publish to PyPI on manual trigger
+    needs:
+    - build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/peaq-sdk 
+    permissions:
+      id-token: write
+
+    steps:
+    - name: Download all the dists
+      uses: actions/download-artifact@v4
+      with:
+        name: peaq-sdk-python-package-distributions
+        path: dist/
+    - name: Publish distribution to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: >-
+      Sign the peaq-sdk Python distribution with Sigstore
+      and upload them to GitHub Release
+    needs:
+    - bump_version
+    - publish-to-pypi
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  
+      id-token: write  
+    steps:
+    - name: Download all the dists
+      uses: actions/download-artifact@v4
+      with:
+        name: peaq-sdk-python-package-distributions
+        path: dist/
+    - name: Sign the dists with Sigstore
+      uses: sigstore/gh-action-sigstore-python@v3.0.0
+      with:
+        inputs: >-
+          ./dist/*.tar.gz
+          ./dist/*.whl
+    - name: Create GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: >-
+        gh release create
+        "peaq-sdk-v${{ needs.bump_version.outputs.version }}"
+        --repo "$GITHUB_REPOSITORY"
+        --notes ""
+    - name: Upload artifact signatures to GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: >-
+        gh release upload
+        "peaq-sdk-v${{ needs.bump_version.outputs.version }}" dist/**
+        --repo "$GITHUB_REPOSITORY"
+
+  publish-to-testpypi:
+    name: Publish peaq-sdk Python distribution to TestPyPI
+    if: ${{ github.event_name != 'workflow_dispatch' }}
+    needs:
+    - bump_version
+    - build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/peaq-sdk
+
+    permissions:
+      id-token: write
+
+    steps:
+    - name: Download all the dists
+      uses: actions/download-artifact@v4
+      with:
+        name: peaq-sdk-python-package-distributions
+        path: dist/
+    - name: Publish distribution to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        verbose: true
