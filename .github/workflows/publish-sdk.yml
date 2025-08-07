@@ -21,6 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.current_version.outputs.version }}
+    # Prevent concurrent runs
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -53,7 +57,12 @@ jobs:
            fi
            echo "version=$VERSION" >> $GITHUB_OUTPUT
           else
-           VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['development']['version'])")
+           # Check if development section exists, if not use metadata version
+           if grep -q "\[development\]" setup.cfg; then
+             VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['development']['version'])")
+           else
+             VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
+           fi
            echo "Current version: $VERSION"
           # If the version doesn't already have a .dev suffix, append '.dev1'
            if [[ "$VERSION" != *".dev"* ]]; then
@@ -69,7 +78,11 @@ jobs:
            NEW_VERSION="$BASE_VERSION.dev$DEV_VERSION"
            echo "Bumping version to $NEW_VERSION"
           # Update the version in setup.cfg
-           sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $NEW_VERSION/}" setup.cfg
+           if grep -q "\[development\]" setup.cfg; then
+             sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $NEW_VERSION/}" setup.cfg
+           else
+             echo -e "\n[development]\nversion = $NEW_VERSION" >> setup.cfg
+           fi
 
           # Output the new version for further steps
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
@@ -79,7 +92,9 @@ jobs:
            cd packages/sdk
            git add setup.cfg bumpversion.cfg 
            git commit -m "Bump peaq-sdk version to ${{ steps.current_version.outputs.version }}"
-           git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
+           # Pull latest changes and force push if needed
+           git pull --rebase origin ${{ github.ref }} || true
+           git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force-with-lease
            sleep 5 
   build:
     name: Build peaq-sdk distribution
