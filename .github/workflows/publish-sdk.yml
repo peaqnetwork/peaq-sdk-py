@@ -14,7 +14,7 @@ on:
           - patch
   push:
     branches:
-      - ci/07082025_packages-restructure 
+      - dev 
 
 jobs:
   bump_version:
