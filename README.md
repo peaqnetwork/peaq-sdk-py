@@ -40,7 +40,7 @@ from eth_account import Account
 account = Account.from_key("your_private_key")
 
 # Initialize SDK
-sdk = Sdk.create_instance({
+sdk = await Sdk.create_instance({
     'base_url': HTTPS_PEAQ_URL,
     'chain_type': ChainType.EVM,
     'auth': account
