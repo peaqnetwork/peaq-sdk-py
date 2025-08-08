@@ -92,15 +92,10 @@ jobs:
         run: |
            cd packages/msf
            git add setup.cfg bumpversion.cfg 
-           # Only commit if there are changes
-           if git diff --staged --quiet; then
-             echo "No changes to commit"
-           else
-             git commit -m "Bump peaq-msf version to ${{ steps.current_version.outputs.version }}"
-             # Go back to root and push
-             cd ../..
-             git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force
-           fi
+           git commit -m "Bump peaq-msf version to ${{ steps.current_version.outputs.version }}"
+           # Go back to root and push
+           cd ../..
+           git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force
            sleep 5 
   build:
     name: Build peaq-msf distribution
