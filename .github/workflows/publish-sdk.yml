@@ -48,14 +48,19 @@ jobs:
           cd packages/sdk
           # Get the version bump type (major, minor, patch) from the input
           if ${{ github.event_name == 'workflow_dispatch' }} ; then
+           echo "Bumping version using bump2version..."
+           echo "Current version before bump: $(grep 'current_version' bumpversion.cfg | cut -d'=' -f2 | tr -d ' ')"
            bump2version ${{ github.event.inputs.version }} --no-tag --config-file bumpversion.cfg 
+           echo "Version after bump: $(grep 'current_version' bumpversion.cfg | cut -d'=' -f2 | tr -d ' ')"
            #reset dev version to current release version
            VERSION=$(python -c "import configparser; config = configparser.ConfigParser(); config.read('setup.cfg'); print(config['metadata']['version'])")
+           echo "Version from setup.cfg metadata: $VERSION"
            if grep -q "\[development\]" setup.cfg; then
              sed -i "/\[development\]/,/^\[/{s/^version = .*/version = $VERSION/}" setup.cfg
            else
              echo -e "\n[development]\nversion = $VERSION" >> setup.cfg
            fi
+           echo "Final version: $VERSION"
            echo "version=$VERSION" >> $GITHUB_OUTPUT
           else
            # Check if development section exists, if not use metadata version
@@ -91,13 +96,35 @@ jobs:
       - name: Push version bump changes
         run: |
            cd packages/sdk
-           git add setup.cfg bumpversion.cfg 
-           git commit -m "Bump peaq-sdk version to ${{ steps.current_version.outputs.version }}"
-           # Go back to root and push
-            cd ../..
-           git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force
+           echo "Checking git status..."
+           echo "Git status:"
+           git status
            
-           sleep 5 
+           # Check if there are staged changes or uncommitted changes
+           if git diff --cached --quiet && git diff --quiet; then
+             echo "No changes to commit - checking if we need to push existing commits"
+             # Check if we're ahead of origin
+             if git rev-list HEAD...origin/${{ github.ref_name }} --count | grep -q "^[1-9]"; then
+               echo "Branch is ahead of origin, pushing existing commits..."
+               cd ../..
+               git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force
+               sleep 5
+             else
+               echo "No changes to commit and no commits to push"
+               exit 1
+             fi
+           else
+             echo "Changes detected, committing and pushing..."
+             # Add and commit changes
+             git add setup.cfg bumpversion.cfg 
+             echo "Git status after add:"
+             git status
+             git commit -m "Bump peaq-sdk version to ${{ steps.current_version.outputs.version }}"
+             # Go back to root and push
+             cd ../..
+             git push https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref }} --force
+             sleep 5
+           fi 
   build:
     name: Build peaq-sdk distribution
     needs: bump_version
