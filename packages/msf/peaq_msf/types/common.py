@@ -25,8 +25,8 @@ class SDKMetadata(BaseModel):
 class CreateInstanceOptions(BaseModel):
     base_url: str = Field(..., description="HTTPS/WSS endpoint to your node")
     machine_station_address: str = Field(..., description="Machine Station Contract being connected to")
-    station_admin: BaseAccount = Field(..., description="Signer - BaseAccount; represents the station admin"    )
-    station_manager: Optional[BaseAccount] = Field(None, description="Optional signer - BaseAccount; represents the station admin")
+    station_admin: Optional[BaseAccount] = Field(None, description="Optional signer - BaseAccount; represents the station admin")
+    station_manager: Optional[BaseAccount] = Field(None, description="Optional signer - BaseAccount; represents the station manager")
     model_config = ConfigDict(
         arbitrary_types_allowed=True
     )

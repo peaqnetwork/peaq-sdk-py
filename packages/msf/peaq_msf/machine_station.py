@@ -59,7 +59,7 @@ class MachineStation(Base):
         api: Web3,
         metadata: SDKMetadata,
         machine_station_address: str,
-        station_admin: BaseAccount,
+        station_admin: Optional[BaseAccount] = None,
         station_manager: Optional[BaseAccount] = None
     ) -> None:
         """
@@ -183,6 +183,8 @@ class MachineStation(Base):
                     required_role="STATION_MANAGER_ROLE"
                 )
             
+            if not self.station_manager_signer:
+                raise ValueError("Station manager signer is required to send this transaction. Provide 'station_manager' during SDK initialization or set send_transaction=False to get the raw tx data.")
             # Use the new helper method with station manager signer
             return await self._handle_evm_tx(
                 tx=tx,
@@ -249,6 +251,8 @@ class MachineStation(Base):
                     note="After transaction is mined, listen for MachineSmartAccountDeployed event to get the deployed address"
                 )
             
+            if not self.station_manager_signer:
+                raise ValueError("Station manager signer is required to send this transaction. Provide 'station_manager' during SDK initialization or set send_transaction=False to get the raw tx data.")
             # Use the new helper method with station manager signer
             result = await self._handle_evm_tx(
                 tx=tx,
@@ -334,6 +338,8 @@ class MachineStation(Base):
                     required_role="DEFAULT_ADMIN_ROLE"
                 )
             
+            if not self.station_admin_signer:
+                raise ValueError("Admin signer is required to send this transaction. Provide 'station_admin' during SDK initialization or set send_transaction=False to get the raw tx data.")
             # Use the new helper method with station admin signer
             return await self._handle_evm_tx(
                 tx=tx,
@@ -401,13 +407,15 @@ class MachineStation(Base):
                     access_control="Anyone can call with proper signatures"
                 )
             
+            if not self.station_manager_signer:
+                raise ValueError("Station manager signer is required to send this transaction. Provide 'station_manager' during SDK initialization or set send_transaction=False to get the raw tx data.")
             # Use the new helper method with station admin signer
             return await self._handle_evm_tx(
                 tx=tx,
                 action=f"execute transaction to {target}",
                 status_callback=status_callback,
                 tx_options=tx_options,
-                signer=self.station_admin_signer
+                signer=self.station_manager_signer
             )
         except Exception as e:
             raise ValueError(f"Failed to execute transaction: {str(e)}")
@@ -468,6 +476,8 @@ class MachineStation(Base):
                     access_control="Anyone can call with proper signatures"
                 )
             
+            if not self.station_manager_signer:
+                raise ValueError("Station manager signer is required to send this transaction. Provide 'station_manager' during SDK initialization or set send_transaction=False to get the raw tx data.")
             # Use the new helper method with station admin signer
             return await self._handle_evm_tx(
                 tx=tx,
@@ -539,6 +549,8 @@ class MachineStation(Base):
                     access_control="Anyone can call with proper signatures"
                 )
             
+            if not self.station_manager_signer:
+                raise ValueError("Station manager signer is required to send this transaction. Provide 'station_manager' during SDK initialization or set send_transaction=False to get the raw tx data.")
             # Use the new helper method with station manager signer
             return await self._handle_evm_tx(
                 tx=tx,
@@ -605,6 +617,8 @@ class MachineStation(Base):
                     required_role="STATION_MANAGER_ROLE"
                 )
             
+            if not self.station_manager_signer:
+                raise ValueError("Station manager signer is required to send this transaction. Provide 'station_manager' during SDK initialization or set send_transaction=False to get the raw tx data.")
             # Use the new helper method with station manager signer
             return await self._handle_evm_tx(
                 tx=tx,
@@ -656,7 +670,10 @@ class MachineStation(Base):
             }
             
             signable_message = encode_typed_data(domain, types, message)
-            signature = self.station_manager_signer.sign_message(signable_message).signature.hex()
+            if not self.station_manager_signer and not self.station_admin_signer:
+                raise ValueError("Admin or manager signer is required to generate this signature. Provide a signer during SDK initialization.")
+            signer = self.station_manager_signer if self.station_manager_signer else self.station_admin_signer
+            signature = signer.sign_message(signable_message).signature.hex()
             return "0x" + signature
         except Exception as e:
             raise ValueError(f"Failed to sign deploy machine smart account: {str(e)}")
@@ -697,7 +714,10 @@ class MachineStation(Base):
             }
             
             signable_message = encode_typed_data(domain, types, message)
-            signature = self.station_admin_signer.sign_message(signable_message).signature.hex()
+            if not self.station_admin_signer and not self.station_manager_signer:
+                raise ValueError("Admin or manager signer is required to generate this signature. Provide a signer during SDK initialization.")
+            signer = self.station_admin_signer if self.station_admin_signer else self.station_manager_signer
+            signature = signer.sign_message(signable_message).signature.hex()
             return "0x" + signature
         except Exception as e:
             raise ValueError(f"Failed to sign transfer machine station balance: {str(e)}")
@@ -744,7 +764,10 @@ class MachineStation(Base):
             }
             
             signable_message = encode_typed_data(domain, types, message)
-            signature = self.station_admin_signer.sign_message(signable_message).signature.hex()
+            if not self.station_admin_signer and not self.station_manager_signer:
+                raise ValueError("Admin or manager signer is required to generate this signature. Provide a signer during SDK initialization.")
+            signer = self.station_admin_signer if self.station_admin_signer else self.station_manager_signer
+            signature = signer.sign_message(signable_message).signature.hex()
             return "0x" + signature
         except Exception as e:
             raise ValueError(f"Failed to sign execute transaction: {str(e)}")
@@ -794,7 +817,10 @@ class MachineStation(Base):
             }
             
             signable_message = encode_typed_data(domain, types, message)
-            signature = self.station_admin_signer.sign_message(signable_message).signature.hex()
+            if not self.station_admin_signer and not self.station_manager_signer:
+                raise ValueError("Admin or manager signer is required to generate this signature. Provide a signer during SDK initialization.")
+            signer = self.station_admin_signer if self.station_admin_signer else self.station_manager_signer
+            signature = signer.sign_message(signable_message).signature.hex()
             return "0x" + signature
         except Exception as e:
             raise ValueError(f"Failed to sign machine transaction: {str(e)}")
@@ -847,7 +873,10 @@ class MachineStation(Base):
             }
             
             signable_message = encode_typed_data(domain, types, message)
-            signature = self.station_admin_signer.sign_message(signable_message).signature.hex()
+            if not self.station_admin_signer and not self.station_manager_signer:
+                raise ValueError("Admin or manager signer is required to generate this signature. Provide a signer during SDK initialization.")
+            signer = self.station_admin_signer if self.station_admin_signer else self.station_manager_signer
+            signature = signer.sign_message(signable_message).signature.hex()
             return "0x" + signature
         except Exception as e:
             raise ValueError(f"Failed to sign machine batch transactions: {str(e)}")

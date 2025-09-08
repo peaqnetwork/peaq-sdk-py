@@ -96,7 +96,8 @@ class Main(Base):
         sdk = cls(ops)
         
         # Set the station admin as the primary signer for base operations
-        sdk._set_signer(ops.station_admin)
+        if ops.station_admin is not None:
+            sdk._set_signer(ops.station_admin)
 
         return sdk
 
