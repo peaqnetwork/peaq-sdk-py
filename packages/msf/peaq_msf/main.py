@@ -400,7 +400,8 @@ class Main(Base):
     async def machine_sign_machine_transaction(
         self,
         options: MachineSignMachineTransactionOptions,
-        machine_owner_signer: Optional[BaseAccount] = None
+        machine_owner_signer: Optional[BaseAccount] = None,
+        version: str = "2"
     ) -> Union[str, EIP712SignableMessage]:
         """
         Creates a signable EIP-712 message for machine transaction execution.
@@ -414,7 +415,7 @@ class Main(Base):
         Returns:
             Either the signature string or EIP-712 signable message object
         """
-        return await self._machine_station.machine_sign_machine_transaction(options, machine_owner_signer)
+        return await self._machine_station.machine_sign_machine_transaction(options, machine_owner_signer, version)
 
     async def machine_sign_transfer_machine_balance(
         self,
