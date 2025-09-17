@@ -903,7 +903,8 @@ class MachineStation(Base):
     async def machine_sign_machine_transaction(
         self,   
         options: MachineSignMachineTransactionOptions,
-        machine_owner_signer: Optional[BaseAccount] = None
+        machine_owner_signer: Optional[BaseAccount] = None,
+        version: str = "2"
     ) -> Union[str, EIP712SignableMessage]:
         """
         Creates a signable EIP-712 message for machine transaction execution.
@@ -927,7 +928,7 @@ class MachineStation(Base):
             calldata = ops.calldata
             nonce = ops.nonce
             
-            domain = await self._get_machine_account_domain("MachineSmartAccount", machine_address)
+            domain = await self._get_machine_account_domain("MachineSmartAccount", machine_address, version)
             types = {
                 "Execute": [
                     {"name": "target", "type": "address"},
@@ -1032,7 +1033,7 @@ class MachineStation(Base):
             "verifyingContract": self.machine_station_address
         }
 
-    async def _get_machine_account_domain(self, name: str, verifying_contract: str) -> dict:
+    async def _get_machine_account_domain(self, name: str, verifying_contract: str, version: str = "2") -> dict:
         """
         Generates an EIP-712 domain for MachineSmartAccount contract.
         
@@ -1045,7 +1046,7 @@ class MachineStation(Base):
         """
         return {
             "name": name,
-            "version": "2",
+            "version": version,
             "chainId": await self.get_chain_id(),
             "verifyingContract": verifying_contract
         }
