@@ -3,6 +3,7 @@ from enum import Enum
 import asyncio
 from hexbytes import HexBytes
 from peaq_msf.utils.utils import parse_options
+from peaq_msf.utils.abi_decoder import MultiAbiLogDecoder, _load_abi
 
 from peaq_msf.types.common import ChainType, SDKMetadata
 from peaq_msf.types.base import (
@@ -13,6 +14,7 @@ from peaq_msf.types.base import (
     EvmSendResult,
     StatusCallback
 )
+
 
 from web3 import Web3
 from web3.types import TxParams
@@ -151,6 +153,12 @@ class Base:
         
         if isinstance(obj, HexBytes):
             return obj.hex()
+        if isinstance(obj, (bytes, bytearray)):
+            try:
+                # strip trailing NULLs often present in fixed-size bytes
+                return bytes(obj).decode("utf-8").rstrip("\x00")
+            except Exception:
+                return "0x" + bytes(obj).hex()
         if isinstance(obj, Enum):
             return obj.value
         if hasattr(obj, '__dict__') and not isinstance(obj, (str, int, float, bool)):
@@ -224,8 +232,10 @@ class Base:
             try:
                 # Wait for first confirmation
                 receipt = await self._api.eth.wait_for_transaction_receipt(tx_hash)
+                receipt = self._parse_evm_logs(receipt)
                 
-                if receipt.status == 0:
+                
+                if receipt["status"] == 0:
                     raise Exception('Transaction failed')
                 
                 # Check if unsubscribed before emitting status
@@ -235,7 +245,7 @@ class Base:
                         confirmation_mode=opts.mode,
                         total_confirmations=1,
                         tx_hash="0x" + tx_hash.hex(),
-                        receipt=dict(receipt),
+                        receipt=receipt,
                         nonce=built_tx.get('nonce')
                     )
                     self._emit_status_callback(on_status, False, status_update)
@@ -245,7 +255,7 @@ class Base:
                     final_receipt = await self._wait_for_confirmations(tx_hash, receipt, opts, on_status if not is_unsubscribed else None)
                     return final_receipt
                 else:
-                    raw = dict(receipt)
+                    raw = receipt
                     cleaned = self._clean_callback_data(raw)
                     return cleaned
                 
@@ -304,7 +314,7 @@ class Base:
         """
         if opts.mode == ConfirmationMode.FAST:
             # Already have 1 confirmation, nothing more needed
-            raw = dict(receipt)
+            raw = receipt
             cleaned = self._clean_callback_data(raw)
             return cleaned
 
@@ -337,6 +347,7 @@ class Base:
             # Validate the receipt is still canonical to guard against chain reorgs
             try:
                 canonical_receipt = await self._api.eth.get_transaction_receipt(tx_hash)
+                canonical_receipt = self._parse_evm_logs(canonical_receipt)
                 if not canonical_receipt:
                     raise Exception('Could not fetch canonical transaction receipt')
             except Exception:
@@ -358,11 +369,11 @@ class Base:
                     confirmation_mode=opts.mode,
                     total_confirmations=confirmations_seen,
                     tx_hash="0x" + tx_hash.hex(),
-                    receipt=dict(canonical_receipt)
+                    receipt=canonical_receipt
                 )
                 self._emit_status_callback(on_status, False, status_update)
             
-            raw = dict(canonical_receipt)
+            raw = canonical_receipt
             cleaned = self._clean_callback_data(raw)
             return cleaned
 
@@ -388,6 +399,7 @@ class Base:
             
             # Fetch new receipt after finalized head has passed inclusion block
             final_receipt = await self._api.eth.get_transaction_receipt(tx_hash)
+            final_receipt = self._parse_evm_logs(final_receipt)
             if not final_receipt:
                 raise Exception("Could not fetch final receipt")
             
@@ -400,17 +412,45 @@ class Base:
                     confirmation_mode=opts.mode,
                     total_confirmations=final_confirmations,
                     tx_hash="0x" + tx_hash.hex(),
-                    receipt=dict(final_receipt)
+                    receipt=final_receipt
                 )
                 self._emit_status_callback(on_status, False, status_update)
             
-            raw = dict(final_receipt)
+            raw = final_receipt
             
             cleaned = self._clean_callback_data(raw)
             return cleaned
 
         else:
             raise ValueError(f"Unknown confirmation mode: {opts.mode}")
+
+    def _parse_evm_logs(self, receipt):
+        # decoded = []
+        # for ev_klass in iface.events:           # iterates the contract’s event classes
+        #     decoded += ev_klass().process_receipt(receipt)
+
+        # for e in decoded:
+        #     print(e['event'], e['address'])
+        #     print(e['args'])                # "english": a dict of named parameters
+        #     print("logIndex:", e['logIndex'])
+            
+        abi_did         = _load_abi("./abi/did_abi.json")
+        abi_storage     = _load_abi("./abi/storage_abi.json")
+        abi_smart_acct  = _load_abi("./abi/msa_abi.json")
+        abi_msf         = _load_abi("./abi/msf_abi.json")
+        
+        # TODO figure out how to not hardcode these values
+        decoder = MultiAbiLogDecoder(self._api)
+        decoder.register_abi(abi_did, "0x0000000000000000000000000000000000000800")
+        decoder.register_abi(abi_storage,  "0x0000000000000000000000000000000000000801")
+        decoder.register_abi(abi_smart_acct, "")   # address can change per tx
+        decoder.register_abi(abi_msf,      "")
+        
+        decoded = decoder.decode_receipt(receipt)
+        rec = dict(receipt)
+        rec["decoded_logs"] = decoded     # ✅ top-level attachment
+        cleaned = self._clean_callback_data(rec)
+        return cleaned
 
     def _parse_evm_error(self, error: Any, iface: Optional[Any] = None) -> str:
         """
