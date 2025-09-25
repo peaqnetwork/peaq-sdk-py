@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any
 from enum import Enum
 import asyncio
 from hexbytes import HexBytes
-from peaq_msf.utils.utils import parse_options, _load_abi
+from peaq_msf.utils.utils import parse_options, _load_abi, error_selector
 from peaq_msf.utils.evm_log_decoder import MultiAbiLogDecoder
 
 from peaq_msf.types.common import ChainType, SDKMetadata
@@ -18,6 +18,7 @@ from peaq_msf.types.base import (
 
 from web3 import Web3
 from web3.types import TxParams
+from web3.exceptions import ContractCustomError
 from eth_account.signers.base import BaseAccount
 
 
@@ -285,8 +286,29 @@ class Base:
         tx['nonce'] = await self._api.eth.get_transaction_count(checksum_address)
         tx['chainId'] = await self.get_chain_id()
 
-        # Estimate gas limit if not provided
-        estimated_gas = await self._api.eth.estimate_gas(tx)
+        # Estimate gas and extract error
+        try:
+            estimated_gas = await self._api.eth.estimate_gas(tx)
+        except ContractCustomError as e:
+            error_by_selector = error_selector()
+            
+            # Grab a hex-looking thing from the exception
+            data_hex = None
+            for part in e.args:
+                if isinstance(part, str) and part.startswith("0x") and len(part) >= 10:
+                    data_hex = part
+                    break
+
+            selector = data_hex[:10].lower()
+            entry = error_by_selector.get(selector)
+
+            if entry:
+                # You have the error name; args likely unavailable from estimateGas (selector-only)
+                raise RuntimeError(f"Gas estimate failed with custom error: {entry['name']} (selector {selector})")
+            else:
+                # Could be standard Error(string)/Panic(uint) or unknown custom error
+                raise RuntimeError(f"Gas estimate failed with 'Unknown custom error' (selector {selector})")
+        
         tx['gas'] = opts.gas_limit if opts.gas_limit else estimated_gas
 
         # Get current fee data
