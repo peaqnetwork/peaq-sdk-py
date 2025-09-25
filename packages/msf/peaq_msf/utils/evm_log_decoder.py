@@ -75,19 +75,12 @@ class MultiAbiLogDecoder:
         for raw_log in receipt.get("logs", []):
             try:
                 log = _normalize_log(raw_log)
-            except Exception as e:
-                out.append({
-                    "address": _to_hex(raw_log.get("address", "0x0")),
-                    "logIndex": int(raw_log.get("logIndex", -1)),
-                    "note": f"Failed to normalize log: {e}",
-                    "raw": raw_log,
-                })
+            except Exception:
+                # Skip logs we cannot normalize
                 continue
 
             if not log["topics"]:
-                out.append({"address": log["address"], "logIndex": log["logIndex"],
-                            "note": "Anonymous event (no topics) cannot be decoded without exact ABI.",
-                            "raw": raw_log})
+                # Anonymous events cannot be matched; skip quietly
                 continue
 
             topic0 = log["topics"][0]
@@ -102,31 +95,19 @@ class MultiAbiLogDecoder:
             for (_a, event_abi) in try_order:
                 try:
                     evt = get_event_data(self.w3.codec, event_abi, log)
-                    decoded = {
-                        "address": log["address"],
-                        "name": evt["event"],
-                        "events": dict(evt["args"]),
-                        "logIndex": evt["logIndex"],
-                    }
+                    name = evt.get("event")
+                    # Only include failure-related events
+                    if isinstance(name, str) and ("fail" in name.lower()):
+                        decoded = {
+                            "address": log["address"],
+                            "name": name,
+                            "events": dict(evt["args"]),
+                            "logIndex": evt["logIndex"],
+                        }
+                        out.append(decoded)
+                    # Regardless of inclusion, stop trying other ABIs once decoded
                     break
                 except Exception:
                     continue
 
-            if decoded is None:
-                out.append({"address": log["address"], "logIndex": log["logIndex"],
-                           "note": "No matching ABI for topic0 or decode failed (maybe wrong ABI or anonymous event).",
-                           "raw": raw_log})
-            else:
-                out.append(decoded)
-
         return out
-
-    def pretty_print(self, decoded_logs: List[dict]):
-        for d in decoded_logs:
-            if d["ok"]:
-                print(f"[{d['logIndex']:>3}] {d['address']} :: {d['event']}")
-                for k, v in d["args"].items():
-                    print(f"      - {k}: {v}")
-            else:
-                print(f"[{d['logIndex']:>3}] {d['address']} :: UNDECODED -> {d['note']}")
-        print()

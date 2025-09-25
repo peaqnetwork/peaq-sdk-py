@@ -252,10 +252,10 @@ class Base:
                 # Wait for confirmations based on mode using native async
                 if not is_unsubscribed:
                     final_receipt = await self._wait_for_confirmations(tx_hash, receipt, opts, on_status if not is_unsubscribed else None)
-                    decoded_receipt = self._decode_evm_logs(final_receipt)
+                    decoded_receipt = self._decode_evm_log_errors(final_receipt)
                     return decoded_receipt
                 else:
-                    decoded_receipt = self._decode_evm_logs(receipt)
+                    decoded_receipt = self._decode_evm_log_errors(receipt)
                     return decoded_receipt
                 
             except Exception as error:
@@ -435,23 +435,15 @@ class Base:
         else:
             raise ValueError(f"Unknown confirmation mode: {opts.mode}")
 
-    def _decode_evm_logs(self, receipt):            
-        abi_did         = _load_abi("./abi/did_abi.json")
-        abi_storage     = _load_abi("./abi/storage_abi.json")
-        abi_rbac        = _load_abi("./abi/rbac_abi.json")
-        abi_smart_acct  = _load_abi("./abi/msa_abi.json")
-        abi_msf         = _load_abi("./abi/msf_abi.json")
-        
+    def _decode_evm_log_errors(self, receipt):            
+        abi_events = _load_abi("./abi/events_abi.json")
+
         decoder = MultiAbiLogDecoder(self._api)
-        decoder.register_abi(abi_did)
-        decoder.register_abi(abi_storage)
-        decoder.register_abi(abi_rbac)
-        decoder.register_abi(abi_smart_acct)   # address can change per tx
-        decoder.register_abi(abi_msf)
-        
+        decoder.register_abi(abi_events)
         decoded = decoder.decode_receipt(receipt)
+        
         rec = dict(receipt)
-        rec["errors"] = decoded
+        rec["log_errors"] = decoded
         cleaned = self._clean_callback_data(rec)
         return cleaned
 
