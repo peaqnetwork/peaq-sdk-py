@@ -2,8 +2,8 @@ from typing import Optional, Dict, Any
 from enum import Enum
 import asyncio
 from hexbytes import HexBytes
-from peaq_msf.utils.utils import parse_options
-from peaq_msf.utils.abi_decoder import MultiAbiLogDecoder, _load_abi
+from peaq_msf.utils.utils import parse_options, _load_abi
+from peaq_msf.utils.evm_log_decoder import MultiAbiLogDecoder
 
 from peaq_msf.types.common import ChainType, SDKMetadata
 from peaq_msf.types.base import (
@@ -232,10 +232,8 @@ class Base:
             try:
                 # Wait for first confirmation
                 receipt = await self._api.eth.wait_for_transaction_receipt(tx_hash)
-                receipt = self._parse_evm_logs(receipt)
                 
-                
-                if receipt["status"] == 0:
+                if receipt.status == 0:
                     raise Exception('Transaction failed')
                 
                 # Check if unsubscribed before emitting status
@@ -253,11 +251,11 @@ class Base:
                 # Wait for confirmations based on mode using native async
                 if not is_unsubscribed:
                     final_receipt = await self._wait_for_confirmations(tx_hash, receipt, opts, on_status if not is_unsubscribed else None)
-                    return final_receipt
+                    decoded_receipt = self._decode_evm_logs(final_receipt)
+                    return decoded_receipt
                 else:
-                    raw = receipt
-                    cleaned = self._clean_callback_data(raw)
-                    return cleaned
+                    decoded_receipt = self._decode_evm_logs(receipt)
+                    return decoded_receipt
                 
             except Exception as error:
                 # Use enhanced error parsing if iface is provided
@@ -314,9 +312,7 @@ class Base:
         """
         if opts.mode == ConfirmationMode.FAST:
             # Already have 1 confirmation, nothing more needed
-            raw = receipt
-            cleaned = self._clean_callback_data(raw)
-            return cleaned
+            return receipt
 
         elif opts.mode == ConfirmationMode.CUSTOM:
             # Wait for user's target confirmations
@@ -347,7 +343,6 @@ class Base:
             # Validate the receipt is still canonical to guard against chain reorgs
             try:
                 canonical_receipt = await self._api.eth.get_transaction_receipt(tx_hash)
-                canonical_receipt = self._parse_evm_logs(canonical_receipt)
                 if not canonical_receipt:
                     raise Exception('Could not fetch canonical transaction receipt')
             except Exception:
@@ -372,10 +367,8 @@ class Base:
                     receipt=canonical_receipt
                 )
                 self._emit_status_callback(on_status, False, status_update)
-            
-            raw = canonical_receipt
-            cleaned = self._clean_callback_data(raw)
-            return cleaned
+                
+            return canonical_receipt
 
         elif opts.mode == ConfirmationMode.FINAL:
             # Poll until the finalized head >= inclusion block
@@ -399,7 +392,6 @@ class Base:
             
             # Fetch new receipt after finalized head has passed inclusion block
             final_receipt = await self._api.eth.get_transaction_receipt(tx_hash)
-            final_receipt = self._parse_evm_logs(final_receipt)
             if not final_receipt:
                 raise Exception("Could not fetch final receipt")
             
@@ -415,40 +407,29 @@ class Base:
                     receipt=final_receipt
                 )
                 self._emit_status_callback(on_status, False, status_update)
-            
-            raw = final_receipt
-            
-            cleaned = self._clean_callback_data(raw)
-            return cleaned
+                
+            return final_receipt
 
         else:
             raise ValueError(f"Unknown confirmation mode: {opts.mode}")
 
-    def _parse_evm_logs(self, receipt):
-        # decoded = []
-        # for ev_klass in iface.events:           # iterates the contract’s event classes
-        #     decoded += ev_klass().process_receipt(receipt)
-
-        # for e in decoded:
-        #     print(e['event'], e['address'])
-        #     print(e['args'])                # "english": a dict of named parameters
-        #     print("logIndex:", e['logIndex'])
-            
+    def _decode_evm_logs(self, receipt):            
         abi_did         = _load_abi("./abi/did_abi.json")
         abi_storage     = _load_abi("./abi/storage_abi.json")
+        abi_rbac        = _load_abi("./abi/rbac_abi.json")
         abi_smart_acct  = _load_abi("./abi/msa_abi.json")
         abi_msf         = _load_abi("./abi/msf_abi.json")
         
-        # TODO figure out how to not hardcode these values
         decoder = MultiAbiLogDecoder(self._api)
-        decoder.register_abi(abi_did, "0x0000000000000000000000000000000000000800")
-        decoder.register_abi(abi_storage,  "0x0000000000000000000000000000000000000801")
-        decoder.register_abi(abi_smart_acct, "")   # address can change per tx
-        decoder.register_abi(abi_msf,      "")
+        decoder.register_abi(abi_did)
+        decoder.register_abi(abi_storage)
+        decoder.register_abi(abi_rbac)
+        decoder.register_abi(abi_smart_acct)   # address can change per tx
+        decoder.register_abi(abi_msf)
         
         decoded = decoder.decode_receipt(receipt)
         rec = dict(receipt)
-        rec["decoded_logs"] = decoded     # ✅ top-level attachment
+        rec["errors"] = decoded
         cleaned = self._clean_callback_data(rec)
         return cleaned
 

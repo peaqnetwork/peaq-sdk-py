@@ -35,7 +35,7 @@ from peaq_msf.types.machine_station import (
     ExecuteTransferMachineBalanceData,
     EIP712SignableMessage
 )
-from .utils.utils import parse_options
+from .utils.utils import parse_options, _load_abi
 
 
 from web3 import Web3
@@ -76,11 +76,8 @@ class MachineStation(Base):
         self.machine_station_address = machine_station_address
         self.station_admin_signer = station_admin
         self.station_manager_signer = station_manager if station_manager else self.station_admin_signer
-        
-        # Load ABI and create contract interface
-        abi_path = os.path.join(os.path.dirname(__file__), 'abi', 'msf_abi.json')
-        with open(abi_path, 'r') as f:
-            self.abi = json.load(f)
+            
+        self.abi = _load_abi("./abi/msf_abi.json")
         
         # Create contract interface
         self.iface = self._api.eth.contract(

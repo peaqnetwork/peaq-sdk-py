@@ -1,6 +1,5 @@
 from __future__ import annotations
 import json, os
-from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Union
 
 from web3 import Web3
@@ -10,10 +9,6 @@ from hexbytes import HexBytes
 
 Hexish = Union[str, bytes, bytearray, HexBytes, int]
 
-def _load_abi(path: str | Path) -> List[dict]:
-    abi_path = os.path.join(os.path.dirname(__file__), str(path))
-    with open(abi_path, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 def _to_hex(x: Hexish | None) -> str:
     """Return a 0x-prefixed hex string for common types."""
