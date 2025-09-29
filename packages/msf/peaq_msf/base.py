@@ -2,7 +2,8 @@ from typing import Optional, Dict, Any
 from enum import Enum
 import asyncio
 from hexbytes import HexBytes
-from peaq_msf.utils.utils import parse_options
+from peaq_msf.utils.utils import parse_options, _load_abi, error_selector
+from peaq_msf.utils.evm_log_decoder import MultiAbiLogDecoder
 
 from peaq_msf.types.common import ChainType, SDKMetadata
 from peaq_msf.types.base import (
@@ -14,8 +15,10 @@ from peaq_msf.types.base import (
     StatusCallback
 )
 
+
 from web3 import Web3
 from web3.types import TxParams
+from web3.exceptions import ContractCustomError
 from eth_account.signers.base import BaseAccount
 
 
@@ -151,6 +154,12 @@ class Base:
         
         if isinstance(obj, HexBytes):
             return obj.hex()
+        if isinstance(obj, (bytes, bytearray)):
+            try:
+                # strip trailing NULLs often present in fixed-size bytes
+                return bytes(obj).decode("utf-8").rstrip("\x00")
+            except Exception:
+                return "0x" + bytes(obj).hex()
         if isinstance(obj, Enum):
             return obj.value
         if hasattr(obj, '__dict__') and not isinstance(obj, (str, int, float, bool)):
@@ -235,7 +244,7 @@ class Base:
                         confirmation_mode=opts.mode,
                         total_confirmations=1,
                         tx_hash="0x" + tx_hash.hex(),
-                        receipt=dict(receipt),
+                        receipt=receipt,
                         nonce=built_tx.get('nonce')
                     )
                     self._emit_status_callback(on_status, False, status_update)
@@ -243,11 +252,11 @@ class Base:
                 # Wait for confirmations based on mode using native async
                 if not is_unsubscribed:
                     final_receipt = await self._wait_for_confirmations(tx_hash, receipt, opts, on_status if not is_unsubscribed else None)
-                    return final_receipt
+                    decoded_receipt = self._decode_evm_log_errors(final_receipt)
+                    return decoded_receipt
                 else:
-                    raw = dict(receipt)
-                    cleaned = self._clean_callback_data(raw)
-                    return cleaned
+                    decoded_receipt = self._decode_evm_log_errors(receipt)
+                    return decoded_receipt
                 
             except Exception as error:
                 # Use enhanced error parsing if iface is provided
@@ -277,8 +286,29 @@ class Base:
         tx['nonce'] = await self._api.eth.get_transaction_count(checksum_address)
         tx['chainId'] = await self.get_chain_id()
 
-        # Estimate gas limit if not provided
-        estimated_gas = await self._api.eth.estimate_gas(tx)
+        # Estimate gas and extract error
+        try:
+            estimated_gas = await self._api.eth.estimate_gas(tx)
+        except ContractCustomError as e:
+            error_by_selector = error_selector()
+            
+            # Grab a hex-looking thing from the exception
+            data_hex = None
+            for part in e.args:
+                if isinstance(part, str) and part.startswith("0x") and len(part) >= 10:
+                    data_hex = part
+                    break
+
+            selector = data_hex[:10].lower()
+            entry = error_by_selector.get(selector)
+
+            if entry:
+                # You have the error name; args likely unavailable from estimateGas (selector-only)
+                raise RuntimeError(f"Gas estimate failed with custom error: {entry['name']} (selector {selector})")
+            else:
+                # Could be standard Error(string)/Panic(uint) or unknown custom error
+                raise RuntimeError(f"Gas estimate failed with 'Unknown custom error' (selector {selector})")
+        
         tx['gas'] = opts.gas_limit if opts.gas_limit else estimated_gas
 
         # Get current fee data
@@ -304,9 +334,7 @@ class Base:
         """
         if opts.mode == ConfirmationMode.FAST:
             # Already have 1 confirmation, nothing more needed
-            raw = dict(receipt)
-            cleaned = self._clean_callback_data(raw)
-            return cleaned
+            return receipt
 
         elif opts.mode == ConfirmationMode.CUSTOM:
             # Wait for user's target confirmations
@@ -358,13 +386,11 @@ class Base:
                     confirmation_mode=opts.mode,
                     total_confirmations=confirmations_seen,
                     tx_hash="0x" + tx_hash.hex(),
-                    receipt=dict(canonical_receipt)
+                    receipt=canonical_receipt
                 )
                 self._emit_status_callback(on_status, False, status_update)
-            
-            raw = dict(canonical_receipt)
-            cleaned = self._clean_callback_data(raw)
-            return cleaned
+                
+            return canonical_receipt
 
         elif opts.mode == ConfirmationMode.FINAL:
             # Poll until the finalized head >= inclusion block
@@ -400,17 +426,26 @@ class Base:
                     confirmation_mode=opts.mode,
                     total_confirmations=final_confirmations,
                     tx_hash="0x" + tx_hash.hex(),
-                    receipt=dict(final_receipt)
+                    receipt=final_receipt
                 )
                 self._emit_status_callback(on_status, False, status_update)
-            
-            raw = dict(final_receipt)
-            
-            cleaned = self._clean_callback_data(raw)
-            return cleaned
+                
+            return final_receipt
 
         else:
             raise ValueError(f"Unknown confirmation mode: {opts.mode}")
+
+    def _decode_evm_log_errors(self, receipt):            
+        abi_events = _load_abi("./abi/events_abi.json")
+
+        decoder = MultiAbiLogDecoder(self._api)
+        decoder.register_abi(abi_events)
+        decoded = decoder.decode_receipt(receipt)
+        
+        rec = dict(receipt)
+        rec["log_errors"] = decoded
+        cleaned = self._clean_callback_data(rec)
+        return cleaned
 
     def _parse_evm_error(self, error: Any, iface: Optional[Any] = None) -> str:
         """
