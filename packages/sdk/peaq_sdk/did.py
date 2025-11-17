@@ -116,9 +116,9 @@ class Did(Base):
         })
         
         if self.metadata.chain_type is ChainType.EVM:
-            return await self._create_evm(name, effective_controller, did_document_hex, status_callback, tx_options)
+            return await self._create_evm(name, id_address, did_document_hex, status_callback, tx_options)
         else:
-            return self._create_substrate(name, effective_controller, did_document_hex, status_callback)
+            return self._create_substrate(name, id_address, did_document_hex, status_callback)
             
             
             
