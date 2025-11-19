@@ -153,7 +153,7 @@ class Did(Base):
         
         # Switch statement to determine chain type
         if self.metadata.chain_type == ChainType.EVM:
-            evm_address = address or getattr(self.metadata.pair, 'address', None) if self.metadata.pair else None
+            evm_address = address or getattr(getattr(self.metadata, "pair", None), "address", None)
             if not evm_address:
                 raise TypeError('Address is required. Please either set seed at instance creation or pass an address.')
             
