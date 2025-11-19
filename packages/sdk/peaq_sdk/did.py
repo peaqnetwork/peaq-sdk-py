@@ -293,9 +293,9 @@ class Did(Base):
         address = ops.address
 
         if self.metadata.chain_type == ChainType.EVM:
-            return await self._remove_evm(name, getattr(self.metadata.pair, 'address', None) or address, status_callback, tx_options)
+            return await self._remove_evm(name, address or getattr(self.metadata.pair, 'address', None), status_callback, tx_options)
         else:
-            return self._remove_substrate(name, getattr(self.metadata.pair, 'address', None) or address, status_callback)
+            return self._remove_substrate(name, address or getattr(self.metadata.pair, 'address', None), status_callback)
     
     async def _create_evm(
         self, 
