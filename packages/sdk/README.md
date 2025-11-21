@@ -36,3 +36,12 @@ transfer = sdk.transfer.native("0x...", 1.5)
 - **Token Transfers**: Native token and ERC-20/721 transfers across chains
 - **Multi-chain Support**: EVM and Substrate chain compatibility
 - **Transaction Management**: Status callbacks and confirmation modes 
+
+
+
+
+## Tests
+Run tests with:
+```
+python -m pytest -s
+```
