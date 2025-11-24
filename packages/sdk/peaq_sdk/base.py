@@ -401,6 +401,7 @@ class Base:
             except Exception as error:
                 raise Exception(f"EVM transaction failed: {str(error)}")
         
+        # TODO see why we can't await this here
         return EvmSendResult(
             tx_hash="0x" + tx_hash.hex(),
             unsubscribe=unsubscribe,
