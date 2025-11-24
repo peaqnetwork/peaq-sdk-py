@@ -116,9 +116,9 @@ class Did(Base):
         })
         
         if self.metadata.chain_type is ChainType.EVM:
-            return await self._create_evm(name, effective_controller, did_document_hex, status_callback, tx_options)
+            return await self._create_evm(name, id_address, did_document_hex, status_callback, tx_options)
         else:
-            return self._create_substrate(name, effective_controller, did_document_hex, status_callback)
+            return self._create_substrate(name, id_address, did_document_hex, status_callback)
             
             
             
@@ -153,7 +153,7 @@ class Did(Base):
         
         # Switch statement to determine chain type
         if self.metadata.chain_type == ChainType.EVM:
-            evm_address = address or getattr(self.metadata.pair, 'address', None) if self.metadata.pair else None
+            evm_address = address or getattr(getattr(self.metadata, "pair", None), "address", None)
             if not evm_address:
                 raise TypeError('Address is required. Please either set seed at instance creation or pass an address.')
             
@@ -258,9 +258,9 @@ class Did(Base):
         })
 
         if self.metadata.chain_type == ChainType.EVM:
-            return await self._update_evm(name, effective_controller, did_document_hex, status_callback, tx_options)
+            return await self._update_evm(name, id_address, did_document_hex, status_callback, tx_options)
         else:
-            return self._update_substrate(name, effective_controller, did_document_hex, status_callback)
+            return self._update_substrate(name, id_address, did_document_hex, status_callback)
 
 
     async def remove(
@@ -293,9 +293,9 @@ class Did(Base):
         address = ops.address
 
         if self.metadata.chain_type == ChainType.EVM:
-            return await self._remove_evm(name, getattr(self.metadata.pair, 'address', None) or address, status_callback, tx_options)
+            return await self._remove_evm(name, address or getattr(self.metadata.pair, 'address', None), status_callback, tx_options)
         else:
-            return self._remove_substrate(name, getattr(self.metadata.pair, 'address', None) or address, status_callback)
+            return self._remove_substrate(name, address or getattr(self.metadata.pair, 'address', None), status_callback)
     
     async def _create_evm(
         self, 

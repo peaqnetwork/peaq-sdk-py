@@ -136,10 +136,12 @@ result = await sdk.storage.add_item(
 ## Development
 ### Virtual Environment
 ```
+cd packages/msf
 python3 -m venv working_env_msf
 source working_env_msf/bin/activate
 ```
 ```
+cd packages/sdk
 python3 -m venv working_env_sdk
 source working_env_sdk/bin/activate
 ```
