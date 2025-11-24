@@ -28,7 +28,7 @@ jobs:
       version: ${{ steps.current_version.outputs.version }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -131,7 +131,7 @@ jobs:
     if: ${{ github.actor != 'peaqbot' }}
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         ref: ${{ github.ref }}
         persist-credentials: false
