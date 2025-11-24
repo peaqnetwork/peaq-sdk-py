@@ -1,4 +1,4 @@
-# Peaq Network SDK Monorepo
+# Peaq Network SDK Monorepo test
 
 This repository contains the Python SDKs for interacting with the peaq Network blockchain.
 
