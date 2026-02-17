@@ -102,7 +102,7 @@ class EvmSendResult(BaseModel):
     """
     tx_hash: str = Field(..., alias="txHash", description="Transaction hash")
     unsubscribe: Optional[Callable[[], None]] = Field(None, description="Optional function to unsubscribe from transaction events")
-    receipt: Awaitable[Any] = Field(..., description="Promise that resolves to transaction receipt")
+    receipt: Any = Field(..., description="Promise that resolves to transaction receipt") 
     
     model_config = ConfigDict(
         populate_by_name=True,

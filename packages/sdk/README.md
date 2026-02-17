@@ -45,3 +45,10 @@ Run tests with:
 ```
 python -m pytest -s
 ```
+Stress test (20 runs):
+```
+for i in {1..20}; do
+  echo "RUN $i"
+  python -m pytest -s
+done
+```
