@@ -28,6 +28,7 @@ from peaq_sdk.types.base import (
 )
 from peaq_sdk.utils import peaq_proto
 from peaq_sdk.utils.utils import evm_to_address
+from peaq_sdk.utils.utils import create_storage_keys, CreateStorageKeysEnum
 from peaq_sdk.utils.crypto import (
     generate_evm_public_key_multibase,
     generate_ed25519_public_key_multibase,
@@ -176,9 +177,7 @@ class Did(Base):
                     )
                 return None
             finally:
-                # Clean up temporary connection if needed
-                # temp_api doesn't have disconnect in Python SubstrateInterface
-                pass
+                temp_api.close()
         
         # For Substrate chains, use direct API access
         api = self.api
@@ -250,7 +249,7 @@ class Did(Base):
         id_address = did_address or effective_controller
 
         # Build DID Document (protobuf) -> hex string
-        did_document_hex = self._generate_did_document(id_address, {
+        did_document_hex = await self._generate_did_document(id_address, {
             'controller': effective_controller,
             'verification_methods': verification_methods,
             'services': services,
@@ -381,21 +380,21 @@ class Did(Base):
         Returns:
             Optional[dict]: Dictionary containing document info and proto_document, or None if not found
         """
-        # Query storage
-        name_encoded = "0x" + name.encode("utf-8").hex()
-        block_hash = api.get_block_hash(None)
+        storage_key = create_storage_keys([
+            {"value": owner_address, "type": CreateStorageKeysEnum.ADDRESS},
+            {"value": name, "type": CreateStorageKeysEnum.STANDARD},
+        ])["hashed_key"]
         
-        resp = api.rpc_request(
-            DidCallFunction.READ_ATTRIBUTE.value, [owner_address, name_encoded, block_hash]
+        raw = api.query(
+            module="PeaqDid",
+            storage_function="AttributeStore",
+            params=[storage_key]
         )
-        
-        # Check result
-        if resp['result'] is None:
+        # check result
+        if not raw or getattr(raw, "value", None) is None:
             return None
 
-        read_name = bytes.fromhex(resp['result']['name'][2:]).decode('utf-8')
-        value = bytes.fromhex(resp['result']['value'][2:]).decode('utf-8')
-        to_deserialize = bytes.fromhex(value)
+        to_deserialize = bytes.fromhex(str(raw['value']))
         proto_document = self._deserialize_did(to_deserialize)
         
         # Convert protobuf document to structured format using helper
@@ -403,18 +402,18 @@ class Did(Base):
         
         # Create the DIDDocument structure
         did_document = DIDDocument(
-            name=read_name,
-            value=value,
-            validity=str(resp['result']['validity']),
-            created=str(resp['result']['created']),
+            name=str(raw['name']),
+            value=str(raw['value']),
+            validity=str(raw['validity']),
+            created=str(raw['created']),
             document=DIDV2Document(**proto_dict)
         )
         
         return {
-            'name': read_name,
-            'raw_value': value,
-            'validity': str(resp['result']['validity']),
-            'created': str(resp['result']['created']),
+            'name': str(raw['name']),
+            'raw_value': str(raw['value']),
+            'validity': str(raw['validity']),
+            'created': str(raw['created']),
             'document': did_document,
             'proto_document': proto_document
         }

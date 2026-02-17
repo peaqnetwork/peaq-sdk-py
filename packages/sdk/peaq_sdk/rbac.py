@@ -3,7 +3,7 @@ import uuid
 
 from peaq_sdk.base import Base
 from peaq_sdk.types.base import TxOptions, StatusCallback
-from peaq_sdk.utils.utils import parse_options
+from peaq_sdk.utils.utils import parse_options, create_storage_keys, CreateStorageKeysEnum
 from peaq_sdk.types.common import (
     ChainType,
     SDKMetadata,
@@ -388,42 +388,30 @@ class Rbac(Base):
             )
             return self._handle_substrate_tx(call, f"assign user {user_id} to group {group_id}", status_callback)
                 
-    def fetch_role(self, options: FetchRoleOptions) -> FetchResponseData:
+    async def fetch_role(self, options: FetchRoleOptions) -> FetchResponseData:
         ops = parse_options(FetchRoleOptions, options, caller="rbac.fetch_role()")
-        
         owner = ops.owner
         role_id = ops.role_id
         
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+                resp = await self._read_from_substrate(owner_address, role_id, "Role", "KeysLookUpStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
-        
-        # Query storage
-        role_id_bytes = _rpc_id(role_id)
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_ROLE.value, [owner_address, role_id_bytes, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"Role id of {role_id} was not found at the owner address of {owner}.") 
-        
-        ok = resp['result']['Ok']
-        role_id_str   = bytes(ok['id']).decode('utf-8')
-        role_name_str = bytes(ok['name']).decode('utf-8')
-        
+            resp = await self._read_from_substrate(owner_address, role_id, "Role", "KeysLookUpStore", api)
+            
         return FetchResponseData(
-            id=role_id_str,
-            name=role_name_str,
-            enabled=ok['enabled']
+            id=bytes.fromhex(resp['id'][2:]).decode('utf-8'),
+            name=resp['name'],
+            enabled=resp['enabled']
         )
 
-    def fetch_group(self, options: FetchGroupOptions) -> FetchResponseData:
+    async def fetch_group(self, options: FetchGroupOptions) -> FetchResponseData:
         """Fetches a group by owner and group id."""
         ops = parse_options(FetchGroupOptions, options, caller="rbac.fetch_group()")
         
@@ -432,34 +420,23 @@ class Rbac(Base):
         
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+                resp = await self._read_from_substrate(owner_address, group_id, "Group", "KeysLookUpStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
-        
-        # Query storage
-        group_id_bytes = _rpc_id(group_id)
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_GROUP.value, [owner_address, group_id_bytes, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"Group id of {group_id} was not found at the owner address of {owner}.") 
-        
-        ok = resp['result']['Ok']
-        group_id_str = bytes(ok['id']).decode('utf-8')
-        group_name_str = bytes(ok['name']).decode('utf-8')
+            resp = await self._read_from_substrate(owner_address, group_id, "Group", "KeysLookUpStore", api)
         
         return FetchResponseData(
-            id=group_id_str,
-            name=group_name_str,
-            enabled=ok['enabled']
+            id=bytes.fromhex(resp['id'][2:]).decode('utf-8'),
+            name=resp['name'],
+            enabled=resp['enabled']
         )
 
-    def fetch_permission(self, options: FetchPermissionOptions) -> FetchResponseData:
+    async def fetch_permission(self, options: FetchPermissionOptions) -> FetchResponseData:
         """Fetches a permission by owner and permission id."""
         ops = parse_options(FetchPermissionOptions, options, caller="rbac.fetch_permission()")
         
@@ -468,34 +445,23 @@ class Rbac(Base):
         
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+                resp = await self._read_from_substrate(owner_address, permission_id, "Permission", "KeysLookUpStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
-        
-        # Query storage
-        permission_id_bytes = _rpc_id(permission_id)
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_PERMISSION.value, [owner_address, permission_id_bytes, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"Permission id of {permission_id} was not found at the owner address of {owner}.") 
-        
-        ok = resp['result']['Ok']
-        permission_id_str = bytes(ok['id']).decode('utf-8')
-        permission_name_str = bytes(ok['name']).decode('utf-8')
+            resp = await self._read_from_substrate(owner_address, permission_id, "Permission", "KeysLookUpStore", api)
         
         return FetchResponseData(
-            id=permission_id_str,
-            name=permission_name_str,
-            enabled=ok['enabled']
+            id=bytes.fromhex(resp['id'][2:]).decode('utf-8'),
+            name=resp['name'],
+            enabled=resp['enabled']
         )
 
-    def fetch_roles(self, options: FetchRolesOptions) -> List[FetchResponseData]:
+    async def fetch_roles(self, options: FetchRolesOptions) -> List[FetchResponseData]:
         """Fetches all roles for the given owner."""
         ops = parse_options(FetchRolesOptions, options, caller="rbac.fetch_roles()")
         
@@ -503,35 +469,26 @@ class Rbac(Base):
         
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+                resp = await self._read_from_substrate(owner_address, None, None, "RoleStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
-        
-        # Query storage using RPC request
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_ROLES.value, [owner_address, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"Roles not found for owner address {owner}.")
-        
-        roles_data = resp['result']['Ok']
+            resp = await self._read_from_substrate(owner_address, None, None, "RoleStore", api)
+
         response_data = []
-        
-        for role in roles_data:
+        for role in resp:
             response_data.append(FetchResponseData(
-                id=bytes(role['id']).decode('utf-8'),
-                name=bytes(role['name']).decode('utf-8'),
+                id=bytes.fromhex(role['id'][2:]).decode('utf-8'),
+                name=role['name'],
                 enabled=role['enabled']
-            ))
-        
+        ))
         return response_data
 
-    def fetch_groups(self, options: FetchGroupsOptions) -> List[FetchResponseData]:
+    async def fetch_groups(self, options: FetchGroupsOptions) -> List[FetchResponseData]:
         """Fetches all groups for the given owner."""
         ops = parse_options(FetchGroupsOptions, options, caller="rbac.fetch_groups()")
         
@@ -539,35 +496,27 @@ class Rbac(Base):
         
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)    
+                resp = await self._read_from_substrate(owner_address, None, None, "GroupStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
-        
-        # Query storage using RPC request
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_GROUPS.value, [owner_address, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"Groups not found for owner address {owner}.")
-        
-        groups_data = resp['result']['Ok']
-        response_data = []
-        
-        for group in groups_data:
+            resp = await self._read_from_substrate(owner_address, None, None, "GroupStore", api)
+
+        response_data = []        
+        for group in resp:
             response_data.append(FetchResponseData(
-                id=bytes(group['id']).decode('utf-8'),
-                name=bytes(group['name']).decode('utf-8'),
+                id=bytes.fromhex(group['id'][2:]).decode('utf-8'),
+                name=group['name'],
                 enabled=group['enabled']
             ))
         
         return response_data
 
-    def fetch_permissions(self, options: FetchPermissionsOptions) -> List[FetchResponseData]:
+    async def fetch_permissions(self, options: FetchPermissionsOptions) -> List[FetchResponseData]:
         """Fetches all permissions for the given owner."""
         ops = parse_options(FetchPermissionsOptions, options, caller="rbac.fetch_permissions()")
         
@@ -575,35 +524,27 @@ class Rbac(Base):
         
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+                resp = await self._read_from_substrate(owner_address, None, None, "PermissionStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
+            resp = await self._read_from_substrate(owner_address, None, None, "PermissionStore", api)
         
-        # Query storage using RPC request
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_PERMISSIONS.value, [owner_address, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"Permissions not found for owner address {owner}.")
-        
-        permissions_data = resp['result']['Ok']
         response_data = []
-        
-        for permission in permissions_data:
+        for permission in resp:
             response_data.append(FetchResponseData(
-                id=bytes(permission['id']).decode('utf-8'),
-                name=bytes(permission['name']).decode('utf-8'),
+                id=bytes.fromhex(permission['id'][2:]).decode('utf-8'),
+                name=permission['name'],
                 enabled=permission['enabled']
             ))
         
         return response_data
 
-    def fetch_user_roles(self, options: FetchUserRolesOptions) -> List[FetchResponseRole2User]:
+    async def fetch_user_roles(self, options: FetchUserRolesOptions) -> List[FetchResponseRole2User]:
         """Fetches all roles assigned to a user."""
         ops = parse_options(FetchUserRolesOptions, options, caller="rbac.fetch_user_roles()")
         
@@ -615,35 +556,27 @@ class Rbac(Base):
             
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+                resp = await self._read_from_substrate(owner_address, user_id, "R2U", "Role2UserStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
-        
-        # Query storage using RPC request
-        user_id_bytes = _rpc_id(user_id)
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_USER_ROLES.value, [owner_address, user_id_bytes, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"No role is assigned to user {user_id}.")
-        
-        user_roles_data = resp['result']['Ok']
+            resp = await self._read_from_substrate(owner_address, user_id, "R2U", "Role2UserStore", api)
+            
         response_data = []
-        
-        for item in user_roles_data:
+        for item in resp:
             response_data.append(FetchResponseRole2User(
-                role=bytes(item['role']).decode('utf-8'),
-                user=bytes(item['user']).decode('utf-8')
+                role=bytes.fromhex(item['role'][2:]).decode('utf-8'),
+                user=bytes.fromhex(item['user'][2:]).decode('utf-8')
             ))
-        
+        if not response_data:
+            raise GetRbacError(f"No roles found for user {user_id}.")
         return response_data
 
-    def fetch_group_roles(self, options: FetchGroupRolesOptions) -> List[FetchResponseRole2Group]:
+    async def fetch_group_roles(self, options: FetchGroupRolesOptions) -> List[FetchResponseRole2Group]:
         """Fetches all roles assigned to a group."""
         ops = parse_options(FetchGroupRolesOptions, options, caller="rbac.fetch_group_roles()")
         
@@ -655,35 +588,27 @@ class Rbac(Base):
             
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+                resp = await self._read_from_substrate(owner_address, group_id, "R2G", "Role2GroupStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
-        
-        # Query storage using RPC request
-        group_id_bytes = _rpc_id(group_id)
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_GROUP_ROLES.value, [owner_address, group_id_bytes, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"No roles found for group {group_id}.")
-        
-        group_roles_data = resp['result']['Ok']
+            resp = await self._read_from_substrate(owner_address, group_id, "R2G", "Role2GroupStore", api)
+            
         response_data = []
-        
-        for item in group_roles_data:
+        for item in resp:
             response_data.append(FetchResponseRole2Group(
-                role=bytes(item['role']).decode('utf-8'),
-                group=bytes(item['group']).decode('utf-8')
+                role=bytes.fromhex(item['role'][2:]).decode('utf-8'),
+                group=bytes.fromhex(item['group'][2:]).decode('utf-8')
             ))
-        
+        if not response_data:
+            raise GetRbacError(f"No roles found for group {group_id}.")
         return response_data
 
-    def fetch_user_groups(self, options: FetchUserGroupsOptions) -> List[ResponseFetchUserGroups]:
+    async def fetch_user_groups(self, options: FetchUserGroupsOptions) -> List[ResponseFetchUserGroups]:
         """Fetches all groups assigned to a user."""
         ops = parse_options(FetchUserGroupsOptions, options, caller="rbac.fetch_user_groups()")
         
@@ -695,35 +620,28 @@ class Rbac(Base):
             
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+                resp = await self._read_from_substrate(owner_address, user_id, "U2G", "User2GroupStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
-        
+            resp = await self._read_from_substrate(owner_address, user_id, "U2G", "User2GroupStore", api)
+            
         # Query storage using RPC request
-        user_id_bytes = _rpc_id(user_id)
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_USER_GROUPS.value, [owner_address, user_id_bytes, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"No groups assigned to user {user_id}.")
-        
-        user_groups_data = resp['result']['Ok']
         response_data = []
-        
-        for item in user_groups_data:
+        for item in resp:
             response_data.append(ResponseFetchUserGroups(
-                user=bytes(item['user']).decode('utf-8'),
-                group=bytes(item['group']).decode('utf-8')
+                user=bytes.fromhex(item['user'][2:]).decode('utf-8'),
+                group=bytes.fromhex(item['group'][2:]).decode('utf-8')
             ))
-        
+        if not response_data:
+            raise GetRbacError(f"No groups found for user {user_id}.")
         return response_data
 
-    def fetch_role_permissions(self, options: FetchRolePermissionsOptions) -> List[FetchResponseRole2Permission]:
+    async def fetch_role_permissions(self, options: FetchRolePermissionsOptions) -> List[FetchResponseRole2Permission]:
         """Fetches all permissions assigned to a role."""
         ops = parse_options(FetchRolePermissionsOptions, options, caller="rbac.fetch_role_permissions()")
         
@@ -735,35 +653,28 @@ class Rbac(Base):
             
         if self.metadata.chain_type is ChainType.EVM:
             owner_address = evm_to_address(owner)
-            api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+            try:
+                api = SubstrateInterface(url=self.metadata.base_url, ss58_format=42)
+                resp = await self._read_from_substrate(owner_address, role_id, "P2R", "Permission2RoleStore", api)
+            finally:
+                api.close()
         else:
             api = self.api
             owner_address = owner
-        
-        # Query storage using RPC request
-        role_id_bytes = _rpc_id(role_id)
-        block_hash = api.get_block_hash(None)
-        
-        resp = api.rpc_request(
-            RbacCallFunction.GET_ROLE_PERMISSIONS.value, [owner_address, role_id_bytes, block_hash]
-        )
-        
-        # Check result
-        if 'Err' in resp['result']:
-            raise GetRbacError(f"No permissions found for role {role_id}.")
-        
-        role_permissions_data = resp['result']['Ok']
+            resp = await self._read_from_substrate(owner_address, role_id, "P2R", "Permission2RoleStore", api)
+
         response_data = []
-        
-        for item in role_permissions_data:
+        for item in resp:
             response_data.append(FetchResponseRole2Permission(
-                permission=bytes(item['permission']).decode('utf-8'),
-                role=bytes(item['role']).decode('utf-8')
+                permission=bytes.fromhex(item['permission'][2:]).decode('utf-8'),
+                role=bytes.fromhex(item['role'][2:]).decode('utf-8')
             ))
-        
+        if not response_data:
+            raise GetRbacError(f"No permissions found for role {role_id}.")
         return response_data
 
-    def fetch_user_permissions(self, options: FetchUserPermissionsOptions) -> List[FetchResponseData]:
+# TODO
+    async def fetch_user_permissions(self, options: FetchUserPermissionsOptions) -> List[FetchResponseData]:
         """Fetches all permissions available to a user (through direct role assignments and group memberships)."""
         ops = parse_options(FetchUserPermissionsOptions, options, caller="rbac.fetch_user_permissions()")
         
@@ -804,7 +715,8 @@ class Rbac(Base):
         
         return response_data
 
-    def fetch_group_permissions(self, options: FetchGroupPermissionsOptions) -> List[FetchResponseData]:
+# TODO
+    async def fetch_group_permissions(self, options: FetchGroupPermissionsOptions) -> List[FetchResponseData]:
         """Fetches all permissions available to a group (through role assignments)."""
         ops = parse_options(FetchGroupPermissionsOptions, options, caller="rbac.fetch_group_permissions()")
         
@@ -1319,6 +1231,37 @@ class Rbac(Base):
             return self._send_substrate_tx(call, on_status=status_callback)
         except Exception as err:
             raise Exception(f"Failed to {action}: {str(err)}")
+        
+    async def _read_from_substrate(self, owner_address: str, rbac_id: str | None, rbac_type: str | None, storage_function: str | None, api):
+        """
+        Helper method to read storage item from Substrate API.
+        
+        Args:
+            item_type: The key under which the item was stored
+            owner_address: The Substrate address of the owner
+            api: The Substrate API instance to use for querying
+            
+        Returns:
+            The storage item result or null if not found
+        """
+        if rbac_id is None:
+            params = owner_address
+        else:
+            params = create_storage_keys([
+                {"value": owner_address, "type": CreateStorageKeysEnum.ADDRESS},
+                {"value": rbac_id, "type": CreateStorageKeysEnum.STANDARD},
+                {"value": rbac_type, "type": CreateStorageKeysEnum.STANDARD},
+            ])["hashed_key"]
+        
+        item = api.query(
+            module="PeaqRbac",
+            storage_function=storage_function,
+            params=[params]
+        )
+        if item.value == '':
+            return None
+        
+        return item.value
 
 def _rpc_id(entity_id):
     return [ord(c) for c in entity_id]

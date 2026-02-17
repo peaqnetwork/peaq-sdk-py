@@ -26,7 +26,7 @@ from peaq_sdk.types.storage import (
     GetItemResult,
     StorageWriteResult
 )
-from peaq_sdk.utils.utils import evm_to_address
+from peaq_sdk.utils.utils import evm_to_address, create_storage_keys, CreateStorageKeysEnum
 
 # 3rd party imports
 from substrateinterface.base import SubstrateInterface, GenericCall
@@ -133,9 +133,7 @@ class Storage(Base):
             try:
                 return await self._read_from_substrate(item_type, substrate_address, temp_api)
             finally:
-                # Clean up temporary connection if needed
-                # temp_api doesn't have disconnect in Python SubstrateInterface
-                pass
+                temp_api.close()
         
         # For Substrate chains, use direct API access
         api = self.api
@@ -231,21 +229,22 @@ class Storage(Base):
         Returns:
             The storage item result or null if not found
         """
-        # Query storage
-        item_type_hex = "0x" + item_type.encode("utf-8").hex()
-        block_hash = api.get_block_hash(None)
+        storage_key = create_storage_keys([
+            {"value": owner_address, "type": CreateStorageKeysEnum.ADDRESS},
+            {"value": item_type, "type": CreateStorageKeysEnum.STANDARD},
+        ])["hashed_key"]
         
-        resp = api.rpc_request(
-            StorageCallFunction.GET_ITEM.value, [owner_address, item_type_hex, block_hash]
+        item = api.query(
+            module="PeaqStorage",
+            storage_function="ItemStore",
+            params=[storage_key]
         )
         
         # Check result
-        if resp['result'] is None:
+        if item.value == '':
             return None
         
-        raw = resp['result']['item']
-        decoded = bytes.fromhex(raw[2:]).decode("utf-8")
-        return {item_type: decoded}
+        return {item_type: item.value}
     
     # ---------------  EVM helpers ----------------
     async def _add_item_evm(self, item_type: str, item_string: str, status_callback: StatusCallback = None, tx_options: TxOptions = {}) -> StorageWriteResult:

@@ -76,6 +76,17 @@ class Main(Base):
         sdk._initialize_signer(ops.auth)
         return sdk
     
+    async def disconnect(self) -> None:
+        """
+        Disconnects the SDK from the blockchain.
+        """
+        if self._metadata.chain_type == ChainType.EVM:
+            await self.api.provider.disconnect()
+        elif self._metadata.chain_type == ChainType.SUBSTRATE:
+            self.api.close()
+        else:
+            raise ValueError(f"Invalid chain type: {self._metadata.chain_type}")
+        
     def _initialize_signer(self, auth: Optional[Union[BaseAccount, Keypair]] = None) -> None:
         """
         Initializes the signer by validating and setting the authentication method.

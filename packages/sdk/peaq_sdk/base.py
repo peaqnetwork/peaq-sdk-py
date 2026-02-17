@@ -363,50 +363,39 @@ class Base:
         
         # Create a flag to track if unsubscribed
         is_unsubscribed = False
+        receipt = await self._api.eth.wait_for_transaction_receipt(tx_hash)
+        if receipt.status == 0:
+            raise Exception('Transaction failed')
+        
+        if not is_unsubscribed and on_status:
+            status_update = self._create_status_update(
+                status=TransactionStatus.IN_BLOCK,
+                confirmation_mode=opts.mode,
+                total_confirmations=1,
+                tx_hash="0x" + tx_hash.hex(),
+                receipt=dict(receipt),
+                nonce=built_tx.get('nonce')
+            )
+            self._emit_status_callback(on_status, False, status_update)
+            
+        if not is_unsubscribed:
+            final_receipt = await self._wait_for_confirmations(tx_hash, receipt, opts, on_status if not is_unsubscribed else None)
+        else:
+            raw = dict(receipt)
+            final_receipt = self._clean_callback_data(raw)
+        
+        
         
         def unsubscribe():
             nonlocal is_unsubscribed
             is_unsubscribed = True
         
-        async def get_receipt():
-            """Async function that waits for transaction receipt and confirmations"""
-            try:
-                # Wait for first confirmation
-                receipt = await self._api.eth.wait_for_transaction_receipt(tx_hash)
-                
-                if receipt.status == 0:
-                    raise Exception('Transaction failed')
-                
-                # Check if unsubscribed before emitting status
-                if not is_unsubscribed and on_status:
-                    status_update = self._create_status_update(
-                        status=TransactionStatus.IN_BLOCK,
-                        confirmation_mode=opts.mode,
-                        total_confirmations=1,
-                        tx_hash="0x" + tx_hash.hex(),
-                        receipt=dict(receipt),
-                        nonce=built_tx.get('nonce')
-                    )
-                    self._emit_status_callback(on_status, False, status_update)
-                
-                # Wait for confirmations based on mode using native async
-                if not is_unsubscribed:
-                    final_receipt = await self._wait_for_confirmations(tx_hash, receipt, opts, on_status if not is_unsubscribed else None)
-                    return final_receipt
-                else:
-                    raw = dict(receipt)
-                    cleaned = self._clean_callback_data(raw)
-                    return cleaned
-                
-            except Exception as error:
-                raise Exception(f"EVM transaction failed: {str(error)}")
         
         return EvmSendResult(
             tx_hash="0x" + tx_hash.hex(),
             unsubscribe=unsubscribe,
-            receipt=get_receipt()   
+            receipt=final_receipt
         )
-
 
     async def _build_evm_tx(
         self, 
@@ -418,7 +407,7 @@ class Base:
         """
         checksum_address = Web3.to_checksum_address(self._metadata.pair.address)
         tx['from'] = checksum_address
-        tx['nonce'] = await self._api.eth.get_transaction_count(checksum_address)
+        tx['nonce'] = await self._api.eth.get_transaction_count(checksum_address, block_identifier="pending")
         tx['chainId'] = await self.get_chain_id()
 
         # Estimate gas limit if not provided

@@ -1,6 +1,51 @@
 import hashlib
 import base58
 from pydantic import ValidationError
+from substrateinterface.utils.ss58 import ss58_decode
+
+
+class CreateStorageKeysEnum:
+    """
+    Mirrors the JS SDK CreateStorageKeysEnum.
+    ADDRESS: decode ss58 address into bytes
+    STANDARD: UTF-8 bytes of a string
+    """
+    ADDRESS = "ADDRESS"
+    STANDARD = "STANDARD"
+
+
+def create_storage_keys(args, ss58_format: int = 42) -> dict:
+    """
+    Python equivalent of JS `createStorageKeys`:
+
+    - ADDRESS: decodeAddress(value, false, ss58_format) -> bytes
+    - STANDARD: u8aToU8a(value) -> UTF-8 bytes
+    - Concatenate and blake2_256 hash -> hex key
+
+    Returns:
+        { "hashed_key": "0x..." }
+    """
+    keys_byte_array = []
+
+    for item in args:
+        t = item.get("type")
+        v = item.get("value")
+        if t == CreateStorageKeysEnum.ADDRESS:
+            # ss58_decode returns hex string (accountId) for substrateinterface
+            decoded = ss58_decode(v, valid_ss58_format=ss58_format)
+            decoded_bytes = bytes.fromhex(decoded) if isinstance(decoded, str) else bytes(decoded)
+            keys_byte_array.append(decoded_bytes)
+        elif t == CreateStorageKeysEnum.STANDARD:
+            if isinstance(v, bytes):
+                keys_byte_array.append(v)
+            else:
+                keys_byte_array.append(str(v).encode("utf-8"))
+        else:
+            raise ValueError(f"Unsupported storage key type: {t}")
+
+    key = u8a_concat(*keys_byte_array)
+    hashed_key = blake2b_256(key).hex()
+    return {"hashed_key": "0x" + hashed_key}
 
 def blake2b_256(data):
     """
